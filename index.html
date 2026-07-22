@@ -47,7 +47,7 @@ const S = {
   checklist:{acad:false,comm:false,self:false,dili:false},
   ai:null,
   stance:'A', messages:[], input:'', chatLoading:false,
-  units:[], cards:[], schedule:[],
+  units:[], cards:[], schedule:[], studyStats:null,
   qFacets:{subject:[],year:[],exam_round:[],level:[]}, qFilter:{}, qList:[], qCurrent:null, qMsg:'',
   quizItems:[], quizIdx:0, quizMarks:{}, showRaw:false,
   wrongData:null,
@@ -85,6 +85,17 @@ async function boot(){
   else { S.gateMode = s.setup ? 'setup' : 'locked'; render(); }
   setInterval(tick, 1000);
 }
+function weekStart(){ const d=new Date(); d.setDate(d.getDate()-6); return ymd(d); }
+async function loadStudy(){
+  const r=await api('/api/study?today='+ymd(new Date())+'&weekStart='+weekStart());
+  if(r.today) S.mins = r.today;
+  S.studyStats = {week:r.week||{}, total:r.total||{}, days:r.days||[]};
+}
+let _studyT=0;
+function saveStudy(){
+  clearTimeout(_studyT);
+  _studyT=setTimeout(()=>api('/api/study',{method:'POST',...jbody({date:ymd(new Date()), mins:S.mins})}), 500);
+}
 async function openApp(){
   const [st, u, c, sc] = await Promise.all([api('/api/state'), api('/api/units'), api('/api/cards'), api('/api/schedule')]);
   S.units = u.units||[]; S.cards = c.cards||[]; S.schedule = sc.schedule||[];
@@ -93,7 +104,7 @@ async function openApp(){
   const daily = saved.day===today ? saved : {};
   S.theme = saved.theme || (matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');
   S.sleepDone = !!daily.sleepDone; S.wakeDone = !!daily.wakeDone;
-  S.mins = daily.mins || {math:0,sci:0,kor:0,nc2:0};
+  await loadStudy();   // 학습시간은 서버 로그에서 (새로고침해도 유지 + 이력)
   S.nc2Pick = saved.nc2Pick || ['사회','한국사'];
   S.towerUnit = saved.towerUnit||0; S.deckIdx = saved.deckIdx||0; S.known = saved.known||{};
   S.checklist = saved.checklist || {acad:false,comm:false,self:false,dili:false};
@@ -135,8 +146,8 @@ function dday(){ const t=examDate(),n=new Date(S.now); return Math.round((Date.U
 function bossDateStr(){ const t=examDate(); return ymd(t)+' ('+['일','월','화','수','목','금','토'][t.getDay()]+')'; }
 function liveMins(sub){ const base=S.mins[sub]||0; return S.running===sub ? base+(S.now-S.runStart)/60000 : base; }
 function toggleTimer(sub){ if(barrier().active) return; if(S.running===sub){ commit(); } else { if(S.running) commit(); S.running=sub; S.runStart=Date.now(); render(); } }
-function commit(){ const sub=S.running; if(!sub) return; const add=(Date.now()-S.runStart)/60000; S.mins={...S.mins,[sub]:(S.mins[sub]||0)+add}; S.running=null; S.runStart=0; persist(); render(); }
-function addMins(sub,d){ patch({mins:{...S.mins,[sub]:Math.max(0,(S.mins[sub]||0)+d)}}); }
+function commit(){ const sub=S.running; if(!sub) return; const add=(Date.now()-S.runStart)/60000; S.mins={...S.mins,[sub]:(S.mins[sub]||0)+add}; S.running=null; S.runStart=0; saveStudy(); render(); }
+function addMins(sub,d){ S.mins={...S.mins,[sub]:Math.max(0,(S.mins[sub]||0)+d)}; saveStudy(); render(); }
 function pickNc2(sub){ let p=[...S.nc2Pick]; if(p.includes(sub)){ if(p.length>1) p=p.filter(x=>x!==sub); } else { p.push(sub); if(p.length>2) p.shift(); } patch({nc2Pick:p}); }
 const WD=['일','월','화','수','목','금','토'];
 function hm(s){ const p=String(s||'0:0').split(':'); return (+p[0]||0)+(+p[1]||0)/60; }
@@ -341,6 +352,24 @@ function app(){
   </div>`;
 }
 
+function fmtMin(t){ t=Math.round(t); return t>=60 ? `${Math.floor(t/60)}시간 ${t%60}분` : `${t}분`; }
+function studyStatsCard(){
+  const s=S.studyStats; if(!s) return '';
+  const sum=o=>Math.round((o.math||0)+(o.sci||0)+(o.kor||0)+(o.nc2||0));
+  const today=sum(S.mins), week=sum(s.week||{}), total=sum(s.total||{});
+  const byDate={}; (s.days||[]).forEach(d=>byDate[d.date]=Math.round((d.math||0)+(d.sci||0)+(d.kor||0)+(d.nc2||0)));
+  const tk=ymd(new Date());
+  const bars=[...Array(7)].map((_,i)=>{ const dt=new Date(); dt.setDate(dt.getDate()-(6-i)); const key=ymd(dt); const v=key===tk?today:(byDate[key]||0); const hp=Math.min(100,v/360*100); const wd=['일','월','화','수','목','금','토'][dt.getDay()]; const on=key===tk;
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;"><div style="font-size:9px;color:var(--text3);">${v?fmtMin(v).replace('시간','h').replace('분',''):''}</div><div style="width:100%;height:64px;display:flex;align-items:flex-end;"><div title="${wd} ${v}분" style="width:100%;background:${v?'linear-gradient(180deg,#2ee6a6,#14755C)':'var(--panel2)'};border:1px solid ${on?'var(--gold-d)':'var(--border)'};border-radius:5px 5px 0 0;height:${Math.max(4,hp)}%;transition:height .3s;"></div></div><div style="font-size:11px;color:${on?'var(--gold)':'var(--text3)'};font-weight:${on?'700':'400'};">${wd}</div></div>`;
+  }).join('');
+  const stat=(lb,v,col)=>`<div style="flex:1;min-width:110px;border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--panel2);"><div style="font-size:12px;color:var(--text2);">${lb}</div><div style="font-size:18px;font-weight:800;color:${col};margin-top:4px;">${fmtMin(v)}</div></div>`;
+  return `<section style="background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:16px;padding:18px;">
+    <h3 style="margin:0 0 14px;font-size:16px;font-weight:800;">📊 학습 통계 <span style="font-size:12px;color:var(--text2);font-weight:600;">· 서버에 계속 쌓여요</span></h3>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">${stat('오늘',today,'var(--accent-b)')}${stat('이번 주',week,'var(--gold)')}${stat('누적',total,'#8ab4ff')}</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">최근 7일 (막대 = 하루 학습량, 목표 360분)</div>
+    <div style="display:flex;gap:8px;align-items:flex-end;">${bars}</div>
+  </section>`;
+}
 function vCamp(){
   const defs=[
     {sub:'math',label:'전사 훈련',kr:'수학',target:120,fill:'linear-gradient(90deg,#0f6a53,#2ee6a6)'},
@@ -382,6 +411,7 @@ function vCamp(){
     </div>
     <div style="position:relative;"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${cards}</div>${overlay}</div>
   </section>
+  ${studyStatsCard()}
   <section style="background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:16px;padding:18px;">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;"><h3 style="margin:0;font-size:16px;font-weight:800;">🗝 결계 · 고정일정 (자동 발동)</h3>
     <button data-act="preview" style="font-size:12px;padding:6px 13px;border-radius:999px;cursor:pointer;border:1px solid ${S.lockPreview?'rgba(255,84,104,.5)':'var(--border)'};background:${S.lockPreview?'rgba(255,84,104,.12)':'var(--panel2)'};color:${S.lockPreview?'var(--danger-b)':'var(--text2)'};">${S.lockPreview?'미리보기 끄기':'결계 미리보기'}</button></div>

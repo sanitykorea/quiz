@@ -159,6 +159,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS schedule(id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT, t_start TEXT, t_end TEXT, name TEXT, kind TEXT, ord INTEGER);
     CREATE TABLE IF NOT EXISTS qkey(question_id INTEGER, qnum INTEGER, answer INTEGER, PRIMARY KEY(question_id,qnum));
     CREATE TABLE IF NOT EXISTS attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, question_id INTEGER, subject TEXT, year TEXT, exam_round TEXT, qnum INTEGER, chosen INTEGER, answer INTEGER, correct INTEGER, ts INTEGER);
+    CREATE TABLE IF NOT EXISTS study_log(date TEXT PRIMARY KEY, math REAL DEFAULT 0, sci REAL DEFAULT 0, kor REAL DEFAULT 0, nc2 REAL DEFAULT 0);
     """)
     if "answer_text" not in [r["name"] for r in c.execute("PRAGMA table_info(questions)")]:
         c.execute("ALTER TABLE questions ADD COLUMN answer_text TEXT")
@@ -317,16 +318,20 @@ def qfigs(path):
     figs = set()
     for num in starts:
         pg = doc[starts[num][0]]; rect = _qbox(pg, starts, num)
+        foot = pg.rect.height - 62      # 하단 푸터(평가원 로고·교시 표기) 제외
+        head = 55                       # 상단 헤더 제외
+        def ok(r):
+            return r.intersects(rect) and r.y0 > head and r.y1 < foot
         found = False
         for b in pg.get_text("dict")["blocks"]:
             if b.get("type") == 1:
                 r = fitz.Rect(b["bbox"])
-                if r.width > 28 and r.height > 22 and r.intersects(rect):
+                if r.width > 28 and r.height > 22 and ok(r):
                     found = True; break
         if not found:
             for d in pg.get_drawings():
                 r = d["rect"]
-                if r.width > 60 and r.height > 40 and r.intersects(rect):
+                if r.width > 60 and r.height > 40 and ok(r):
                     found = True; break
         if found:
             figs.add(num)
@@ -532,7 +537,23 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._wrong()
+        if p == "/api/study":
+            if self._guard():
+                return
+            return self._study_get(q.get("today", ""), q.get("weekStart", ""))
         return self._json({"error": "not_found"}, 404)
+
+    def _study_get(self, today, week_start):
+        c = db()
+        def one(sql, args=()):
+            r = c.execute(sql, args).fetchone()
+            return {k: round(r[k] or 0) for k in ("math", "sci", "kor", "nc2")} if r else {"math": 0, "sci": 0, "kor": 0, "nc2": 0}
+        today_row = one("SELECT math,sci,kor,nc2 FROM study_log WHERE date=?", (today,))
+        week = one("SELECT SUM(math) math,SUM(sci) sci,SUM(kor) kor,SUM(nc2) nc2 FROM study_log WHERE date>=?", (week_start,))
+        total = one("SELECT SUM(math) math,SUM(sci) sci,SUM(kor) kor,SUM(nc2) nc2 FROM study_log")
+        days = [dict(x) for x in c.execute("SELECT date,math,sci,kor,nc2 FROM study_log WHERE date>=? ORDER BY date", (week_start,))]
+        c.close()
+        return self._json({"today": today_row, "week": week, "total": total, "days": days})
 
     def _questions(self, q):
         where, args = [], []
@@ -556,7 +577,7 @@ class H(http.server.BaseHTTPRequestHandler):
         items = parse_items(row["raw_text"])
         path = pdf_path(row); has_pdf = os.path.exists(path); subj = row["subject"]
         figs = None
-        if has_pdf and subj in ("과학", "사회", "한국사"):
+        if has_pdf and subj in ("과학", "사회", "한국사", "국어"):
             try:
                 figs = qfigs(path)
             except Exception:
@@ -641,6 +662,20 @@ class H(http.server.BaseHTTPRequestHandler):
             if txt is None:
                 return self._json({"error": "no-ai"}, 503)
             return self._json({"text": txt})
+        if p == "/api/study":
+            if self._guard():
+                return
+            date = str(b.get("date", ""))
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+                return self._json({"error": "bad_date"}, 400)
+            m = b.get("mins", {})
+            vals = [float(m.get(k, 0) or 0) for k in ("math", "sci", "kor", "nc2")]
+            c = db()
+            c.execute("""INSERT INTO study_log(date,math,sci,kor,nc2) VALUES(?,?,?,?,?)
+                         ON CONFLICT(date) DO UPDATE SET math=excluded.math,sci=excluded.sci,kor=excluded.kor,nc2=excluded.nc2""",
+                      (date, *vals))
+            c.commit(); c.close()
+            return self._json({"ok": True})
         if p == "/api/attempt":
             if self._guard():
                 return

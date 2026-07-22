@@ -48,10 +48,19 @@ TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
 FORCE_LIBSQL = os.environ.get("FORCE_LIBSQL_LOCAL")   # 테스트용: sync 없이 libsql 로컬 파일
 REPLICA = os.path.join(DATA_DIR, "replica.db")
 
+def _coerce(v):
+    # 원격 Hrana가 TEXT를 bytes로 줄 때가 있어 str로 정규화(json 직렬화 가능하게)
+    if isinstance(v, memoryview):
+        v = v.tobytes()
+    if isinstance(v, (bytes, bytearray)):
+        return bytes(v).decode("utf-8", "replace")
+    return v
+
 class _Row(dict):
     """이름/정수 인덱스 모두 지원하는 dict-row (sqlite3.Row 호환)."""
     __slots__ = ("_v",)
     def __init__(self, cols, vals):
+        vals = tuple(_coerce(v) for v in vals)
         super().__init__(zip(cols, vals)); self._v = vals
     def __getitem__(self, k):
         return self._v[k] if isinstance(k, int) else dict.__getitem__(self, k)
@@ -527,6 +536,14 @@ class H(http.server.BaseHTTPRequestHandler):
                 "answertext": probe("SELECT id,answer_text FROM questions LIMIT 3"),
                 "fullrow": probe("SELECT id,year,exam_round,level,subject,raw_text,answer_text FROM questions ORDER BY id LIMIT 200"),
             }
+            try:
+                r = c.execute("SELECT id,subject,raw_text FROM questions LIMIT 1").fetchone()
+                out["types"] = {k: type(r[k]).__name__ for k in ("id", "subject", "raw_text")}
+                out["real_questions"] = len([dict(x) for x in c.execute("SELECT id,year,exam_round,level,subject,raw_text,answer_text FROM questions ORDER BY id LIMIT 200")])
+                json.dumps({"q": [dict(x) for x in c.execute("SELECT * FROM questions LIMIT 2")]}, ensure_ascii=False)
+                out["json_ok"] = True
+            except Exception as e:
+                out["real_err"] = type(e).__name__ + ": " + str(e)[:150]
             c.close()
             return self._json(out)
         if p == "/api/questions":

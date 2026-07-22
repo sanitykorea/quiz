@@ -89,7 +89,7 @@ class _Conn:
     def __init__(self, raw, sync=False):
         self._raw = raw; self._sync = sync
     def execute(self, sql, params=()):
-        return _Result(self._raw.execute(sql, params))
+        return _Result(self._raw.execute(sql, tuple(params)))   # libsql 원격은 리스트 파라미터 거부 → 튜플 강제
     def executemany(self, sql, seq):
         self._raw.executemany(sql, seq); return self
     def executescript(self, script):
@@ -517,33 +517,6 @@ class H(http.server.BaseHTTPRequestHandler):
             def dl(col):
                 return [r[0] for r in c.execute(f"SELECT DISTINCT {col} FROM questions WHERE {col} IS NOT NULL AND {col}<>'' ORDER BY {col}")]
             out = {"subject": dl("subject"), "year": dl("year"), "exam_round": dl("exam_round"), "level": dl("level")}
-            c.close()
-            return self._json(out)
-        if p == "/api/dbg":
-            c = db()
-            def probe(sql, args=()):
-                try:
-                    return len(c.execute(sql, args).fetchall())
-                except Exception as e:
-                    return "ERR: " + type(e).__name__ + ": " + str(e)[:120]
-            out = {
-                "count": c.execute("SELECT COUNT(*) FROM questions").fetchone()[0],
-                "plain": probe("SELECT id FROM questions"),
-                "limit": probe("SELECT id FROM questions LIMIT 5"),
-                "order_limit": probe("SELECT id FROM questions ORDER BY id LIMIT 5"),
-                "rand_limit": probe("SELECT id FROM questions ORDER BY RANDOM() LIMIT 1"),
-                "where_txt": probe("SELECT id FROM questions WHERE subject=?", ("과학",)),
-                "answertext": probe("SELECT id,answer_text FROM questions LIMIT 3"),
-                "fullrow": probe("SELECT id,year,exam_round,level,subject,raw_text,answer_text FROM questions ORDER BY id LIMIT 200"),
-            }
-            try:
-                r = c.execute("SELECT id,subject,raw_text FROM questions LIMIT 1").fetchone()
-                out["types"] = {k: type(r[k]).__name__ for k in ("id", "subject", "raw_text")}
-                out["real_questions"] = len([dict(x) for x in c.execute("SELECT id,year,exam_round,level,subject,raw_text,answer_text FROM questions ORDER BY id LIMIT 200")])
-                json.dumps({"q": [dict(x) for x in c.execute("SELECT * FROM questions LIMIT 2")]}, ensure_ascii=False)
-                out["json_ok"] = True
-            except Exception as e:
-                out["real_err"] = type(e).__name__ + ": " + str(e)[:150]
             c.close()
             return self._json(out)
         if p == "/api/questions":

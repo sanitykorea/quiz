@@ -107,8 +107,8 @@ class _Conn:
 def db():
     if TURSO_URL:
         import libsql_experimental as libsql
-        raw = libsql.connect(REPLICA, sync_url=TURSO_URL, auth_token=TURSO_TOKEN, check_same_thread=False)
-        return _Conn(raw, sync=True)
+        raw = libsql.connect(TURSO_URL, auth_token=TURSO_TOKEN)   # 원격 직결(동기화 없음 → 'Failed sync' 없음)
+        return _Conn(raw, sync=False)
     if FORCE_LIBSQL:
         import libsql_experimental as libsql
         return _Conn(libsql.connect(os.path.join(DATA_DIR, "libsql_local.db"), check_same_thread=False), sync=False)
@@ -253,9 +253,10 @@ def parse_items(raw):
 
 def rebuild_qkey(c):
     c.execute("DELETE FROM qkey")
-    for r in c.execute("SELECT id,subject,answer_text FROM questions"):
-        for n, a in parse_key(r["answer_text"], r["subject"]).items():
-            c.execute("INSERT OR REPLACE INTO qkey(question_id,qnum,answer) VALUES(?,?,?)", (r["id"], n, a))
+    rows = c.execute("SELECT id,subject,answer_text FROM questions").fetchall()
+    keys = [(r["id"], n, a) for r in rows for n, a in parse_key(r["answer_text"], r["subject"]).items()]
+    if keys:
+        c.executemany("INSERT OR REPLACE INTO qkey(question_id,qnum,answer) VALUES(?,?,?)", keys)   # 배치 삽입(원격 왕복 최소화)
 
 
 # ---- 이미지 문항: 원본 PDF에서 문항 단위로 잘라 이미지 제공 ----

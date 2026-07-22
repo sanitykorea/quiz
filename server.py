@@ -423,8 +423,8 @@ def _gemini(system, messages, max_tokens, key):
     body = json.dumps({
         "system_instruction": {"parts": [{"text": system}]},
         "contents": contents,
-        # gemini-flash-latest는 thinking 모델 → 사고에 ~450토큰 소모. 하한을 둬 답변이 잘리지 않게.
-        "generationConfig": {"maxOutputTokens": max(int(max_tokens), 1200)},
+        # gemini-flash-latest는 thinking 모델 → 사고에 토큰 소모. 사고 억제(budget) + 답변 여유(+3500)로 긴 답변도 안 잘리게.
+        "generationConfig": {"maxOutputTokens": int(max_tokens) + 3500, "thinkingConfig": {"thinkingBudget": 512}},
     }).encode()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={urllib.parse.quote(key)}"
     req = urllib.request.Request(url, data=body, headers={"content-type": "application/json"})

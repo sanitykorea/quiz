@@ -510,6 +510,25 @@ class H(http.server.BaseHTTPRequestHandler):
             out = {"subject": dl("subject"), "year": dl("year"), "exam_round": dl("exam_round"), "level": dl("level")}
             c.close()
             return self._json(out)
+        if p == "/api/dbg":
+            c = db()
+            def probe(sql, args=()):
+                try:
+                    return len(c.execute(sql, args).fetchall())
+                except Exception as e:
+                    return "ERR: " + type(e).__name__ + ": " + str(e)[:120]
+            out = {
+                "count": c.execute("SELECT COUNT(*) FROM questions").fetchone()[0],
+                "plain": probe("SELECT id FROM questions"),
+                "limit": probe("SELECT id FROM questions LIMIT 5"),
+                "order_limit": probe("SELECT id FROM questions ORDER BY id LIMIT 5"),
+                "rand_limit": probe("SELECT id FROM questions ORDER BY RANDOM() LIMIT 1"),
+                "where_txt": probe("SELECT id FROM questions WHERE subject=?", ("과학",)),
+                "answertext": probe("SELECT id,answer_text FROM questions LIMIT 3"),
+                "fullrow": probe("SELECT id,year,exam_round,level,subject,raw_text,answer_text FROM questions ORDER BY id LIMIT 200"),
+            }
+            c.close()
+            return self._json(out)
         if p == "/api/questions":
             return self._questions(q)
         if p == "/api/qkey":

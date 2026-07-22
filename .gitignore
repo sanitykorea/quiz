@@ -17,3 +17,4 @@ libsql_local.db
 gemini_key.rtf
 *.rtf
 .DS_Store
+seed.sql

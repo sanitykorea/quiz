@@ -540,20 +540,22 @@ class H(http.server.BaseHTTPRequestHandler):
         if p == "/api/study":
             if self._guard():
                 return
-            return self._study_get(q.get("today", ""), q.get("weekStart", ""))
+            return self._study_get(q.get("today", ""), q.get("weekStart", ""), q.get("periodStart", ""))
         return self._json({"error": "not_found"}, 404)
 
-    def _study_get(self, today, week_start):
+    def _study_get(self, today, week_start, period_start):
         c = db()
         def one(sql, args=()):
             r = c.execute(sql, args).fetchone()
             return {k: round(r[k] or 0) for k in ("math", "sci", "kor", "nc2")} if r else {"math": 0, "sci": 0, "kor": 0, "nc2": 0}
+        sums = "SELECT SUM(math) math,SUM(sci) sci,SUM(kor) kor,SUM(nc2) nc2 FROM study_log"
         today_row = one("SELECT math,sci,kor,nc2 FROM study_log WHERE date=?", (today,))
-        week = one("SELECT SUM(math) math,SUM(sci) sci,SUM(kor) kor,SUM(nc2) nc2 FROM study_log WHERE date>=?", (week_start,))
-        total = one("SELECT SUM(math) math,SUM(sci) sci,SUM(kor) kor,SUM(nc2) nc2 FROM study_log")
-        days = [dict(x) for x in c.execute("SELECT date,math,sci,kor,nc2 FROM study_log WHERE date>=? ORDER BY date", (week_start,))]
+        week = one(sums + " WHERE date>=?", (week_start,))
+        period = one(sums + " WHERE date>=?", (period_start,))     # 최근 3주(21일)
+        total = one(sums)
+        days = [dict(x) for x in c.execute("SELECT date,math,sci,kor,nc2 FROM study_log WHERE date>=? ORDER BY date", (period_start,))]
         c.close()
-        return self._json({"today": today_row, "week": week, "total": total, "days": days})
+        return self._json({"today": today_row, "week": week, "period": period, "total": total, "days": days})
 
     def _questions(self, q):
         where, args = [], []

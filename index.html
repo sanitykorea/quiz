@@ -85,11 +85,11 @@ async function boot(){
   else { S.gateMode = s.setup ? 'setup' : 'locked'; render(); }
   setInterval(tick, 1000);
 }
-function weekStart(){ const d=new Date(); d.setDate(d.getDate()-6); return ymd(d); }
+function daysAgo(n){ const d=new Date(); d.setDate(d.getDate()-n); return ymd(d); }
 async function loadStudy(){
-  const r=await api('/api/study?today='+ymd(new Date())+'&weekStart='+weekStart());
+  const r=await api('/api/study?today='+ymd(new Date())+'&weekStart='+daysAgo(6)+'&periodStart='+daysAgo(20));
   if(r.today) S.mins = r.today;
-  S.studyStats = {week:r.week||{}, total:r.total||{}, days:r.days||[]};
+  S.studyStats = {week:r.week||{}, period:r.period||{}, total:r.total||{}, days:r.days||[]};
 }
 let _studyT=0;
 function saveStudy(){
@@ -357,17 +357,25 @@ function studyStatsCard(){
   const s=S.studyStats; if(!s) return '';
   const sum=o=>Math.round((o.math||0)+(o.sci||0)+(o.kor||0)+(o.nc2||0));
   const today=sum(S.mins), week=sum(s.week||{}), total=sum(s.total||{});
+  const period=s.period||{};
   const byDate={}; (s.days||[]).forEach(d=>byDate[d.date]=Math.round((d.math||0)+(d.sci||0)+(d.kor||0)+(d.nc2||0)));
   const tk=ymd(new Date());
-  const bars=[...Array(7)].map((_,i)=>{ const dt=new Date(); dt.setDate(dt.getDate()-(6-i)); const key=ymd(dt); const v=key===tk?today:(byDate[key]||0); const hp=Math.min(100,v/360*100); const wd=['일','월','화','수','목','금','토'][dt.getDay()]; const on=key===tk;
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;"><div style="font-size:9px;color:var(--text3);">${v?fmtMin(v).replace('시간','h').replace('분',''):''}</div><div style="width:100%;height:64px;display:flex;align-items:flex-end;"><div title="${wd} ${v}분" style="width:100%;background:${v?'linear-gradient(180deg,#2ee6a6,#14755C)':'var(--panel2)'};border:1px solid ${on?'var(--gold-d)':'var(--border)'};border-radius:5px 5px 0 0;height:${Math.max(4,hp)}%;transition:height .3s;"></div></div><div style="font-size:11px;color:${on?'var(--gold)':'var(--text3)'};font-weight:${on?'700':'400'};">${wd}</div></div>`;
+  const stat=(lb,v,col)=>`<div style="flex:1;min-width:100px;border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--panel2);"><div style="font-size:12px;color:var(--text2);">${lb}</div><div style="font-size:18px;font-weight:800;color:${col};margin-top:4px;">${fmtMin(v)}</div></div>`;
+  // 과목별 (최근 3주)
+  const subs=[['math','수학','#2ee6a6'],['sci','과학','#ffb35c'],['kor','국어','#8ab4ff'],['nc2',(S.nc2Pick||[]).join('·')||'선택','#ffe066']];
+  const smax=Math.max(1,...subs.map(([k])=>period[k]||0));
+  const subRows=subs.map(([k,lb,col])=>{ const v=Math.round(period[k]||0); return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="width:64px;font-size:13px;color:var(--text2);">${lb}</span><div style="flex:1;height:14px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;"><div style="height:100%;width:${v/smax*100}%;background:${col};border-radius:999px;transition:width .4s;"></div></div><span style="width:64px;text-align:right;font-size:12.5px;font-weight:700;color:${col};">${fmtMin(v)}</span></div>`; }).join('');
+  // 최근 21일(3주) 일별 막대
+  const bars=[...Array(21)].map((_,i)=>{ const dt=new Date(); dt.setDate(dt.getDate()-(20-i)); const key=ymd(dt); const v=key===tk?today:(byDate[key]||0); const hp=Math.min(100,v/360*100); const on=key===tk; const dd=dt.getDate();
+    return `<div title="${key} · ${v}분" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:56px;display:flex;align-items:flex-end;"><div style="width:100%;background:${v?'linear-gradient(180deg,#2ee6a6,#14755C)':'var(--panel2)'};border:1px solid ${on?'var(--gold-d)':'var(--border)'};border-radius:3px 3px 0 0;height:${Math.max(3,hp)}%;"></div></div><div style="font-size:8px;color:${on?'var(--gold)':'var(--text3)'};">${(dt.getDay()===1||on)?dd:''}</div></div>`;
   }).join('');
-  const stat=(lb,v,col)=>`<div style="flex:1;min-width:110px;border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--panel2);"><div style="font-size:12px;color:var(--text2);">${lb}</div><div style="font-size:18px;font-weight:800;color:${col};margin-top:4px;">${fmtMin(v)}</div></div>`;
   return `<section style="background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:16px;padding:18px;">
     <h3 style="margin:0 0 14px;font-size:16px;font-weight:800;">📊 학습 통계 <span style="font-size:12px;color:var(--text2);font-weight:600;">· 서버에 계속 쌓여요</span></h3>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">${stat('오늘',today,'var(--accent-b)')}${stat('이번 주',week,'var(--gold)')}${stat('누적',total,'#8ab4ff')}</div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:8px;">최근 7일 (막대 = 하루 학습량, 목표 360분)</div>
-    <div style="display:flex;gap:8px;align-items:flex-end;">${bars}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">${stat('오늘',today,'var(--accent-b)')}${stat('이번 주',week,'var(--gold)')}${stat('최근 3주',sum(period),'#e6a0f2')}${stat('누적',total,'#8ab4ff')}</div>
+    <div style="font-size:12px;color:var(--text2);font-weight:700;margin-bottom:10px;">과목별 (최근 3주)</div>
+    ${subRows}
+    <div style="font-size:11px;color:var(--text3);margin:16px 0 8px;">최근 3주 (막대 = 하루 학습량, 목표 360분 · 월요일에 날짜 표시)</div>
+    <div style="display:flex;gap:3px;align-items:flex-end;">${bars}</div>
   </section>`;
 }
 function vCamp(){

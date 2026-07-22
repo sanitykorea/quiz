@@ -1,0 +1,20 @@
+# Render Blueprint — 무료 웹서비스. 데이터는 Turso(외부 무료 DB)에 저장돼 재배포해도 유지.
+services:
+  - type: web
+    name: jisik-tower
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      # 아래 3개는 Render 대시보드 Environment에서 값 입력 (레포에 안 들어감)
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false

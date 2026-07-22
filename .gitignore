@@ -1,0 +1,19 @@
+# 자격증명 — 절대 커밋 금지
+gemini_key.txt
+anthropic_key.txt
+.env
+
+# 생성물 (실행 시 자동 생성)
+app.db
+_selftest.db
+pdf_cache/
+__pycache__/
+*.pyc
+replica.db
+replica.db-*
+libsql_local.db
+
+# 추가 제외
+gemini_key.rtf
+*.rtf
+.DS_Store

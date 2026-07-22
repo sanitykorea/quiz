@@ -1,0 +1,12 @@
+app.db
+_selftest.db
+pdf_cache/
+__pycache__/
+*.pyc
+gemini_key.txt
+gemini_key.rtf
+anthropic_key.txt
+.env
+.git
+replica.db
+libsql_local.db

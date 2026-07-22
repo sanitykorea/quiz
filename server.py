@@ -84,7 +84,10 @@ class _Conn:
     def executemany(self, sql, seq):
         self._raw.executemany(sql, seq); return self
     def executescript(self, script):
-        self._raw.executescript(script); return self
+        for stmt in script.split(";"):        # 원격(Hrana)은 다중문장 미지원 → 개별 실행
+            if stmt.strip():
+                self._raw.execute(stmt)
+        return self
     def commit(self):
         self._raw.commit()
         if self._sync:
@@ -400,13 +403,14 @@ def ai_provider():
     return "gemini" if gemini_key() else None
 
 def _gemini(system, messages, max_tokens, key):
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
     contents = [{"role": ("model" if m["role"] == "assistant" else "user"),
                  "parts": [{"text": m["content"]}]} for m in messages]
     body = json.dumps({
         "system_instruction": {"parts": [{"text": system}]},
         "contents": contents,
-        "generationConfig": {"maxOutputTokens": max_tokens},
+        # gemini-flash-latest는 thinking 모델 → 사고에 ~450토큰 소모. 하한을 둬 답변이 잘리지 않게.
+        "generationConfig": {"maxOutputTokens": max(int(max_tokens), 1200)},
     }).encode()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={urllib.parse.quote(key)}"
     req = urllib.request.Request(url, data=body, headers={"content-type": "application/json"})
@@ -766,7 +770,8 @@ if __name__ == "__main__":
     print(f"[boot] listening on {host}:{port} (turso={'yes' if TURSO_URL else 'no'})", flush=True)
     try:
         init_db()
-        print("[boot] init_db 완료", flush=True)
+        c = db(); nq = c.execute("SELECT COUNT(*) FROM questions").fetchone()[0]; c.close()
+        print(f"[boot] init_db 완료 — 기출 {nq}문항", flush=True)
     except Exception as e:
         import traceback
         print(f"[boot] init_db 실패: {e}", flush=True); traceback.print_exc()

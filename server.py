@@ -236,7 +236,11 @@ def parse_items(raw):
         if mp:
             flush(); a, b = int(mp.group(1)), int(mp.group(2))
             buf = [mp.group(3)] if mp.group(3) else []; i += 1
-            while i < n and not _QH.match(lines[i]) and not _PH.match(lines[i]):
+            # 지문 안의 개요 항목('1. 2. 3.')에서 끊기지 않게, 다음 '실제 문항'(expected번)이나 다음 지문에서만 종료
+            while i < n:
+                m2 = _QH.match(lines[i])
+                if (m2 and int(m2.group(1)) == expected) or _PH.match(lines[i]):
+                    break
                 buf.append(lines[i]); i += 1
             passages.append((a, b, '\n'.join(buf).strip())); continue
         if mq and int(mq.group(1)) == expected and expected <= 30:
@@ -274,6 +278,7 @@ def rebuild_qkey(c):
 
 # ---- 이미지 문항: 원본 PDF에서 문항 단위로 잘라 이미지 제공 ----
 _qstarts_cache = {}
+_pbreaks_cache = {}
 _qfigs_cache = {}
 
 def pdf_path(row):
@@ -285,39 +290,46 @@ def _qstarts(path):
     import fitz
     doc = fitz.open(path)
     qh = re.compile(r'^\s*(\d{1,2})\.\s')
-    starts = {}
+    ph = re.compile(r'^\s*\[\d{1,2}\s*[~～]')      # 지문 헤더 [a~b]
+    starts = {}; pbreaks = []
     for pno in range(len(doc)):
         pg = doc[pno]; W = pg.rect.width
         for b in pg.get_text("dict")["blocks"]:
             for l in b.get("lines", []):
                 txt = "".join(s["text"] for s in l["spans"]).strip()
+                col = 0 if l["bbox"][0] < W / 2 else 1
                 m = qh.match(txt)
                 if m:
                     num = int(m.group(1))
                     if num not in starts:
-                        starts[num] = (pno, 0 if l["bbox"][0] < W / 2 else 1, l["bbox"][1])
+                        starts[num] = (pno, col, l["bbox"][1])
+                elif ph.match(txt):
+                    pbreaks.append((pno, col, l["bbox"][1]))
     doc.close()
-    _qstarts_cache[path] = starts
+    _qstarts_cache[path] = starts; _pbreaks_cache[path] = pbreaks
     return starts
 
-def _qbox(pg, starts, qnum):
+def _qbox(pg, starts, qnum, pbreaks=None):
     import fitz
     pno, col, y0 = starts[qnum]
     W, H = pg.rect.width, pg.rect.height
     x0, x1 = (20, W / 2 + 4) if col == 0 else (W / 2 - 4, W - 18)
-    ys = [starts[m][2] for m in starts if starts[m][0] == pno and starts[m][1] == col and starts[m][2] > y0]
-    return fitz.Rect(x0, y0, x1, min(ys) if ys else H - 36)
+    cand = [starts[m][2] for m in starts if starts[m][0] == pno and starts[m][1] == col and starts[m][2] > y0]
+    for p, c, y in (pbreaks or []):     # 다음 지문 헤더에서도 크롭 종료(지문이 딸려오지 않게)
+        if p == pno and c == col and y > y0:
+            cand.append(y)
+    return fitz.Rect(x0, y0, x1, min(cand) if cand else H - 36)
 
 def qfigs(path):
     """그림(래스터 이미지/큰 벡터 드로잉)이 포함된 문항 번호 집합."""
     if path in _qfigs_cache:
         return _qfigs_cache[path]
     import fitz
-    starts = _qstarts(path)
+    starts = _qstarts(path); pbreaks = _pbreaks_cache.get(path)
     doc = fitz.open(path)
     figs = set()
     for num in starts:
-        pg = doc[starts[num][0]]; rect = _qbox(pg, starts, num)
+        pg = doc[starts[num][0]]; rect = _qbox(pg, starts, num, pbreaks)
         foot = pg.rect.height - 62      # 하단 푸터(평가원 로고·교시 표기) 제외
         head = 55                       # 상단 헤더 제외
         def ok(r):
@@ -353,7 +365,7 @@ def render_qimage(row, qnum):
     import fitz
     doc = fitz.open(path)
     pg = doc[starts[qnum][0]]
-    rect = _qbox(pg, starts, qnum)
+    rect = _qbox(pg, starts, qnum, _pbreaks_cache.get(path))
     rect = fitz.Rect(rect.x0, rect.y0 - 6, rect.x1, rect.y1 - 6)
     pg.get_pixmap(matrix=fitz.Matrix(2.6, 2.6), clip=rect).save(out)
     doc.close()

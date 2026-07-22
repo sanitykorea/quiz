@@ -128,10 +128,6 @@ async function submitPin(){
   }
 }
 async function relock(){ await api('/api/relock',{method:'POST'}); S.gateMode='locked'; S.entry=''; S.setupFirst=''; S.gateError=''; render(); }
-async function resetSeal(){
-  if(!confirm('봉인을 초기화할까요? 새 4자리 봉인을 다시 설정하게 됩니다. (학습 데이터는 보존됩니다)')) return;
-  await api('/api/reset',{method:'POST'}); S.gateMode='setup'; S.setup=true; S.entry=''; S.setupFirst=''; S.gateError=''; render();
-}
 
 // ---------- study logic ----------
 function examDate(){ const p=EXAM_DATE.split('-').map(Number); return new Date(p[0],p[1]-1,p[2]); }
@@ -300,8 +296,7 @@ function gate(){
         <button data-act="key" data-arg="0" style="${keyStyle}">0</button>
         <button data-act="del" style="padding:16px 0;font-size:20px;color:var(--text2);background:transparent;border:1px solid var(--border);border-radius:14px;cursor:pointer;transition:all .12s;">⌫</button>
       </div>
-      <button data-act="reset" style="margin-top:22px;background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;text-decoration:underline;">봉인 문양을 잊었어요 · 초기화</button>
-      <div style="margin-top:10px;color:var(--text3);font-size:11px;">🔒 이 봉인은 <b>서버</b>에 안전하게 저장됩니다 (기기 저장 아님)</div>
+      <div style="margin-top:22px;color:var(--text3);font-size:11px;">🔒 이 봉인은 <b>서버</b>에 안전하게 저장됩니다 (기기 저장 아님)</div>
     </div></div>`;
 }
 
@@ -605,7 +600,7 @@ function vWrong(){
 
 // ---------- event delegation ----------
 const ACTS = {
-  key:tapKey, del:delKey, reset:resetSeal, relock,
+  key:tapKey, del:delKey, relock,
   theme:()=>patch({theme:S.theme==='light'?'dark':'light'}),
   sleep:()=>patch({sleepDone:!S.sleepDone}), wake:()=>patch({wakeDone:!S.wakeDone}),
   tab:async id=>{ S.tab=id; S.adminMsg=''; render(); if(id==='bank'&&!S.qFacets.subject.length){await loadFacets();render();} if(id==='wrong'){await loadWrong();} if(id==='admin'){await adminReload();} },

@@ -613,10 +613,6 @@ class H(http.server.BaseHTTPRequestHandler):
         if p == "/api/relock":
             drop_session(self._tok())
             return self._json({"ok": True}, cookie="sid=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict")
-        if p == "/api/reset":
-            # ponytail: 개인 단일 사용자 포털 — '봉인 분실' 시 봉인만 삭제해 재설정 허용(학습데이터 보존).
-            c = db(); c.execute("DELETE FROM meta WHERE k IN('seal_hash','seal_salt')"); c.execute("DELETE FROM sessions"); c.commit(); c.close()
-            return self._json({"ok": True}, cookie="sid=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict")
         if p == "/api/state":
             if self._guard():
                 return

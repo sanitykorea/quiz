@@ -760,19 +760,25 @@ if __name__ == "__main__":
         selftest(); raise SystemExit
     if "--sync-questions" in sys.argv:
         sync_questions(); raise SystemExit
-    init_db()
     port = int(os.environ.get("PORT", 8787))
-    host = os.environ.get("HOST", "127.0.0.1")   # 배포 시 HOST=0.0.0.0
+    # 배포(PORT 지정됨)면 0.0.0.0, 로컬이면 127.0.0.1
+    host = os.environ.get("HOST") or ("0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
     socketserver.ThreadingTCPServer.allow_reuse_address = True
-    with socketserver.ThreadingTCPServer((host, port), H) as srv:
-        srv.daemon_threads = True
-        print(f"지식의 탑 → http://{host}:{port}")
-        print(f"  💾 저장소: {'Turso(클라우드, 영속)' if TURSO_URL else '로컬 sqlite (' + DB + ')'}")
-        if ai_provider() == "gemini":
-            print(f"  🧚 수호령: Google AI Studio(Gemini · {os.environ.get('GEMINI_MODEL','gemini-2.0-flash')}) 연결됨")
-        else:
-            print("  (AI 미연결: gemini_key.txt 파일에 Google AI Studio 키를 넣거나 GEMINI_API_KEY 설정)")
-        try:
-            srv.serve_forever()
-        except KeyboardInterrupt:
+    # 포트를 먼저 열고(=Render가 즉시 감지) 그다음 DB 초기화 → 초기화가 느려도 포트는 열림
+    srv = socketserver.ThreadingTCPServer((host, port), H)
+    srv.daemon_threads = True
+    print(f"[boot] listening on {host}:{port} (turso={'yes' if TURSO_URL else 'no'})", flush=True)
+    try:
+        init_db()
+        print("[boot] init_db 완료", flush=True)
+    except Exception as e:
+        import traceback
+        print(f"[boot] init_db 실패: {e}", flush=True); traceback.print_exc()
+    if ai_provider() == "gemini":
+        print(f"  🧚 수호령: Google AI Studio(Gemini · {os.environ.get('GEMINI_MODEL','gemini-2.0-flash')}) 연결됨", flush=True)
+    else:
+        print("  (AI 미연결: GEMINI_API_KEY 설정 필요)", flush=True)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
             pass

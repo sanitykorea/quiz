@@ -594,7 +594,8 @@ function quiz(){
       <span style="font-size:18px;flex:0 0 auto;">${CIRC[c.n]}</span><span style="flex:1;${c.text?'':'color:var(--text3)'}">${h(c.text)||'(원문·이미지 참조)'}</span><span style="color:inherit;font-weight:800;">${extra}</span></button>`;
   }).join('');
   const choiceWrap = it.img ? 'display:flex;gap:9px;' : 'display:grid;gap:9px;';
-  const result = m ? `<div style="margin-top:12px;font-size:15px;font-weight:800;color:${m.correct?'var(--accent-b)':'var(--danger-b)'};">${m.correct?'✓ 정답!':`✗ 오답 · 정답은 ${CIRC[it.answer]}`}</div>` : '';
+  const unknownBtn = m ? '' : `<button data-act="mark" data-arg="${it.qnum}:0" style="width:100%;margin-top:9px;padding:11px;border-radius:12px;border:1px dashed var(--border);background:var(--panel2);color:var(--text3);font-size:14px;font-weight:600;cursor:pointer;">🤔 모름 · 정답 보기</button>`;
+  const result = m ? `<div style="margin-top:12px;font-size:15px;font-weight:800;color:${m.correct?'var(--accent-b)':(m.chosen===0?'#e6a0f2':'var(--danger-b)')};">${m.correct?'✓ 정답!':(m.chosen===0?`🤔 모름 — 정답은 ${CIRC[it.answer]}`:`✗ 오답 · 정답은 ${CIRC[it.answer]}`)}</div>` : '';
   return `<div id="quizCard">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
       <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--gold);">${it.qnum}번 · ${idx+1}/${its.length}</div>
@@ -605,6 +606,7 @@ function quiz(){
     <div style="border:1px solid var(--border);background:linear-gradient(180deg,var(--panel),var(--panel2));border-radius:16px;padding:20px;box-shadow:0 10px 26px rgba(0,0,0,.35);">
       ${stem}
       <div style="${choiceWrap}margin-top:16px;">${choices}</div>
+      ${unknownBtn}
       ${result}
     </div>
     <div style="display:flex;gap:10px;margin-top:14px;">
@@ -623,7 +625,7 @@ function vWrong(){
       <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(w.subject)}</span>
       <span style="font-size:13px;color:var(--text2);">${h(w.year)} · ${h(w.exam_round)}</span>
       <span style="font-size:14px;font-weight:700;">${w.qnum}번</span>
-      <span style="font-size:13px;color:var(--danger-b);">내 선택 ${CIRC[w.chosen]}</span>
+      <span style="font-size:13px;color:${w.chosen?'var(--danger-b)':'#e6a0f2'};">${w.chosen?'내 선택 '+CIRC[w.chosen]:'🤔 모름'}</span>
       <span style="font-size:13px;color:var(--accent-b);">정답 ${CIRC[w.answer]}</span>
       <button data-act="review" data-arg="${w.question_id}|${h(w.subject)}|${h(w.year)}|${h(w.exam_round)}" style="margin-left:auto;padding:6px 13px;border-radius:999px;border:1px solid rgba(122,162,255,.5);background:rgba(60,100,220,.16);color:#bcd0ff;font-size:12.5px;font-weight:700;cursor:pointer;">↺ 복습</button>
     </div>`).join('');

@@ -334,6 +334,22 @@ _qstarts_cache = {}
 _pbreaks_cache = {}
 _qfigs_cache = {}
 
+def _load_pdfmeta():
+    """미리 계산한 PDF 문항좌표·그림 정보를 캐시에 로드 → 런타임 PDF 스캔 제거(로딩 대폭 단축)."""
+    path = os.path.join(HERE, "pdfmeta.json")
+    if not os.path.exists(path):
+        return
+    try:
+        meta = json.load(open(path, encoding="utf-8"))
+    except Exception:
+        return
+    for fn, d in meta.items():
+        p = os.path.join(PDF_DIR, fn)
+        _qstarts_cache[p] = {int(k): tuple(v) for k, v in d.get("starts", {}).items()}
+        _pbreaks_cache[p] = [tuple(x) for x in d.get("pbreaks", [])]
+        _qfigs_cache[p] = set(d.get("figs", []))
+_load_pdfmeta()
+
 def pdf_path(row):
     return os.path.join(PDF_DIR, f"{row['year']}_{row['exam_round']}_{row['level']}_{row['subject']}_문제.pdf")
 

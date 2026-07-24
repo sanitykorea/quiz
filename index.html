@@ -47,7 +47,7 @@ const S = {
   checklist:{acad:false,comm:false,self:false,dili:false},
   ai:null,
   stance:'A', messages:[], input:'', chatLoading:false,
-  units:[], cards:[], schedule:[], studyStats:null,
+  units:[], cards:[], schedule:[], studyStats:null, explain:{},
   qFacets:{subject:[],year:[],exam_round:[],level:[]}, qFilter:{}, qList:[], qCurrent:null, qMsg:'',
   quizItems:[], quizIdx:0, quizMarks:{}, showRaw:false,
   wrongData:null,
@@ -221,9 +221,25 @@ async function loadQuestions(random){
   render();
 }
 async function loadQuiz(){
-  S.quizItems=[]; S.quizIdx=0; S.quizMarks={}; S.showRaw=false;
+  S.quizItems=[]; S.quizIdx=0; S.quizMarks={}; S.showRaw=false; S.explain={};
   if(!S.qCurrent) return;
   const r=await api('/api/quiz?question_id='+S.qCurrent.id); S.quizItems=r.items||[];
+  // 이미지 문항 미리 로드 → '다음' 즉시 반응
+  S.quizItems.filter(it=>it.img).forEach(it=>{ const im=new Image(); im.src='/api/qimage?question_id='+S.qCurrent.id+'&qnum='+it.qnum; });
+}
+async function explainQ(qnum){
+  const it=S.quizItems.find(x=>x.qnum===qnum); if(!it || S.explain[qnum]==='...') return;
+  const m=S.quizMarks[qnum]||{};
+  S.explain[qnum]='...'; render();
+  const raw=(S.qCurrent&&S.qCurrent.raw_text)||'';
+  const ctx = it.image ? `${S.qCurrent.subject} 기출 ${qnum}번 문항입니다. (원문 발췌)\n${raw.slice(0,3000)}` :
+    `[지문]\n${it.passage||'(없음)'}\n\n[문항 ${qnum}] ${it.stem}\n선지: ${it.choices.map(c=>c.n+') '+c.text).join(' / ')}`;
+  const chosen = m.chosen===0?'모름(안 풂)':(m.chosen?m.chosen+'번':'-');
+  try{
+    const out=await callAI([{role:'user',content:`아래 ${S.qCurrent.subject} 문제를 학생이 풀었습니다. 학생 선택: ${chosen}, 정답: ${it.answer}번.\n왜 정답이 ${it.answer}번인지, 그리고 학생이 고른/헷갈릴 선지는 왜 틀렸는지 핵심만 존댓말로 쉽게 설명해 주세요. 3~5문장.\n\n${ctx}`}], systemFor('B'), 600);
+    S.explain[qnum]=(out||'').trim();
+  }catch(e){ S.explain[qnum] = e.message==='no-ai' ? '수호령 미연결(GEMINI_API_KEY 필요).' : '해설을 불러오지 못했어요. 잠시 후 다시.'; }
+  render();
 }
 async function pickQuestion(id){ S.qCurrent=S.qList.find(x=>x.id==id)||null; await loadQuiz(); render(); }
 async function mark(qnum, choice){
@@ -234,11 +250,14 @@ async function mark(qnum, choice){
 function quizNav(d){ const n=S.quizItems.length; if(!n) return; S.quizIdx=(S.quizIdx+d+n)%n; render(); scrollTop(); }
 function scrollTop(){ const el=document.getElementById('quizCard'); if(el) el.scrollIntoView({block:'start',behavior:'smooth'}); }
 async function loadWrong(){ const r=await api('/api/wrong'); S.wrongData=r; render(); }
-async function reviewWrong(qid, subject, year, round){
+async function reviewWrong(qid, subject, year, round, qnum){
   S.tab='bank'; S.qFilter={subject, year, exam_round:round};
   if(!S.qFacets.subject.length) await loadFacets();
   await loadQuestions(false);
   await pickQuestion(qid);
+  const idx=S.quizItems.findIndex(it=>it.qnum==qnum);   // 해당 문항으로 바로 이동
+  if(idx>=0) S.quizIdx=idx;
+  render();
 }
 async function scoreQuestion(){ const q=S.qCurrent; if(!q) return;
   S.qMsg='🧚 수호령이 기출을 분석하는 중...'; render();
@@ -476,10 +495,11 @@ function vGuild(){
   return `<div style="display:grid;gap:22px;"><section>
     <div style="margin-bottom:16px;"><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">CLASS ADVANCEMENT</div>
     <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">📜 전직소 · 성공회대 입시 전략</h2>
-    <p style="margin:6px 0 0;color:var(--text2);font-size:13px;">모의고사 전투 피해(오답 수)에 따른 전직(지원) 루트</p></div>
+    <p style="margin:6px 0 0;color:var(--text2);font-size:13px;">모의고사 전투 피해(오답 수)에 따른 전직(지원) 루트</p>
+    <p style="margin:6px 0 0;color:var(--gold);font-size:12px;">※ 교과 전형은 <b>전 과목 만점(오답 0개)</b>일 때만 지원 가능</p></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;align-items:stretch;">
-      <div style="border:1px solid var(--border);background:linear-gradient(180deg,var(--panel),var(--panel2));border-radius:16px;padding:20px;display:flex;flex-direction:column;"><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--accent-b);">PATH 01</div><div style="font-size:20px;font-weight:800;margin:10px 0 2px;">전투 피해 0~3</div><div style="font-size:12px;color:var(--text3);margin-bottom:14px;">오답 0~3개 · 98점+</div><div style="margin-top:auto;font-size:15px;font-weight:700;color:var(--text);border-top:1px solid var(--border);padding-top:14px;">전직: 교과 + 열린인재 <span style="color:var(--accent-b);">중복 지원 (마스터)</span></div></div>
-      <div style="border:1px solid rgba(255,224,102,.55);background:linear-gradient(180deg,rgba(60,52,20,.45),var(--panel2));border-radius:16px;padding:20px;display:flex;flex-direction:column;box-shadow:0 0 34px rgba(255,224,102,.16);position:relative;transform:translateY(-6px);"><div style="position:absolute;top:-11px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;background:var(--gold);color:#1a1400;padding:4px 12px;border-radius:999px;white-space:nowrap;box-shadow:0 0 14px rgba(255,224,102,.5);">⭐ 추천 루트</div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">PATH 02</div><div style="font-size:20px;font-weight:800;margin:10px 0 2px;">전투 피해 4~10</div><div style="font-size:12px;color:var(--text3);margin-bottom:14px;">오답 4~10개</div><div style="margin-top:auto;font-size:15px;font-weight:800;color:var(--gold);border-top:1px solid rgba(255,224,102,.3);padding-top:14px;">전직: 열린인재 올인<div style="font-size:12px;color:var(--text2);font-weight:600;margin-top:5px;">서류 60% · 면접 40%</div></div></div>
+      <div style="border:1px solid var(--border);background:linear-gradient(180deg,var(--panel),var(--panel2));border-radius:16px;padding:20px;display:flex;flex-direction:column;"><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--accent-b);">PATH 01</div><div style="font-size:20px;font-weight:800;margin:10px 0 2px;">전투 피해 0 (만점)</div><div style="font-size:12px;color:var(--text3);margin-bottom:14px;">오답 0개 · 100점</div><div style="margin-top:auto;font-size:15px;font-weight:700;color:var(--text);border-top:1px solid var(--border);padding-top:14px;">전직: 교과 + 열린인재 <span style="color:var(--accent-b);">중복 지원 (마스터)</span></div></div>
+      <div style="border:1px solid rgba(255,224,102,.55);background:linear-gradient(180deg,rgba(60,52,20,.45),var(--panel2));border-radius:16px;padding:20px;display:flex;flex-direction:column;box-shadow:0 0 34px rgba(255,224,102,.16);position:relative;transform:translateY(-6px);"><div style="position:absolute;top:-11px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;background:var(--gold);color:#1a1400;padding:4px 12px;border-radius:999px;white-space:nowrap;box-shadow:0 0 14px rgba(255,224,102,.5);">⭐ 추천 루트</div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">PATH 02</div><div style="font-size:20px;font-weight:800;margin:10px 0 2px;">전투 피해 1~10</div><div style="font-size:12px;color:var(--text3);margin-bottom:14px;">오답 1~10개</div><div style="margin-top:auto;font-size:15px;font-weight:800;color:var(--gold);border-top:1px solid rgba(255,224,102,.3);padding-top:14px;">전직: 열린인재 올인<div style="font-size:12px;color:var(--text2);font-weight:600;margin-top:5px;">서류 60% · 면접 40%</div></div></div>
       <div style="border:1px solid var(--border);background:linear-gradient(180deg,var(--panel),var(--panel2));border-radius:16px;padding:20px;display:flex;flex-direction:column;"><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--danger-b);">PATH 03</div><div style="font-size:20px;font-weight:800;margin:10px 0 2px;">전투 피해 11↑</div><div style="font-size:12px;color:var(--text3);margin-bottom:14px;">오답 11개 이상</div><div style="margin-top:auto;font-size:15px;font-weight:700;color:var(--text);border-top:1px solid var(--border);padding-top:14px;">전직: 열린인재 + <span style="color:var(--danger-b);">수능 정시 병행</span></div></div>
     </div></section>
     <section style="background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:16px;padding:20px;max-width:720px;">
@@ -596,6 +616,12 @@ function quiz(){
   const choiceWrap = it.img ? 'display:flex;gap:9px;' : 'display:grid;gap:9px;';
   const unknownBtn = m ? '' : `<button data-act="mark" data-arg="${it.qnum}:0" style="width:100%;margin-top:9px;padding:11px;border-radius:12px;border:1px dashed var(--border);background:var(--panel2);color:var(--text3);font-size:14px;font-weight:600;cursor:pointer;">🤔 모름 · 정답 보기</button>`;
   const result = m ? `<div style="margin-top:12px;font-size:15px;font-weight:800;color:${m.correct?'var(--accent-b)':(m.chosen===0?'#e6a0f2':'var(--danger-b)')};">${m.correct?'✓ 정답!':(m.chosen===0?`🤔 모름 — 정답은 ${CIRC[it.answer]}`:`✗ 오답 · 정답은 ${CIRC[it.answer]}`)}</div>` : '';
+  const ex = S.explain[it.qnum];
+  const explainBox = m ? (
+    ex==='...' ? `<div style="margin-top:10px;font-size:13px;color:#f0c6f8;display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 해설을 영창하는 중...</div>`
+    : ex ? `<div style="margin-top:10px;background:rgba(8,12,24,.55);border:1px solid rgba(226,120,240,.3);border-radius:12px;padding:13px;font-size:14px;line-height:1.75;white-space:pre-wrap;">${h(ex)}</div>`
+    : `<button data-act="explainq" data-arg="${it.qnum}" style="margin-top:10px;padding:9px 14px;border-radius:10px;border:1px solid rgba(226,120,240,.5);background:rgba(180,70,210,.18);color:#f0c6f8;font-size:13px;font-weight:700;cursor:pointer;">🧚 왜 이게 정답인지 해설 보기</button>`
+  ) : '';
   return `<div id="quizCard">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
       <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--gold);">${it.qnum}번 · ${idx+1}/${its.length}</div>
@@ -608,6 +634,7 @@ function quiz(){
       <div style="${choiceWrap}margin-top:16px;">${choices}</div>
       ${unknownBtn}
       ${result}
+      ${explainBox}
     </div>
     <div style="display:flex;gap:10px;margin-top:14px;">
       <button data-act="qnav" data-arg="-1" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-weight:700;font-size:14px;cursor:pointer;">◀ 이전</button>
@@ -627,7 +654,7 @@ function vWrong(){
       <span style="font-size:14px;font-weight:700;">${w.qnum}번</span>
       <span style="font-size:13px;color:${w.chosen?'var(--danger-b)':'#e6a0f2'};">${w.chosen?'내 선택 '+CIRC[w.chosen]:'🤔 모름'}</span>
       <span style="font-size:13px;color:var(--accent-b);">정답 ${CIRC[w.answer]}</span>
-      <button data-act="review" data-arg="${w.question_id}|${h(w.subject)}|${h(w.year)}|${h(w.exam_round)}" style="margin-left:auto;padding:6px 13px;border-radius:999px;border:1px solid rgba(122,162,255,.5);background:rgba(60,100,220,.16);color:#bcd0ff;font-size:12.5px;font-weight:700;cursor:pointer;">↺ 복습</button>
+      <button data-act="review" data-arg="${w.question_id}|${h(w.subject)}|${h(w.year)}|${h(w.exam_round)}|${w.qnum}" style="margin-left:auto;padding:6px 13px;border-radius:999px;border:1px solid rgba(122,162,255,.5);background:rgba(60,100,220,.16);color:#bcd0ff;font-size:12.5px;font-weight:700;cursor:pointer;">↺ 복습</button>
     </div>`).join('');
   return `<div><div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">WRONG-ANSWER LOG</div>
@@ -652,8 +679,8 @@ const ACTS = {
   qload:()=>loadQuestions(false), qrandom:()=>loadQuestions(true),
   qpick:id=>pickQuestion(id), qscore:scoreQuestion,
   mark:arg=>{const[n,c]=arg.split(':').map(Number); mark(n,c);},
-  qnav:d=>quizNav(+d), toggleraw:()=>{S.showRaw=!S.showRaw;render();},
-  review:arg=>{const[id,s,y,r]=arg.split('|'); reviewWrong(+id,s,y,r);},
+  qnav:d=>quizNav(+d), toggleraw:()=>{S.showRaw=!S.showRaw;render();}, explainq:n=>explainQ(+n),
+  review:arg=>{const[id,s,y,r,qn]=arg.split('|'); reviewWrong(+id,s,y,r,+qn);},
   wrongclear:async()=>{ if(confirm('오답노트 기록을 모두 지울까요?')){ await api('/api/wrong/clear',{method:'POST'}); await loadWrong(); } },
   atab:async id=>{S.adminTab=id;S.adminMsg='';await adminReload();},
   asave:arg=>adminSave(arg==='new'?null:+arg), adel:id=>adminDelete(+id),

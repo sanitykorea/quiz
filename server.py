@@ -607,6 +607,8 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        if ctype.startswith("text/html"):
+            self.send_header("Cache-Control", "no-cache, must-revalidate")  # 배포 즉시 반영
         self.end_headers()
         self.wfile.write(data)
 

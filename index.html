@@ -591,6 +591,7 @@ function uploadCard(){
       <datalist id="subjlist">${opt(['국어','수학','영어','사회','과학','도덕','한국사'])}</datalist>
     </div></div>`;
 }
+let _upFiles=[];   // 선택한 업로드 파일(재렌더로 input이 비워져도 유지)
 const SUBJS=['국어','수학','영어','사회','과학','도덕','한국사'];
 function parseMeta(fn){
   // 파일명에서 연도·회차·과정·과목을 유연하게 추출 (구분자·순서 무관)
@@ -605,7 +606,8 @@ function parseMeta(fn){
   return ok?meta:null;
 }
 async function uploadPdf(){
-  const files=[...document.getElementById('up_file').files];
+  const inp=document.getElementById('up_file');
+  const files=_upFiles.length?_upFiles:(inp?[...inp.files]:[]);   // 저장분 우선(재렌더 대비)
   if(!files.length){ S.adminMsg='⚠️ 파일을 선택하세요.'; render(); return; }
   const form={type:document.getElementById('up_type').value, year:document.getElementById('up_year').value.trim(), exam_round:document.getElementById('up_round').value, level:document.getElementById('up_level').value, subject:document.getElementById('up_subject').value.trim()};
   let ok=0, fail=0, errs=[];
@@ -618,6 +620,7 @@ async function uploadPdf(){
     const res=await api('/api/upload',{method:'POST',...jbody({...meta, data})});
     if(res.ok) ok++; else { fail++; errs.push(f.name+'('+(res.error||res.status)+')'); }
   }
+  _upFiles=[];   // 처리 끝 → 저장분 비움(다음 선택 위해)
   S.adminMsg=`✅ ${ok}건 완료${fail?` · ❌ ${fail}건 실패: ${errs.join(', ')}`:''}`;
   if(!S.qFacets.subject.length) await loadFacets(); await adminReload();
 }
@@ -775,6 +778,7 @@ $.addEventListener('click', e=>{ const el=e.target.closest('[data-act]'); if(!el
 function bindInputs(){
   $.querySelectorAll('[data-model]').forEach(el=>{ el.oninput=()=>{ S[el.getAttribute('data-model')]=el.value; }; });
   $.querySelectorAll('[data-filter]').forEach(el=>{ el.onchange=()=>{ S.qFilter[el.getAttribute('data-filter')]=el.value; }; });
+  const uf=document.getElementById('up_file'); if(uf) uf.onchange=()=>{ _upFiles=[...uf.files]; };  // 선택 즉시 저장 → 재렌더에도 안 날아감
   const ci=document.getElementById('chatInput'); if(ci) ci.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); send(); } };
 }
 

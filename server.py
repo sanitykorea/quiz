@@ -859,9 +859,10 @@ class H(http.server.BaseHTTPRequestHandler):
     def _upload(self, b):
         """기출/정답 PDF 업로드 → 파일명 규격화·저장·텍스트 추출·문항 등록(관리자 전용)."""
         kind = b.get("type")                 # '문제' 또는 '정답'
-        year, rnd, level, subj = b.get("year"), b.get("exam_round"), b.get("level"), b.get("subject")
+        year, rnd, level, subj = b.get("year"), b.get("exam_round"), b.get("level"), (b.get("subject") or "")
         data = b.get("data", "")
-        if kind not in ("문제", "정답") or not all([year, rnd, level, subj]) or not data:
+        # 문제는 과목 필수, 정답(회차 전체 정답표)은 과목 없어도 됨
+        if kind not in ("문제", "정답") or not all([year, rnd, level]) or not data or (kind == "문제" and not subj):
             return self._json({"error": "bad_input"}, 400)
         if "," in data:                      # data:...;base64, 접두 제거
             data = data.split(",", 1)[1]
@@ -902,14 +903,21 @@ class H(http.server.BaseHTTPRequestHandler):
             self._reparse_row(c, qid)       # 정답표가 이미 있으면 qkey 갱신
         else:  # 정답
             os.remove(tmp)
-            if not exist:
-                cur = c.execute("INSERT INTO questions(year,exam_round,level,subject,answer_text) VALUES(?,?,?,?,?)",
-                                (year, rnd, level, subj, text))
-                qid = cur.lastrowid
-            else:
-                c.execute("UPDATE questions SET answer_text=? WHERE id=?", (text, exist["id"]))
-                qid = exist["id"]
-            self._reparse_row(c, qid)       # 정답키 재생성
+            if subj:
+                targets = [exist["id"]] if exist else [c.execute(
+                    "INSERT INTO questions(year,exam_round,level,subject,answer_text) VALUES(?,?,?,?,?)",
+                    (year, rnd, level, subj, text)).lastrowid]
+            else:   # 과목 미지정 = 회차 전체 정답표 → 해당 회차 모든 과목 행에 반영
+                targets = [r["id"] for r in c.execute(
+                    "SELECT id FROM questions WHERE year=? AND exam_round=? AND level=?", (year, rnd, level))]
+            for tid in targets:
+                c.execute("UPDATE questions SET answer_text=? WHERE id=?", (text, tid))
+                self._reparse_row(c, tid)   # 정답키 재생성
+            qid = targets[0] if targets else None
+            nkeys = c.execute("SELECT COUNT(*) n FROM qkey WHERE question_id IN (%s)" %
+                              (",".join("?" * len(targets)) or "NULL"), targets).fetchone()["n"] if targets else 0
+            c.commit(); c.close()
+            return self._json({"ok": True, "kind": kind, "updated": len(targets), "chars": len(text), "keys": nkeys})
         nkeys = c.execute("SELECT COUNT(*) n FROM qkey WHERE question_id=?", (qid,)).fetchone()["n"]
         c.commit(); c.close()
         return self._json({"ok": True, "id": qid, "kind": kind, "file": pname if kind == "문제" else None,

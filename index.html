@@ -23,12 +23,16 @@
   @keyframes orbGlow{ 0%,100%{ box-shadow:0 0 32px rgba(46,230,166,.45), inset 0 0 30px rgba(255,224,102,.22);} 50%{ box-shadow:0 0 58px rgba(46,230,166,.72), inset 0 0 42px rgba(255,224,102,.4);} }
   @keyframes fadeUp{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:none;} }
   @keyframes blink{ 0%,100%{ opacity:.25;} 50%{ opacity:1;} }
-  [data-theme="light"]{ --bg:#ece3d0 !important; --bg2:#f3ecdb !important; --panel:#fffdf6 !important; --panel2:#f4ecd9 !important; --border:#ddceac !important; --line:#e7dcc4 !important; --header:rgba(255,251,240,.9) !important; --text:#2a2620 !important; --text2:#6a6250 !important; --text3:#9a9075 !important; --accent:#0f6a53 !important; --accent-b:#0d855f !important; --gold:#a9781a !important; --gold-d:#7d580f !important; --danger:#c0392b !important; --danger-b:#c94636 !important; background: radial-gradient(1100px 640px at 50% -12%, #fffaf0, rgba(255,250,240,0) 60%), radial-gradient(820px 560px at 100% 100%, rgba(15,106,83,.10), rgba(0,0,0,0) 55%), var(--bg) !important; }
+  @keyframes toastUp{ 0%{opacity:0;transform:translate(-50%,12px) scale(.85);} 14%{opacity:1;transform:translate(-50%,0) scale(1.08);} 28%{transform:translate(-50%,0) scale(1);} 78%{opacity:1;} 100%{opacity:0;transform:translate(-50%,-46px) scale(1);} }
+  @keyframes popIn{ 0%{transform:scale(.6);opacity:0;} 60%{transform:scale(1.12);} 100%{transform:scale(1);opacity:1;} }
+  @keyframes shakeX{ 0%,100%{transform:translateX(0);} 20%,60%{transform:translateX(-5px);} 40%,80%{transform:translateX(5px);} }
+  @keyframes sheen{ 0%{background-position:-140% 0;} 100%{background-position:240% 0;} }
+  [data-theme="light"]{ --bg:#ece3d0 !important; --bg2:#f3ecdb !important; --panel:#fffdf6 !important; --panel2:#f4ecd9 !important; --border:#ddceac !important; --line:#e7dcc4 !important; --header:rgba(255,251,240,.9) !important; --text:#2a2620 !important; --text2:#6a6250 !important; --text3:#9a9075 !important; --accent:#0f6a53 !important; --accent-b:#0d855f !important; --gold:#a9781a !important; --gold-d:#7d580f !important; --danger:#c0392b !important; --danger-b:#c94636 !important; --inset:#efe6d2 !important; --tintB:rgba(70,110,200,.10) !important; --tintO:rgba(200,120,40,.11) !important; --tintP:rgba(170,80,190,.10) !important; --blue:#2f56c0 !important; --orange:#a85712 !important; --pink:#9a2fae !important; --bluebd:rgba(70,110,200,.4) !important; --orangebd:rgba(200,120,40,.42) !important; --pinkbd:rgba(170,80,190,.4) !important; background: radial-gradient(1100px 640px at 50% -12%, #fffaf0, rgba(255,250,240,0) 60%), radial-gradient(820px 560px at 100% 100%, rgba(15,106,83,.10), rgba(0,0,0,0) 55%), var(--bg) !important; }
   input,textarea,select{ outline:none; }
 </style>
 </head>
 <body>
-<div id="root" data-theme="dark" style="--bg:#06090f;--bg2:#0b1120;--panel:#101a2c;--panel2:#0b1322;--border:#213152;--line:#182541;--header:rgba(8,12,20,.82);--text:#e9eef8;--text2:#9db0d0;--text3:#5d6f8f;--accent:#14755C;--accent-b:#2ee6a6;--gold:#FFE066;--gold-d:#c9a227;--danger:#ff5468;--danger-b:#ff8093; min-height:100vh; background: radial-gradient(1200px 720px at 50% -12%, #12233f 0%, rgba(18,35,63,0) 58%), radial-gradient(900px 640px at 100% 100%, rgba(20,117,92,.20), rgba(0,0,0,0) 55%), radial-gradient(760px 520px at 0% 92%, rgba(255,224,102,.08), rgba(0,0,0,0) 55%), var(--bg); color:var(--text); font-family:'Pretendard', system-ui, -apple-system, sans-serif; line-height:1.55; -webkit-tap-highlight-color:transparent;"></div>
+<div id="root" data-theme="dark" style="--bg:#06090f;--bg2:#0b1120;--panel:#101a2c;--panel2:#0b1322;--border:#213152;--line:#182541;--header:rgba(8,12,20,.82);--text:#e9eef8;--text2:#9db0d0;--text3:#5d6f8f;--accent:#14755C;--accent-b:#2ee6a6;--gold:#FFE066;--gold-d:#c9a227;--danger:#ff5468;--danger-b:#ff8093;--inset:#0a1120;--tintB:rgba(30,52,96,.5);--tintO:rgba(70,44,20,.5);--tintP:rgba(66,26,74,.5);--blue:#9ab6ff;--orange:#ffb673;--pink:#e6a0f2;--bluebd:rgba(122,162,255,.42);--orangebd:rgba(255,160,80,.42);--pinkbd:rgba(226,120,240,.45); min-height:100vh; background: radial-gradient(1200px 720px at 50% -12%, #12233f 0%, rgba(18,35,63,0) 58%), radial-gradient(900px 640px at 100% 100%, rgba(20,117,92,.20), rgba(0,0,0,0) 55%), radial-gradient(760px 520px at 0% 92%, rgba(255,224,102,.08), rgba(0,0,0,0) 55%), var(--bg); color:var(--text); font-family:'Pretendard', system-ui, -apple-system, sans-serif; line-height:1.55; -webkit-tap-highlight-color:transparent;"></div>
 
 <script>
 const EXAM_DATE = '2026-08-11';
@@ -49,7 +53,7 @@ const S = {
   stance:'A', messages:[], input:'', chatLoading:false,
   units:[], cards:[], schedule:[], studyStats:null, explain:{},
   qFacets:{subject:[],year:[],exam_round:[],level:[]}, qFilter:{}, qList:[], qCurrent:null, qMsg:'',
-  quizItems:[], quizIdx:0, quizMarks:{}, showRaw:false,
+  quizItems:[], quizIdx:0, quizMarks:{}, showRaw:false, streak:0,
   wrongData:null, wrongAnalysis:'',
   adminTab:'questions', adminMsg:'',
 };
@@ -167,7 +171,7 @@ function barrier(){
 }
 function nextUnit(){ if(!S.units.length) return; patch({towerUnit:(S.towerUnit+1)%S.units.length}); }
 function flip(){ S.flipped=!S.flipped; render(); }
-function critical(){ const c=S.cards[S.deckIdx]; if(!c) return; patch({known:{...S.known,[c.id]:true}, deckIdx:(S.deckIdx+1)%S.cards.length, flipped:false, dodgeText:''}); }
+function critical(){ const c=S.cards[S.deckIdx]; if(!c) return; toast('🗡 치명타!  몬스터 처치','good'); patch({known:{...S.known,[c.id]:true}, deckIdx:(S.deckIdx+1)%S.cards.length, flipped:false, dodgeText:''}); }
 function renderSegs(body){ return String(body||'').split('**').map((t,i)=> i%2 ? `<span style="color:var(--gold);font-weight:800;text-shadow:0 0 10px rgba(255,224,102,.5);background:rgba(255,224,102,.10);padding:0 3px;border-radius:4px;">${h(t)}</span>` : h(t)).join(''); }
 
 // ---------- AI ----------
@@ -221,7 +225,7 @@ async function loadQuestions(random){
   render();
 }
 async function loadQuiz(){
-  S.quizItems=[]; S.quizIdx=0; S.quizMarks={}; S.showRaw=false; S.explain={};
+  S.quizItems=[]; S.quizIdx=0; S.quizMarks={}; S.showRaw=false; S.explain={}; S.streak=0;
   if(!S.qCurrent) return;
   const r=await api('/api/quiz?question_id='+S.qCurrent.id); S.quizItems=r.items||[];
   // 이미지 문항 미리 로드 → '다음' 즉시 반응
@@ -245,7 +249,20 @@ async function pickQuestion(id){ S.qCurrent=S.qList.find(x=>x.id==id)||null; awa
 async function mark(qnum, choice){
   if(!S.qCurrent || S.quizMarks[qnum]) return;   // 이미 채점된 문항은 재채점 안 함
   const r=await api('/api/attempt',{method:'POST',...jbody({question_id:S.qCurrent.id, qnum, chosen:choice})});
-  if(r.ok){ S.quizMarks[qnum]={chosen:choice, correct:r.correct, answer:r.answer}; render(); }
+  if(r.ok){
+    S.quizMarks[qnum]={chosen:choice, correct:r.correct, answer:r.answer};
+    if(r.correct){ S.streak=(S.streak||0)+1; const xp=10*Math.min(S.streak,5); toast(S.streak>=2?`🔥 ${S.streak} 연속!  +${xp} XP`:`⚔️ 명중!  +10 XP`, 'good'); }
+    else { const had=S.streak; S.streak=0; toast(choice===0?'🤔 다음엔 맞혀보자':(had>=2?`💥 콤보 끊김…`:'💧 아쉬워요'), 'bad'); }
+    render();
+  }
+}
+function toast(text, kind){
+  const good=kind==='good';
+  const el=document.createElement('div');
+  el.textContent=text;
+  el.style.cssText=`position:fixed;left:50%;top:20%;z-index:300;transform:translateX(-50%);padding:12px 24px;border-radius:999px;font-weight:800;font-size:17px;pointer-events:none;white-space:nowrap;color:${good?'#2a1c00':'#fff'};background:${good?'linear-gradient(180deg,#ffe58a,#f2b705)':'linear-gradient(180deg,#ff8093,#e0384b)'};box-shadow:0 10px 34px rgba(0,0,0,.4),0 0 22px ${good?'rgba(255,200,60,.6)':'rgba(255,80,104,.5)'};animation:toastUp 1.4s ease forwards;`;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),1450);
 }
 function quizNav(d){ const n=S.quizItems.length; if(!n) return; S.quizIdx=(S.quizIdx+d+n)%n; render(); scrollTop(); }
 function scrollTop(){ const el=document.getElementById('quizCard'); if(el) el.scrollIntoView({block:'start',behavior:'smooth'}); }
@@ -450,39 +467,39 @@ function vTower(){
   const u=S.units[S.towerUnit]||{subject:'',title:'(지문 없음)',body:''};
   const card=S.cards[S.deckIdx];
   const knownCount=Object.keys(S.known).filter(k=>S.known[k]).length;
-  const scoutBody = S.units.length ? `<div style="font-family:'Cinzel',serif;font-size:12px;color:#9ab6ff;letter-spacing:1px;">${h(u.subject)} · SECTOR ${S.towerUnit+1}/${S.units.length}</div>
+  const scoutBody = S.units.length ? `<div style="font-family:'Cinzel',serif;font-size:12px;color:var(--blue);letter-spacing:1px;">${h(u.subject)} · SECTOR ${S.towerUnit+1}/${S.units.length}</div>
       <h4 style="margin:6px 0 10px;font-size:19px;">${h(u.title)}</h4>
       <p style="margin:0;font-size:15px;line-height:1.95;color:var(--text);">${renderSegs(u.body)}</p>` : '<p style="color:var(--text3);">관리소에서 학습 지문을 추가하세요.</p>';
-  const cardBox = card ? `<div data-act="flip" style="height:184px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;border-radius:14px;border:${S.flipped?'1px solid rgba(46,230,166,.45)':'1px solid rgba(255,160,80,.4)'};background:${S.flipped?'linear-gradient(180deg,rgba(20,80,62,.55),rgba(8,26,20,.7))':'linear-gradient(180deg,rgba(60,40,20,.55),rgba(18,12,7,.65))'};box-shadow:${S.flipped?'0 0 22px rgba(46,230,166,.15)':'0 0 22px rgba(255,150,60,.12)'};transition:border-color .3s, background .3s;">
-      <div style="font-size:11px;color:${S.flipped?'var(--accent-b)':'#ffb673'};margin-bottom:8px;">${S.flipped?'🗡 약점 · 정의':'👹 몬스터 출현 · 개념'}</div>
-      <div style="font-size:${S.flipped?'16px':'19px'};font-weight:800;line-height:1.6;">${h(S.flipped?card.a:card.q)}</div>
+  const cardBox = card ? `<div data-act="flip" style="height:184px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;border-radius:14px;border:2px solid ${S.flipped?'var(--accent-b)':'var(--orangebd)'};background:var(--inset);box-shadow:${S.flipped?'0 0 22px rgba(46,230,166,.18)':'0 0 22px rgba(255,150,60,.14)'};transition:border-color .3s;">
+      <div style="font-size:11px;font-weight:700;color:${S.flipped?'var(--accent-b)':'var(--orange)'};margin-bottom:8px;">${S.flipped?'🗡 약점 · 정의':'👹 몬스터 출현 · 개념'}</div>
+      <div style="font-size:${S.flipped?'16px':'19px'};font-weight:800;line-height:1.6;color:var(--text);">${h(S.flipped?card.a:card.q)}</div>
       <div style="font-size:11px;color:var(--text3);margin-top:12px;">${S.flipped?'탭하여 되돌리기':'탭하여 공격 (뒤집기)'}</div></div>` : '<div style="height:184px;display:flex;align-items:center;justify-content:center;color:var(--text3);">카드가 없습니다. 관리소에서 추가하세요.</div>';
-  const dodgeBox = (S.dodgeLoading?`<div style="margin-top:12px;font-size:13px;color:#ffb673;display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 설명을 영창하는 중...</div>`:'') + (S.dodgeText?`<div style="margin-top:12px;background:rgba(8,12,24,.55);border:1px solid rgba(255,160,80,.3);border-radius:12px;padding:13px;font-size:14px;line-height:1.7;white-space:pre-wrap;">${h(S.dodgeText)}</div>`:'');
-  const blankBox = (S.blankLoading?`<div style="margin-top:12px;font-size:13px;color:#e6a0f2;display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 지식을 검증하는 중...</div>`:'') + (S.blankResult?`<div style="margin-top:12px;background:rgba(8,12,24,.55);border:1px solid rgba(226,120,240,.3);border-radius:12px;padding:14px;font-size:14px;line-height:1.75;white-space:pre-wrap;">${h(S.blankResult)}</div>`:'');
+  const dodgeBox = (S.dodgeLoading?`<div style="margin-top:12px;font-size:13px;color:var(--orange);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 설명을 영창하는 중...</div>`:'') + (S.dodgeText?`<div style="margin-top:12px;background:var(--inset);border:1px solid var(--orangebd);border-radius:12px;padding:13px;font-size:14px;line-height:1.7;white-space:pre-wrap;color:var(--text);">${h(S.dodgeText)}</div>`:'');
+  const blankBox = (S.blankLoading?`<div style="margin-top:12px;font-size:13px;color:var(--pink);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 지식을 검증하는 중...</div>`:'') + (S.blankResult?`<div style="margin-top:12px;background:var(--inset);border:1px solid var(--pinkbd);border-radius:12px;padding:14px;font-size:14px;line-height:1.75;white-space:pre-wrap;color:var(--text);">${h(S.blankResult)}</div>`:'');
   return `<div><div style="margin-bottom:16px;"><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">READING CYCLE BATTLE</div>
     <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">⚔️ 수련의 탑 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 회독 전투 시스템</span></h2></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;align-items:start;">
-      <div style="border:1px solid rgba(122,162,255,.42);background:linear-gradient(180deg,rgba(30,52,96,.5),var(--panel2));border-radius:16px;padding:18px;box-shadow:0 0 28px rgba(60,100,220,.13);">
-        <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#9ab6ff;letter-spacing:1px;">LV.1 · SCOUT</div>
+      <div style="border:1px solid var(--bluebd);background:linear-gradient(180deg,var(--tintB),var(--panel2));border-radius:16px;padding:18px;box-shadow:0 0 28px rgba(60,100,220,.13);">
+        <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--blue);letter-spacing:1px;">LV.1 · SCOUT</div>
         <h3 style="margin:8px 0 4px;font-size:18px;font-weight:800;">🔎 정찰</h3><div style="font-size:12px;color:var(--text2);margin-bottom:14px;">1~3회독 · 이해하며 읽기</div>
-        <div style="background:rgba(8,12,24,.5);border:1px solid rgba(122,162,255,.25);border-radius:12px;padding:16px;">${scoutBody}</div>
-        <button data-act="nextUnit" style="margin-top:14px;width:100%;padding:11px;border-radius:12px;border:1px solid rgba(122,162,255,.5);background:rgba(60,100,220,.16);color:#bcd0ff;font-weight:700;font-size:14px;cursor:pointer;">다음 구역으로 이동 →</button>
+        <div style="background:var(--inset);border:1px solid var(--bluebd);border-radius:12px;padding:16px;">${scoutBody}</div>
+        <button data-act="nextUnit" style="margin-top:14px;width:100%;padding:11px;border-radius:12px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-weight:700;font-size:14px;cursor:pointer;">다음 구역으로 이동 →</button>
       </div>
-      <div style="border:1px solid rgba(255,160,80,.42);background:linear-gradient(180deg,rgba(70,44,20,.5),var(--panel2));border-radius:16px;padding:18px;box-shadow:0 0 28px rgba(255,150,60,.12);">
-        <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#ffb673;letter-spacing:1px;">LV.2 · BATTLE</div>
+      <div style="border:1px solid var(--orangebd);background:linear-gradient(180deg,var(--tintO),var(--panel2));border-radius:16px;padding:18px;box-shadow:0 0 28px rgba(255,150,60,.12);">
+        <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--orange);letter-spacing:1px;">LV.2 · BATTLE</div>
         <h3 style="margin:8px 0 4px;font-size:18px;font-weight:800;">⚔️ 모의 전투</h3><div style="font-size:12px;color:var(--text2);margin-bottom:14px;">4~5회독 · 떠올려보고, 모르면 확인</div>
         ${cardBox}
         <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin:12px 2px;"><span>몬스터 ${S.cards.length?S.deckIdx+1:0}/${S.cards.length}</span><span>처치 ${knownCount} 🏆</span></div>
         <div style="display:flex;gap:8px;"><button data-act="critical" style="flex:1;padding:11px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:700;font-size:14px;cursor:pointer;">치명타 (알겠음)</button>
-        <button data-act="dodge" style="flex:1;padding:11px;border-radius:12px;border:1px solid rgba(255,160,80,.5);background:rgba(120,70,20,.2);color:#ffb673;font-weight:700;font-size:14px;cursor:pointer;">회피 (수호령 도움)</button></div>${dodgeBox}
+        <button data-act="dodge" style="flex:1;padding:11px;border-radius:12px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-weight:700;font-size:14px;cursor:pointer;">회피 (수호령 도움)</button></div>${dodgeBox}
       </div>
-      <div style="border:1px solid rgba(226,120,240,.45);background:linear-gradient(180deg,rgba(66,26,74,.5),var(--panel2));border-radius:16px;padding:18px;box-shadow:0 0 28px rgba(210,80,230,.12);">
-        <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:#e6a0f2;letter-spacing:1px;">LV.3 · CONQUEST</div>
+      <div style="border:1px solid var(--pinkbd);background:linear-gradient(180deg,var(--tintP),var(--panel2));border-radius:16px;padding:18px;box-shadow:0 0 28px rgba(210,80,230,.12);">
+        <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--pink);letter-spacing:1px;">LV.3 · CONQUEST</div>
         <h3 style="margin:8px 0 4px;font-size:18px;font-weight:800;">📜 실전 토벌</h3><div style="font-size:12px;color:var(--text2);margin-bottom:14px;">6회독~ · 말하고 쓰고 반복 (백지 test)</div>
-        <input data-model="topic" value="${h(S.topic)}" placeholder="주제 (예: 광합성)" style="width:100%;margin-bottom:10px;padding:10px 12px;border-radius:10px;border:1px solid rgba(226,120,240,.3);background:rgba(8,12,24,.5);color:var(--text);font-size:14px;">
-        <div style="position:relative;"><textarea data-model="blankText" placeholder="머릿속에 떠오르는 개념을 자유롭게 영창(작성)하세요..." style="width:100%;min-height:150px;resize:vertical;padding:14px;padding-right:52px;border-radius:12px;border:1px solid rgba(226,120,240,.3);background:linear-gradient(180deg,rgba(20,14,26,.6),rgba(8,6,14,.6));color:var(--text);font-size:15px;line-height:1.8;">${h(S.blankText)}</textarea>
+        <input data-model="topic" value="${h(S.topic)}" placeholder="주제 (예: 광합성)" style="width:100%;margin-bottom:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--pinkbd);background:var(--inset);color:var(--text);font-size:14px;">
+        <div style="position:relative;"><textarea data-model="blankText" placeholder="머릿속에 떠오르는 개념을 자유롭게 영창(작성)하세요..." style="width:100%;min-height:150px;resize:vertical;padding:14px;padding-right:52px;border-radius:12px;border:1px solid var(--pinkbd);background:var(--inset);color:var(--text);font-size:15px;line-height:1.8;">${h(S.blankText)}</textarea>
         <button data-act="mic" title="받아쓰기" style="position:absolute;top:12px;right:12px;width:40px;height:40px;border-radius:11px;font-size:17px;cursor:pointer;border:1px solid ${S.recording?'rgba(255,84,104,.6)':'var(--border)'};background:${S.recording?'rgba(255,84,104,.18)':'var(--panel2)'};color:${S.recording?'var(--danger-b)':'var(--text)'};${S.recording?'animation:bossPulse 1.2s infinite;':''}">🎙</button></div>
-        <div style="display:flex;gap:8px;margin-top:12px;"><button data-act="verify" style="flex:1;padding:12px;border-radius:12px;border:1px solid rgba(226,120,240,.55);background:linear-gradient(180deg,rgba(180,70,210,.28),rgba(120,40,150,.2));color:#f0c6f8;font-weight:800;font-size:14px;cursor:pointer;">수호령의 검증 받기 🧚</button>
+        <div style="display:flex;gap:8px;margin-top:12px;"><button data-act="verify" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-weight:800;font-size:14px;cursor:pointer;">수호령의 검증 받기 🧚</button>
         <button data-act="clearBlank" style="padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:14px;cursor:pointer;">지우기</button></div>${blankBox}
       </div>
     </div></div>`;
@@ -511,7 +528,7 @@ function vGuild(){
 
 function vSummon(){
   const stBtn=(on,color)=>`padding:9px 14px;border-radius:999px;font-size:12.5px;font-weight:700;cursor:pointer;border:none;transition:all .2s;white-space:nowrap;background:${on?color:'transparent'};color:${on?'#04120c':'var(--text2)'};box-shadow:${on?'0 0 16px rgba(46,230,166,.3)':'none'};`;
-  const msgs=S.messages.map(m=>`<div style="max-width:84%;align-self:${m.role==='user'?'flex-end':'flex-start'};background:${m.role==='user'?'linear-gradient(180deg,#243044,#1a2334)':'linear-gradient(180deg,rgba(20,117,92,.28),rgba(20,117,92,.14))'};border:${m.role==='user'?'1px solid var(--border)':'1px solid rgba(46,230,166,.35)'};box-shadow:${m.role==='user'?'none':'0 0 16px rgba(46,230,166,.14)'};border-radius:16px;padding:11px 15px;font-size:14.5px;line-height:1.7;white-space:pre-wrap;animation:fadeUp .25s ease;">${h(m.text)}</div>`).join('');
+  const msgs=S.messages.map(m=>`<div style="max-width:84%;align-self:${m.role==='user'?'flex-end':'flex-start'};background:${m.role==='user'?'var(--bg2)':'linear-gradient(180deg,rgba(20,117,92,.28),rgba(20,117,92,.14))'};border:${m.role==='user'?'1px solid var(--border)':'1px solid rgba(46,230,166,.35)'};box-shadow:${m.role==='user'?'none':'0 0 16px rgba(46,230,166,.14)'};color:var(--text);border-radius:16px;padding:11px 15px;font-size:14.5px;line-height:1.7;white-space:pre-wrap;animation:fadeUp .25s ease;">${h(m.text)}</div>`).join('');
   const typing = S.chatLoading?`<div style="align-self:flex-start;background:linear-gradient(180deg,rgba(20,117,92,.28),rgba(20,117,92,.14));border:1px solid rgba(46,230,166,.35);border-radius:16px;padding:13px 16px;display:flex;gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent-b);animation:blink 1s infinite;"></span><span style="width:7px;height:7px;border-radius:50%;background:var(--accent-b);animation:blink 1s infinite .2s;"></span><span style="width:7px;height:7px;border-radius:50%;background:var(--accent-b);animation:blink 1s infinite .4s;"></span></div>`:'';
   const quicks=[['오늘 퀘스트 추천해 줘','오늘 퀘스트 추천해 줘'],['면접 몬스터 소환 (질문)','면접 몬스터 소환: 성공회대 열린인재 면접 예상 질문 하나만 내줘'],['나의 스탯(루틴) 점검해 줘','나의 스탯(루틴) 점검해 줘']].map(([lb,msg])=>`<button data-act="quick" data-arg="${h(msg)}" style="white-space:nowrap;padding:7px 13px;border-radius:999px;border:1px solid rgba(46,230,166,.35);background:rgba(20,117,92,.14);color:var(--accent-b);font-size:12.5px;font-weight:600;cursor:pointer;">${lb}</button>`).join('');
   return `<div style="max-width:840px;margin:0 auto;">
@@ -539,10 +556,10 @@ function vBank(){
   const paper = q ? `<div style="margin-top:16px;">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;"><span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(q.subject)}</span><span style="font-size:13px;color:var(--text2);">${h(q.year)} · ${h(q.exam_round)} · ${h(q.level)}</span>
         <button data-act="toggleraw" style="margin-left:auto;padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-size:12px;cursor:pointer;">${S.showRaw?'원문 숨기기':'📄 전체 원문'}</button>
-        <button data-act="qscore" style="padding:6px 12px;border-radius:999px;border:1px solid rgba(226,120,240,.5);background:rgba(180,70,210,.18);color:#f0c6f8;font-size:12px;font-weight:700;cursor:pointer;">🧚 출제분석</button></div>
+        <button data-act="qscore" style="padding:6px 12px;border-radius:999px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-size:12px;font-weight:700;cursor:pointer;">🧚 출제분석</button></div>
       ${quiz()}
       ${S.showRaw?`<pre style="margin-top:14px;border:1px solid var(--border);border-radius:14px;background:var(--panel);padding:18px;max-height:60vh;overflow:auto;white-space:pre-wrap;font-family:'Pretendard',sans-serif;font-size:14px;line-height:1.85;color:var(--text);">${h(q.raw_text)}</pre>`:''}
-      ${q._ai?`<div style="margin-top:14px;border:1px solid rgba(226,120,240,.3);border-radius:14px;padding:16px;background:rgba(8,12,24,.4);white-space:pre-wrap;font-size:14px;line-height:1.75;">${h(q._ai)}</div>`:''}
+      ${q._ai?`<div style="margin-top:14px;border:1px solid var(--pinkbd);border-radius:14px;padding:16px;background:var(--inset);color:var(--text);white-space:pre-wrap;font-size:14px;line-height:1.75;">${h(q._ai)}</div>`:''}
     </div>` : '<div style="margin-top:20px;color:var(--text3);font-size:14px;">조건을 고르고 <b>📖 열람</b> 또는 <b>🎲 랜덤 소환</b>을 눌러 기출을 불러오세요.</div>';
   return `<div><div style="margin-bottom:16px;"><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">QUESTION VAULT · 기출 은행</div>
     <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">📚 문제은행 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 검정고시 기출 (black_bank)</span></h2></div>
@@ -550,7 +567,7 @@ function vBank(){
       ${sel('subject','과목')}${sel('year','연도')}${sel('exam_round','회차')}${sel('level','과정')}
       <button data-act="qload" style="padding:9px 16px;border-radius:10px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:700;font-size:14px;cursor:pointer;">📖 열람</button>
       <button data-act="qrandom" style="padding:9px 16px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-weight:700;font-size:14px;cursor:pointer;">🎲 랜덤 소환</button>
-    </div>${S.qMsg?`<div style="margin-top:10px;color:#e6a0f2;font-size:13px;">${h(S.qMsg)}</div>`:''}${list}${paper}</div>`;
+    </div>${S.qMsg?`<div style="margin-top:10px;color:var(--pink);font-size:13px;">${h(S.qMsg)}</div>`:''}${list}${paper}</div>`;
 }
 
 function uploadCard(){
@@ -558,31 +575,45 @@ function uploadCard(){
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
     <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
+    <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명이 <code>연도_회차_과정_과목_문제.pdf</code> 형식이면 아래 칸 없이 <b>자동 인식</b>돼요. (형식이 다른 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+      <input id="up_file" type="file" accept="application/pdf,.pdf" multiple style="${inp}flex:1;min-width:220px;">
+      <button data-act="uploadpdf" style="padding:9px 18px;border-radius:10px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:700;cursor:pointer;">업로드</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;">
+      <span style="font-size:12px;color:var(--text3);">파일 1개·형식 다를 때만 ▸</span>
       <select id="up_type" style="${inp}">${opt(['문제','정답'])}</select>
-      <input id="up_year" placeholder="연도(예: 2026년도)" style="${inp}min-width:150px;">
+      <input id="up_year" placeholder="연도(예: 2026년도)" style="${inp}min-width:130px;">
       <select id="up_round" style="${inp}">${opt(['1차시험','2차시험'])}</select>
       <select id="up_level" style="${inp}">${opt(['고졸학력','고등'])}</select>
-      <input id="up_subject" list="subjlist" placeholder="과목(예: 국어)" style="${inp}min-width:120px;">
+      <input id="up_subject" list="subjlist" placeholder="과목(예: 국어)" style="${inp}min-width:110px;">
       <datalist id="subjlist">${opt(['국어','수학','영어','사회','과학','도덕','한국사'])}</datalist>
-      <input id="up_file" type="file" accept="application/pdf,.pdf" style="${inp}">
-      <button data-act="uploadpdf" style="padding:9px 18px;border-radius:10px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:700;cursor:pointer;">업로드</button>
     </div></div>`;
 }
+function parseMeta(fn){
+  const base=fn.replace(/\.[pP][dD][fF]$/,'');
+  const p=base.split('_');
+  if(p.length>=5 && p[p.length-1]==='문제') return {type:'문제', year:p[0], exam_round:p[1], level:p[2], subject:p.slice(3,p.length-1).join('_')};
+  if(/정답/.test(base) && p.length>=4) return {type:'정답', year:p[0], exam_round:p[1], level:p[2], subject:''};
+  return null;
+}
 async function uploadPdf(){
-  const f=document.getElementById('up_file').files[0];
-  const type=document.getElementById('up_type').value;
-  const year=document.getElementById('up_year').value.trim();
-  const rnd=document.getElementById('up_round').value;
-  const level=document.getElementById('up_level').value;
-  const subj=document.getElementById('up_subject').value.trim();
-  if(!f||!year||!subj){ S.adminMsg='⚠️ 파일·연도·과목을 입력하세요.'; render(); return; }
-  S.adminMsg='📤 업로드·텍스트 추출 중... (잠시만요)'; render();
-  const data=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f);});
-  const res=await api('/api/upload',{method:'POST',...jbody({type,year,exam_round:rnd,level,subject:subj,data})});
-  if(res.ok){ S.adminMsg=`✅ ${type} 등록 완료 — ${res.chars}자 추출${res.keys?`, 정답키 ${res.keys}개`:''}`; if(!S.qFacets.subject.length)await loadFacets(); await adminReload(); }
-  else { S.adminMsg='❌ 실패: '+(res.error||res.status)+(res.detail?(' · '+res.detail):''); render(); }
+  const files=[...document.getElementById('up_file').files];
+  if(!files.length){ S.adminMsg='⚠️ 파일을 선택하세요.'; render(); return; }
+  const form={type:document.getElementById('up_type').value, year:document.getElementById('up_year').value.trim(), exam_round:document.getElementById('up_round').value, level:document.getElementById('up_level').value, subject:document.getElementById('up_subject').value.trim()};
+  let ok=0, fail=0, errs=[];
+  for(let i=0;i<files.length;i++){
+    const f=files[i];
+    let meta=parseMeta(f.name);
+    if(!meta){ if(files.length===1 && form.year && (form.type!=='문제'||form.subject)) meta=form; else { fail++; errs.push(f.name+'(파일명 인식 실패)'); continue; } }
+    S.adminMsg=`📤 ${i+1}/${files.length} 처리 중… ${f.name}`; render();
+    const data=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f);});
+    const res=await api('/api/upload',{method:'POST',...jbody({...meta, data})});
+    if(res.ok) ok++; else { fail++; errs.push(f.name+'('+(res.error||res.status)+')'); }
+  }
+  S.adminMsg=`✅ ${ok}건 완료${fail?` · ❌ ${fail}건 실패: ${errs.join(', ')}`:''}`;
+  if(!S.qFacets.subject.length) await loadFacets(); await adminReload();
 }
 function vAdmin(){
   const tabs=[['questions','기출 문제'],['units','학습 지문'],['cards','플래시카드'],['schedule','고정일정']];
@@ -624,8 +655,8 @@ function quiz(){
   const prev=idx>0?its[idx-1]:null;
   const samePassage = it.passage && prev && prev.passage===it.passage;
   // 지문 (같은 지문 연속이면 그대로 노출)
-  const passage = it.passage ? `<div style="border:1px solid rgba(122,162,255,.35);background:rgba(30,52,96,.28);border-radius:14px;padding:14px 16px;margin-bottom:14px;">
-      <div style="font-family:'Cinzel',serif;font-size:11px;color:#9ab6ff;letter-spacing:1px;margin-bottom:8px;">📖 지문 ${samePassage?'· 앞 문항과 동일':''}</div>
+  const passage = it.passage ? `<div style="border:1px solid var(--bluebd);background:var(--tintB);border-radius:14px;padding:14px 16px;margin-bottom:14px;">
+      <div style="font-family:'Cinzel',serif;font-size:11px;color:var(--blue);letter-spacing:1px;margin-bottom:8px;">📖 지문 ${samePassage?'· 앞 문항과 동일':''}</div>
       <div style="max-height:34vh;overflow:auto;white-space:pre-wrap;font-size:14.5px;line-height:1.85;color:var(--text);">${h(it.passage)}</div></div>` : '';
   // 발문 (수학 등: PDF 원본 이미지)
   const stem = it.img
@@ -647,16 +678,16 @@ function quiz(){
   }).join('');
   const choiceWrap = it.img ? 'display:flex;gap:9px;' : 'display:grid;gap:9px;';
   const unknownBtn = m ? '' : `<button data-act="mark" data-arg="${it.qnum}:0" style="width:100%;margin-top:9px;padding:11px;border-radius:12px;border:1px dashed var(--border);background:var(--panel2);color:var(--text3);font-size:14px;font-weight:600;cursor:pointer;">🤔 모름 · 정답 보기</button>`;
-  const result = m ? `<div style="margin-top:12px;font-size:15px;font-weight:800;color:${m.correct?'var(--accent-b)':(m.chosen===0?'#e6a0f2':'var(--danger-b)')};">${m.correct?'✓ 정답!':(m.chosen===0?`🤔 모름 — 정답은 ${CIRC[it.answer]}`:`✗ 오답 · 정답은 ${CIRC[it.answer]}`)}</div>` : '';
+  const result = m ? `<div style="margin-top:12px;font-size:15px;font-weight:800;color:${m.correct?'var(--accent-b)':(m.chosen===0?'var(--pink)':'var(--danger-b)')};">${m.correct?'✓ 정답!':(m.chosen===0?`🤔 모름 — 정답은 ${CIRC[it.answer]}`:`✗ 오답 · 정답은 ${CIRC[it.answer]}`)}</div>` : '';
   const ex = S.explain[it.qnum];
   const explainBox = m ? (
-    ex==='...' ? `<div style="margin-top:10px;font-size:13px;color:#f0c6f8;display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 해설을 영창하는 중...</div>`
-    : ex ? `<div style="margin-top:10px;background:rgba(8,12,24,.55);border:1px solid rgba(226,120,240,.3);border-radius:12px;padding:13px;font-size:14px;line-height:1.75;white-space:pre-wrap;">${h(ex)}</div>`
-    : `<button data-act="explainq" data-arg="${it.qnum}" style="margin-top:10px;padding:9px 14px;border-radius:10px;border:1px solid rgba(226,120,240,.5);background:rgba(180,70,210,.18);color:#f0c6f8;font-size:13px;font-weight:700;cursor:pointer;">🧚 왜 이게 정답인지 해설 보기</button>`
+    ex==='...' ? `<div style="margin-top:10px;font-size:13px;color:var(--pink);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 해설을 영창하는 중...</div>`
+    : ex ? `<div style="margin-top:10px;background:var(--inset);border:1px solid var(--pinkbd);color:var(--text);border-radius:12px;padding:13px;font-size:14px;line-height:1.75;white-space:pre-wrap;">${h(ex)}</div>`
+    : `<button data-act="explainq" data-arg="${it.qnum}" style="margin-top:10px;padding:9px 14px;border-radius:10px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-size:13px;font-weight:700;cursor:pointer;">🧚 왜 이게 정답인지 해설 보기</button>`
   ) : '';
   return `<div id="quizCard">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--gold);">${it.qnum}번 · ${idx+1}/${its.length}</div>
+      <div style="display:flex;align-items:center;gap:8px;"><span style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--gold);">${it.qnum}번 · ${idx+1}/${its.length}</span>${S.streak>=2?`<span style="font-family:'Press Start 2P',monospace;font-size:10px;color:#fff;background:linear-gradient(180deg,#ff8a3d,#e0384b);padding:4px 8px;border-radius:8px;box-shadow:0 0 12px rgba(255,120,60,.6);animation:popIn .3s ease;">🔥 ${S.streak} 연속</span>`:''}</div>
       <div style="font-size:12.5px;color:var(--text2);">맞음 <b style="color:var(--accent-b);">${got}</b> / 채점 ${marked} · 총 ${its.length}</div>
     </div>
     <div style="height:6px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;margin-bottom:14px;"><div style="height:100%;width:${(idx+1)/its.length*100}%;background:linear-gradient(90deg,#14755C,#2ee6a6,#ffe066);transition:width .3s;"></div></div>
@@ -684,9 +715,9 @@ function vWrong(){
       <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(w.subject)}</span>
       <span style="font-size:13px;color:var(--text2);">${h(w.year)} · ${h(w.exam_round)}</span>
       <span style="font-size:14px;font-weight:700;">${w.qnum}번</span>
-      <span style="font-size:13px;color:${w.chosen?'var(--danger-b)':'#e6a0f2'};">${w.chosen?'내 선택 '+CIRC[w.chosen]:'🤔 모름'}</span>
+      <span style="font-size:13px;color:${w.chosen?'var(--danger-b)':'var(--pink)'};">${w.chosen?'내 선택 '+CIRC[w.chosen]:'🤔 모름'}</span>
       <span style="font-size:13px;color:var(--accent-b);">정답 ${CIRC[w.answer]}</span>
-      <button data-act="review" data-arg="${w.question_id}|${h(w.subject)}|${h(w.year)}|${h(w.exam_round)}|${w.qnum}" style="margin-left:auto;padding:6px 13px;border-radius:999px;border:1px solid rgba(122,162,255,.5);background:rgba(60,100,220,.16);color:#bcd0ff;font-size:12.5px;font-weight:700;cursor:pointer;">↺ 복습</button>
+      <button data-act="review" data-arg="${w.question_id}|${h(w.subject)}|${h(w.year)}|${h(w.exam_round)}|${w.qnum}" style="margin-left:auto;padding:6px 13px;border-radius:999px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer;">↺ 복습</button>
     </div>`).join('');
   return `<div><div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">WRONG-ANSWER LOG</div>
@@ -699,9 +730,9 @@ function vWrong(){
 }
 function analyzeBox(){
   const a=S.wrongAnalysis;
-  if(a==='...') return `<div style="margin-bottom:18px;font-size:13px;color:#f0c6f8;display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 오답 패턴을 분석하는 중...</div>`;
-  if(a) return `<div style="margin-bottom:18px;border:1px solid rgba(226,120,240,.3);border-radius:14px;padding:16px;background:rgba(8,12,24,.35);white-space:pre-wrap;font-size:14px;line-height:1.75;"><div style="font-weight:800;color:#e6a0f2;margin-bottom:8px;">🧚 내 오답 분석</div>${h(a)}</div>`;
-  return `<button data-act="analyzewrong" style="margin-bottom:18px;padding:11px 18px;border-radius:12px;border:1px solid rgba(226,120,240,.5);background:linear-gradient(180deg,rgba(180,70,210,.28),rgba(120,40,150,.2));color:#f0c6f8;font-weight:800;font-size:14px;cursor:pointer;">🧚 자주 틀리는 유형·이유 분석받기</button>`;
+  if(a==='...') return `<div style="margin-bottom:18px;font-size:13px;color:var(--pink);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 오답 패턴을 분석하는 중...</div>`;
+  if(a) return `<div style="margin-bottom:18px;border:1px solid var(--pinkbd);border-radius:14px;padding:16px;background:var(--inset);color:var(--text);white-space:pre-wrap;font-size:14px;line-height:1.75;"><div style="font-weight:800;color:var(--pink);margin-bottom:8px;">🧚 내 오답 분석</div>${h(a)}</div>`;
+  return `<button data-act="analyzewrong" style="margin-bottom:18px;padding:11px 18px;border-radius:12px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-weight:800;font-size:14px;cursor:pointer;">🧚 자주 틀리는 유형·이유 분석받기</button>`;
 }
 async function analyzeWrong(){
   if(S.wrongAnalysis==='...') return;

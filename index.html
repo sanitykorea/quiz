@@ -576,7 +576,7 @@ function uploadCard(){
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
     <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드</div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
-    <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명이 <code>연도_회차_과정_과목_문제.pdf</code> 형식이면 아래 칸 없이 <b>자동 인식</b>돼요. (형식이 다른 1개는 아래 칸으로)</div>
+    <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
       <input id="up_file" type="file" accept="application/pdf,.pdf" multiple style="${inp}flex:1;min-width:220px;">
       <button data-act="uploadpdf" style="padding:9px 18px;border-radius:10px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:700;cursor:pointer;">업로드</button>
@@ -591,12 +591,18 @@ function uploadCard(){
       <datalist id="subjlist">${opt(['국어','수학','영어','사회','과학','도덕','한국사'])}</datalist>
     </div></div>`;
 }
+const SUBJS=['국어','수학','영어','사회','과학','도덕','한국사'];
 function parseMeta(fn){
+  // 파일명에서 연도·회차·과정·과목을 유연하게 추출 (구분자·순서 무관)
   const base=fn.replace(/\.[pP][dD][fF]$/,'');
-  const p=base.split('_');
-  if(p.length>=5 && p[p.length-1]==='문제') return {type:'문제', year:p[0], exam_round:p[1], level:p[2], subject:p.slice(3,p.length-1).join('_')};
-  if(/정답/.test(base) && p.length>=4) return {type:'정답', year:p[0], exam_round:p[1], level:p[2], subject:''};
-  return null;
+  const type=/정답|답안/.test(base)?'정답':'문제';
+  const ym=base.match(/(20\d\d)/);
+  const rm=base.match(/([12])\s*(?:차|회|교시)/) || base.replace(/20\d\d/,'').match(/(?:^|[_\-\s])([12])(?:[_\-\s]|$)/);
+  const level=/고졸/.test(base)?'고졸학력':(/고등/.test(base)?'고등':'');
+  const subject=SUBJS.find(s=>base.includes(s))||'';   // 정답표엔 과목이 없으면 회차 전체로 반영
+  const meta={type, year:ym?ym[1]+'년도':'', exam_round:rm?rm[1]+'차시험':'', level, subject};
+  const ok=meta.year&&meta.exam_round&&meta.level&&(type==='정답'||subject);
+  return ok?meta:null;
 }
 async function uploadPdf(){
   const files=[...document.getElementById('up_file').files];

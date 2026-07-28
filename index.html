@@ -50,7 +50,7 @@ const S = {
   units:[], cards:[], schedule:[], studyStats:null, explain:{},
   qFacets:{subject:[],year:[],exam_round:[],level:[]}, qFilter:{}, qList:[], qCurrent:null, qMsg:'',
   quizItems:[], quizIdx:0, quizMarks:{}, showRaw:false,
-  wrongData:null,
+  wrongData:null, wrongAnalysis:'',
   adminTab:'questions', adminMsg:'',
 };
 let _barrierActive = null;
@@ -249,7 +249,7 @@ async function mark(qnum, choice){
 }
 function quizNav(d){ const n=S.quizItems.length; if(!n) return; S.quizIdx=(S.quizIdx+d+n)%n; render(); scrollTop(); }
 function scrollTop(){ const el=document.getElementById('quizCard'); if(el) el.scrollIntoView({block:'start',behavior:'smooth'}); }
-async function loadWrong(){ const r=await api('/api/wrong'); S.wrongData=r; render(); }
+async function loadWrong(){ const r=await api('/api/wrong'); S.wrongData=r; S.wrongAnalysis=''; render(); }
 async function reviewWrong(qid, subject, year, round, qnum){
   S.tab='bank'; S.qFilter={subject, year, exam_round:round};
   if(!S.qFacets.subject.length) await loadFacets();
@@ -553,6 +553,37 @@ function vBank(){
     </div>${S.qMsg?`<div style="margin-top:10px;color:#e6a0f2;font-size:13px;">${h(S.qMsg)}</div>`:''}${list}${paper}</div>`;
 }
 
+function uploadCard(){
+  const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
+  const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
+  return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+      <select id="up_type" style="${inp}">${opt(['문제','정답'])}</select>
+      <input id="up_year" placeholder="연도(예: 2026년도)" style="${inp}min-width:150px;">
+      <select id="up_round" style="${inp}">${opt(['1차시험','2차시험'])}</select>
+      <select id="up_level" style="${inp}">${opt(['고졸학력','고등'])}</select>
+      <input id="up_subject" list="subjlist" placeholder="과목(예: 국어)" style="${inp}min-width:120px;">
+      <datalist id="subjlist">${opt(['국어','수학','영어','사회','과학','도덕','한국사'])}</datalist>
+      <input id="up_file" type="file" accept="application/pdf,.pdf" style="${inp}">
+      <button data-act="uploadpdf" style="padding:9px 18px;border-radius:10px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:700;cursor:pointer;">업로드</button>
+    </div></div>`;
+}
+async function uploadPdf(){
+  const f=document.getElementById('up_file').files[0];
+  const type=document.getElementById('up_type').value;
+  const year=document.getElementById('up_year').value.trim();
+  const rnd=document.getElementById('up_round').value;
+  const level=document.getElementById('up_level').value;
+  const subj=document.getElementById('up_subject').value.trim();
+  if(!f||!year||!subj){ S.adminMsg='⚠️ 파일·연도·과목을 입력하세요.'; render(); return; }
+  S.adminMsg='📤 업로드·텍스트 추출 중... (잠시만요)'; render();
+  const data=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f);});
+  const res=await api('/api/upload',{method:'POST',...jbody({type,year,exam_round:rnd,level,subject:subj,data})});
+  if(res.ok){ S.adminMsg=`✅ ${type} 등록 완료 — ${res.chars}자 추출${res.keys?`, 정답키 ${res.keys}개`:''}`; if(!S.qFacets.subject.length)await loadFacets(); await adminReload(); }
+  else { S.adminMsg='❌ 실패: '+(res.error||res.status)+(res.detail?(' · '+res.detail):''); render(); }
+}
 function vAdmin(){
   const tabs=[['questions','기출 문제'],['units','학습 지문'],['cards','플래시카드'],['schedule','고정일정']];
   const nav=tabs.map(([id,lb])=>`<button data-act="atab" data-arg="${id}" style="padding:9px 15px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;border:1px solid ${S.adminTab===id?'var(--gold-d)':'var(--border)'};background:${S.adminTab===id?'rgba(255,224,102,.14)':'var(--panel2)'};color:${S.adminTab===id?'var(--gold)':'var(--text2)'};">${lb}</button>`).join('');
@@ -577,6 +608,7 @@ function vAdmin(){
   return `<div><div style="margin-bottom:16px;"><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">ADMIN · 관리소</div>
     <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">🛠 관리소 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 내용 추가/수정</span></h2>
     <p style="margin:6px 0 0;color:var(--text2);font-size:13px;">기출 문제 · 학습 지문(<b>**단어**</b>=금색 강조) · 플래시카드 · 고정일정(결계)을 편집합니다.</p></div>
+    ${uploadCard()}
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">${nav}</div>
     ${S.adminMsg?`<div style="margin-bottom:12px;color:var(--accent-b);font-size:13px;">${h(S.adminMsg)}</div>`:''}
     ${newForm}${list||'<div style="color:var(--text3);">항목이 없습니다.</div>'}</div>`;
@@ -661,8 +693,24 @@ function vWrong(){
       <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">📕 오답노트 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 틀린 문제 모음 (채점 ${d.answered||0}문항)</span></h2></div>
       ${totalWrong?`<button data-act="wrongclear" style="padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:13px;cursor:pointer;">기록 초기화</button>`:''}</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">${chips}</div>
+    ${totalWrong?analyzeBox():''}
     <div style="display:grid;gap:10px;">${items}</div>
     ${totalWrong?'<p style="margin-top:14px;color:var(--text3);font-size:12.5px;">틀린 문제를 다시 풀어 맞히면 이 목록에서 자동으로 사라져요.</p>':''}</div>`;
+}
+function analyzeBox(){
+  const a=S.wrongAnalysis;
+  if(a==='...') return `<div style="margin-bottom:18px;font-size:13px;color:#f0c6f8;display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 오답 패턴을 분석하는 중...</div>`;
+  if(a) return `<div style="margin-bottom:18px;border:1px solid rgba(226,120,240,.3);border-radius:14px;padding:16px;background:rgba(8,12,24,.35);white-space:pre-wrap;font-size:14px;line-height:1.75;"><div style="font-weight:800;color:#e6a0f2;margin-bottom:8px;">🧚 내 오답 분석</div>${h(a)}</div>`;
+  return `<button data-act="analyzewrong" style="margin-bottom:18px;padding:11px 18px;border-radius:12px;border:1px solid rgba(226,120,240,.5);background:linear-gradient(180deg,rgba(180,70,210,.28),rgba(120,40,150,.2));color:#f0c6f8;font-weight:800;font-size:14px;cursor:pointer;">🧚 자주 틀리는 유형·이유 분석받기</button>`;
+}
+async function analyzeWrong(){
+  if(S.wrongAnalysis==='...') return;
+  S.wrongAnalysis='...'; render();
+  const r=await api('/api/wrong/analyze');
+  if(r.analysis) S.wrongAnalysis=r.analysis;
+  else if(r.empty) S.wrongAnalysis='아직 분석할 오답이 없어요.';
+  else S.wrongAnalysis = r.status===503||r.error==='no-ai' ? '수호령 미연결(GEMINI_API_KEY 필요).' : '분석 실패. 잠시 후 다시.';
+  render();
 }
 
 // ---------- event delegation ----------
@@ -684,6 +732,7 @@ const ACTS = {
   wrongclear:async()=>{ if(confirm('오답노트 기록을 모두 지울까요?')){ await api('/api/wrong/clear',{method:'POST'}); await loadWrong(); } },
   atab:async id=>{S.adminTab=id;S.adminMsg='';await adminReload();},
   asave:arg=>adminSave(arg==='new'?null:+arg), adel:id=>adminDelete(+id),
+  uploadpdf:()=>uploadPdf(), analyzewrong:()=>analyzeWrong(),
 };
 $.addEventListener('click', e=>{ const el=e.target.closest('[data-act]'); if(!el) return; const a=el.getAttribute('data-act'); if(ACTS[a]) ACTS[a](el.getAttribute('data-arg'), el); });
 function bindInputs(){

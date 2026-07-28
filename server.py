@@ -11,7 +11,7 @@
 실행:  python3 server.py          → http://127.0.0.1:8787
 자체검사: python3 server.py --selftest   / 기출 재동기화: python3 server.py --sync-questions
 """
-import http.server, socketserver, sqlite3, json, hashlib, secrets, os, time, urllib.request, urllib.error, urllib.parse, re
+import http.server, socketserver, sqlite3, json, hashlib, secrets, os, time, urllib.request, urllib.error, urllib.parse, re, base64
 from http import cookies
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -205,6 +205,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS qkey(question_id INTEGER, qnum INTEGER, answer INTEGER, PRIMARY KEY(question_id,qnum));
     CREATE TABLE IF NOT EXISTS attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, question_id INTEGER, subject TEXT, year TEXT, exam_round TEXT, qnum INTEGER, chosen INTEGER, answer INTEGER, correct INTEGER, ts INTEGER);
     CREATE TABLE IF NOT EXISTS study_log(date TEXT PRIMARY KEY, math REAL DEFAULT 0, sci REAL DEFAULT 0, kor REAL DEFAULT 0, nc2 REAL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS pdf_files(name TEXT PRIMARY KEY, data TEXT);
     """)
     if "answer_text" not in [r["name"] for r in c.execute("PRAGMA table_info(questions)")]:
         c.execute("ALTER TABLE questions ADD COLUMN answer_text TEXT")
@@ -228,6 +229,7 @@ def init_db():
         for i, row in enumerate(SEED_SCHEDULE):
             c.execute("INSERT INTO schedule(day,t_start,t_end,name,kind,ord) VALUES(?,?,?,?,?,?)", (*row, i))
     c.commit()
+    materialize_pdfs(c)      # 업로드된 PDF 디스크 복원
     c.close()
 
 
@@ -419,6 +421,40 @@ def qfigs(path):
     doc.close()
     _qfigs_cache[path] = figs
     return figs
+
+def extract_pdf_text(path):
+    """PDF를 블록 기반 2단 분리로 텍스트 추출(기존 크롤러와 동일 방식 → 파서 호환)."""
+    import fitz
+    doc = fitz.open(path)
+    out = []
+    for pg in doc:
+        W = pg.rect.width
+        left, right = [], []
+        for b in pg.get_text("blocks"):
+            if len(b) >= 7 and b[6] == 0:      # 텍스트 블록만
+                (left if (b[0] + b[2]) / 2 < W / 2 else right).append(b)
+        left.sort(key=lambda b: b[1]); right.sort(key=lambda b: b[1])
+        for b in left + right:
+            out.append(b[4].rstrip())
+    doc.close()
+    return "\n".join(out)
+
+def materialize_pdfs(c):
+    """Turso에 저장된 업로드 PDF를 디스크(pdf/)로 복원(콜드스타트/재배포 후에도 이미지 렌더 가능)."""
+    try:
+        rows = c.execute("SELECT name,data FROM pdf_files").fetchall()
+    except Exception:
+        return
+    os.makedirs(PDF_DIR, exist_ok=True)
+    for r in rows:
+        dst = os.path.join(PDF_DIR, r["name"])
+        if not os.path.exists(dst) and r["data"]:
+            try:
+                with open(dst, "wb") as f:
+                    f.write(base64.b64decode(r["data"]))
+            except Exception:
+                pass
+
 
 def render_qimage(row, qnum):
     path = pdf_path(row)
@@ -618,6 +654,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._wrong()
+        if p == "/api/wrong/analyze":
+            if self._guard():
+                return
+            return self._wrong_analyze()
         if p == "/api/study":
             if self._guard():
                 return
@@ -643,11 +683,19 @@ class H(http.server.BaseHTTPRequestHandler):
         for col in ("subject", "year", "exam_round", "level"):
             if q.get(col):
                 where.append(f"{col}=?"); args.append(q[col])
-        sql = "SELECT id,year,exam_round,level,subject,raw_text,answer_text FROM questions"
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY RANDOM() LIMIT 1" if q.get("random") else " ORDER BY id LIMIT 200"
-        c = db(); rows = [dict(x) for x in c.execute(sql, args)]; c.close()
+        base = "SELECT id,year,exam_round,level,subject,raw_text,answer_text FROM questions"
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        c = db()
+        if q.get("random"):
+            # 안 풀어본 기출(응시 기록 없는 것) 우선, 다 풀었으면 전체에서 랜덤
+            und = "id NOT IN (SELECT question_id FROM attempts)"
+            uw = " WHERE " + " AND ".join(where + [und]) if where else " WHERE " + und
+            rows = [dict(x) for x in c.execute(base + uw + " ORDER BY RANDOM() LIMIT 1", args)]
+            if not rows:
+                rows = [dict(x) for x in c.execute(base + clause + " ORDER BY RANDOM() LIMIT 1", args)]
+        else:
+            rows = [dict(x) for x in c.execute(base + clause + " ORDER BY id LIMIT 200", args)]
+        c.close()
         return self._json({"questions": rows})
 
     def _quiz(self, qid):
@@ -711,6 +759,38 @@ class H(http.server.BaseHTTPRequestHandler):
         c.close()
         return self._json({"wrong": wrong, "by_subject": by_subject, "answered": total})
 
+    def _wrong_analyze(self):
+        c = db()
+        rows = c.execute("""
+            SELECT a.* FROM attempts a
+            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts GROUP BY question_id,qnum) l
+              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt
+            WHERE a.correct=0 ORDER BY a.ts DESC LIMIT 30""").fetchall()
+        if not rows:
+            c.close(); return self._json({"analysis": "", "empty": True})
+        pages, lines = {}, []
+        for w in rows:
+            qid = w["question_id"]
+            if qid not in pages:
+                pr = c.execute("SELECT raw_text FROM questions WHERE id=?", (qid,)).fetchone()
+                pages[qid] = {it["qnum"]: it for it in parse_items(pr["raw_text"])} if pr else {}
+            it = pages[qid].get(w["qnum"], {})
+            stem = (it.get("stem") or "").replace("\n", " ").strip()[:70]
+            chosen = "모름" if w["chosen"] == 0 else f"{w['chosen']}번"
+            lines.append(f"- {w['subject']} {w['qnum']}번: {stem} (내 답 {chosen}, 정답 {w['answer']}번)")
+        c.close()
+        prompt = ("아래는 학생이 검정고시 공부 중 최근 틀린 문제들입니다. "
+                  "(1) 자주 틀리는 과목·유형, (2) 틀리는 이유·패턴, (3) 과목별 보완 학습법 순서로 "
+                  "존댓말로 간결하고 구조적으로 정리해 주세요.\n\n" + "\n".join(lines))
+        try:
+            out = ai_complete("당신은 검정고시 학습 코치입니다. 학생의 오답을 분석해 도움이 되는 조언을 합니다.",
+                              [{"role": "user", "content": prompt}], 900)
+        except Exception as e:
+            return self._json({"error": "ai_failed", "detail": str(e)}, 502)
+        if out is None:
+            return self._json({"error": "no-ai"}, 503)
+        return self._json({"analysis": out.strip(), "count": len(rows)})
+
     # -- POST --
     def do_POST(self):
         p = urllib.parse.urlparse(self.path).path
@@ -759,6 +839,10 @@ class H(http.server.BaseHTTPRequestHandler):
                       (date, *vals))
             c.commit(); c.close()
             return self._json({"ok": True})
+        if p == "/api/upload":
+            if self._guard():
+                return
+            return self._upload(b)
         if p == "/api/attempt":
             if self._guard():
                 return
@@ -771,6 +855,65 @@ class H(http.server.BaseHTTPRequestHandler):
         if p in ("/api/questions", "/api/units", "/api/cards", "/api/schedule"):
             return self._admin_write(p.rsplit("/", 1)[1], b, create=True)
         return self._json({"error": "not_found"}, 404)
+
+    def _upload(self, b):
+        """기출/정답 PDF 업로드 → 파일명 규격화·저장·텍스트 추출·문항 등록(관리자 전용)."""
+        kind = b.get("type")                 # '문제' 또는 '정답'
+        year, rnd, level, subj = b.get("year"), b.get("exam_round"), b.get("level"), b.get("subject")
+        data = b.get("data", "")
+        if kind not in ("문제", "정답") or not all([year, rnd, level, subj]) or not data:
+            return self._json({"error": "bad_input"}, 400)
+        if "," in data:                      # data:...;base64, 접두 제거
+            data = data.split(",", 1)[1]
+        try:
+            raw = base64.b64decode(data)
+        except Exception:
+            return self._json({"error": "bad_base64"}, 400)
+        if raw[:4] != b"%PDF":
+            return self._json({"error": "not_pdf"}, 400)
+        # 문제 PDF는 pdf/에 규격 파일명으로 저장(이미지 렌더용) + Turso 영속
+        pname = f"{year}_{rnd}_{level}_{subj}_문제.pdf"
+        tmp = os.path.join(PDF_DIR, "_upload_tmp.pdf")
+        os.makedirs(PDF_DIR, exist_ok=True)
+        with open(tmp, "wb") as f:
+            f.write(raw)
+        try:
+            text = extract_pdf_text(tmp)
+        except ImportError:
+            os.remove(tmp); return self._json({"error": "no_fitz"}, 501)
+        except Exception as e:
+            os.remove(tmp); return self._json({"error": "extract_failed", "detail": str(e)}, 500)
+        c = db()
+        exist = c.execute("SELECT id FROM questions WHERE year=? AND exam_round=? AND level=? AND subject=?",
+                          (year, rnd, level, subj)).fetchone()
+        if kind == "문제":
+            dst = os.path.join(PDF_DIR, pname)
+            os.replace(tmp, dst)
+            c.execute("INSERT OR REPLACE INTO pdf_files(name,data) VALUES(?,?)", (pname, base64.b64encode(raw).decode()))
+            for k in (os.path.join(PDF_DIR, pname),):   # 새 PDF는 프리컴퓨트 캐시에 없으니 무효화 → 다음 접근 시 재계산
+                _qstarts_cache.pop(k, None); _pbreaks_cache.pop(k, None); _qfigs_cache.pop(k, None)
+            if exist:
+                c.execute("UPDATE questions SET raw_text=? WHERE id=?", (text, exist["id"]))
+                qid = exist["id"]
+            else:
+                cur = c.execute("INSERT INTO questions(year,exam_round,level,subject,raw_text) VALUES(?,?,?,?,?)",
+                                (year, rnd, level, subj, text))
+                qid = cur.lastrowid
+            self._reparse_row(c, qid)       # 정답표가 이미 있으면 qkey 갱신
+        else:  # 정답
+            os.remove(tmp)
+            if not exist:
+                cur = c.execute("INSERT INTO questions(year,exam_round,level,subject,answer_text) VALUES(?,?,?,?,?)",
+                                (year, rnd, level, subj, text))
+                qid = cur.lastrowid
+            else:
+                c.execute("UPDATE questions SET answer_text=? WHERE id=?", (text, exist["id"]))
+                qid = exist["id"]
+            self._reparse_row(c, qid)       # 정답키 재생성
+        nkeys = c.execute("SELECT COUNT(*) n FROM qkey WHERE question_id=?", (qid,)).fetchone()["n"]
+        c.commit(); c.close()
+        return self._json({"ok": True, "id": qid, "kind": kind, "file": pname if kind == "문제" else None,
+                           "chars": len(text), "keys": nkeys})
 
     def _attempt(self, b):
         try:

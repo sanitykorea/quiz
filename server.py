@@ -736,7 +736,7 @@ class H(http.server.BaseHTTPRequestHandler):
         for r in rows:
             groups.setdefault(r["subj"], []).append(r)
         # A4 세로 · 3열 그리드 (실제 시험지처럼 여러 문항이 한 페이지에)
-        W, H, MARGIN, GAP, COLS = 595.0, 842.0, 28.0, 14.0, 3
+        W, H, MARGIN, GAP, COLS = 595.0, 842.0, 28.0, 18.0, 2   # 실제 검정고시처럼 세로 2단
         cellW = (W - 2 * MARGIN - (COLS - 1) * GAP) / COLS
         out = fitz.open()
         for subj, items in groups.items():

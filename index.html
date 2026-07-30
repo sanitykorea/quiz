@@ -66,7 +66,7 @@ const S = {
   examSel:{}, examKeys:null, examInputs:{}, examScore:null, examResults:[], examMsg:'',
   history:[],
   towerSubject:'도덕', dodeok:null, towerConcept:{},
-  adminTab:'questions', adminMsg:'',
+  adminTab:'questions', adminMsg:'', muted:false,
 };
 const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 4점/문항
 let _barrierActive = null;
@@ -87,7 +87,7 @@ function persist(){
   _saveT = setTimeout(()=>{
     const st={ day:ymd(new Date()), theme:S.theme, sleepDone:S.sleepDone, wakeDone:S.wakeDone,
       mins:S.mins, nc2Pick:S.nc2Pick, towerUnit:S.towerUnit, deckIdx:S.deckIdx, known:S.known,
-      checklist:S.checklist, stance:S.stance, messages:(S.messages||[]).slice(-40) };
+      checklist:S.checklist, stance:S.stance, muted:S.muted, messages:(S.messages||[]).slice(-40) };
     api('/api/state', {method:'POST', ...jbody({state:st})});
   }, 400);
 }
@@ -125,6 +125,7 @@ async function openApp(){
   S.towerUnit = saved.towerUnit||0; S.deckIdx = saved.deckIdx||0; S.known = saved.known||{};
   S.checklist = saved.checklist || {acad:false,comm:false,self:false,dili:false};
   S.stance = saved.stance || 'A';
+  S.muted = !!saved.muted;
   S.messages = (saved.messages&&saved.messages.length) ? saved.messages
     : [{role:'assistant', text:'수영! 《지식의 탑》에 잘 왔어 ⚔️ 나는 너의 수호령이야.\n오늘 첫 퀘스트부터 같이 정해볼까? 아래 스펠을 눌러도 좋아.'}];
   S.gateMode = 'open';
@@ -392,6 +393,7 @@ function app(){
               <button data-act="wake" style="${rbtn(S.wakeDone)}"><span>${S.wakeDone?'✅':'⬜'}</span> 기상 08:30↓</button>
             </div>
           </div>
+          <button data-act="mute" title="효과음 켜기/끄기" style="width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:16px;cursor:pointer;">${S.muted?'🔇':'🔊'}</button>
           <button data-act="theme" title="테마 전환" style="width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:16px;cursor:pointer;">${S.theme==='light'?'☾':'☀'}</button>
           <button data-act="relock" title="다시 봉인" style="width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:15px;cursor:pointer;">🔒</button>
         </div>
@@ -621,7 +623,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0730f · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0730g · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -939,6 +941,53 @@ async function downloadWrongPdf(){
   }catch(e){ S.wrongPdfMsg='PDF 생성 실패: '+e.message; render(); }
 }
 
+// ========== 버튼 효과음 (Web Audio 합성 · 외부파일 없음) ==========
+let _ac;
+function tone(freq,dur,type='square',vol=0.11,when=0){
+  if(!_ac) return;
+  const t=_ac.currentTime+when, o=_ac.createOscillator(), g=_ac.createGain();
+  o.type=type; o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.008); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(_ac.destination); o.start(t); o.stop(t+dur+0.02);
+}
+const seq=(notes,type='square',vol=0.11)=>notes.forEach(([f,w],i)=>tone(f,0.12,type,vol,w));
+const SFX={
+  tab:()=>seq([[523,0],[784,0.05]]),                       // 탭 전환: 상승 2음
+  mark:()=>seq([[880,0],[1318,0.05]]),                     // 채점: 코인
+  pick:()=>tone(680,0.05,'triangle',0.1),                  // 선택: 부드러운 톡
+  gradeall:()=>seq([[523,0],[659,0.07],[784,0.14],[1047,0.21]]),   // 한번에 채점: 팡파레
+  examgrade:()=>seq([[523,0],[659,0.07],[784,0.14],[1047,0.21]]),
+  examload:()=>seq([[440,0],[587,0.06]]),
+  examsave:()=>seq([[784,0],[1047,0.08]]),
+  critical:()=>seq([[196,0],[294,0.03]],'sawtooth',0.13),  // 치명타: 파워
+  dodge:()=>tone(360,0.12,'sine',0.11),                    // 회피: 스윽
+  flip:()=>tone(600,0.07,'triangle',0.1),                  // 카드 뒤집기
+  qrandom:()=>seq([[440,0],[660,0.05],[880,0.1]]),         // 랜덤 소환: 반짝
+  qload:()=>tone(520,0.07,'triangle',0.1),
+  qnav:()=>tone(420,0.05,'triangle',0.09),                 // 이전/다음: 짧은 블립
+  qpick:()=>tone(560,0.05,'triangle',0.1),
+  key:()=>tone(1046,0.028,'square',0.08),                  // PIN 입력: 틱
+  del:()=>tone(300,0.05,'square',0.08),
+  send:()=>seq([[660,0],[990,0.04]]),                      // 채팅 전송: 휙
+  verify:()=>seq([[523,0],[784,0.06],[1047,0.12]]),
+  towersub:()=>tone(720,0.06,'triangle',0.1),
+  towerconcept:()=>seq([[587,0],[880,0.06]]),
+  wrongpdf:()=>seq([[440,0],[554,0.07],[659,0.14]]),
+  uploadpdf:()=>seq([[523,0],[698,0.07]]),
+  theme:()=>tone(494,0.08,'sine',0.1),
+  mute:()=>tone(400,0.06,'sine',0.1),
+  bankmode:()=>tone(640,0.06,'square',0.09),
+  relock:()=>seq([[440,0],[294,0.06]],'sine',0.11),
+};
+function playSfx(act){
+  if(S.muted) return;
+  try{
+    if(!_ac) _ac=new (window.AudioContext||window.webkitAudioContext)();
+    if(_ac.state==='suspended') _ac.resume();
+    (SFX[act]||(()=>tone(500,0.045,'square',0.08)))();   // 미지정 버튼: 기본 블립
+  }catch(e){}
+}
+
 // ---------- event delegation ----------
 const ACTS = {
   key:tapKey, del:delKey, relock,
@@ -964,6 +1013,7 @@ const ACTS = {
   atab:async id=>{S.adminTab=id;S.adminMsg='';await adminReload();},
   asave:arg=>adminSave(arg==='new'?null:+arg), adel:id=>adminDelete(+id),
   uploadpdf:()=>uploadPdf(), analyzewrong:()=>analyzeWrong(),
+  mute:()=>patch({muted:!S.muted}),
   bankmode:m=>{ S.bankMode=m; S.picks={}; S.quizMarks={}; S.graded=false; S.quizIdx=0; render(); },
   pick:arg=>{const[n,c]=arg.split(':').map(Number); S.picks[n]=c; render();},
   gradeall:()=>gradeAll(),
@@ -974,7 +1024,7 @@ const ACTS = {
   examsave:()=>saveExam(),
   wrongpdf:()=>downloadWrongPdf(),
 };
-$.addEventListener('click', e=>{ const el=e.target.closest('[data-act]'); if(!el) return; const a=el.getAttribute('data-act'); if(ACTS[a]) ACTS[a](el.getAttribute('data-arg'), el); });
+$.addEventListener('click', e=>{ const el=e.target.closest('[data-act]'); if(!el) return; const a=el.getAttribute('data-act'); playSfx(a); if(ACTS[a]) ACTS[a](el.getAttribute('data-arg'), el); });
 function bindInputs(){
   $.querySelectorAll('[data-model]').forEach(el=>{ el.oninput=()=>{ S[el.getAttribute('data-model')]=el.value; }; });
   $.querySelectorAll('[data-filter]').forEach(el=>{ el.onchange=()=>{ S.qFilter[el.getAttribute('data-filter')]=el.value; }; });

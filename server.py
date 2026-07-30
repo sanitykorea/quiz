@@ -557,6 +557,29 @@ def ai_complete(system, messages, max_tokens=700):
     gk = gemini_key()
     return _gemini(system, messages, max_tokens, gk) if gk else None
 
+def ai_vision(prompt, images_png, max_tokens=2000):
+    """이미지(PNG 바이트 리스트) + 프롬프트 → Gemini 비전. JSON 문자열 반환."""
+    key = gemini_key()
+    if not key:
+        return None
+    model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+    parts = [{"text": prompt}]
+    for png in images_png:
+        parts.append({"inline_data": {"mime_type": "image/png", "data": base64.b64encode(png).decode()}})
+    body = json.dumps({
+        "contents": [{"role": "user", "parts": parts}],
+        "generationConfig": {"maxOutputTokens": int(max_tokens) + 3500, "thinkingConfig": {"thinkingBudget": 512},
+                             "responseMimeType": "application/json"},
+    }).encode()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={urllib.parse.quote(key)}"
+    req = urllib.request.Request(url, data=body, headers={"content-type": "application/json"})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        out = json.load(resp)
+    cands = out.get("candidates", [])
+    if not cands:
+        return ""
+    return "".join(p.get("text", "") for p in cands[0].get("content", {}).get("parts", []))
+
 
 class H(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -880,6 +903,85 @@ class H(http.server.BaseHTTPRequestHandler):
         c.close()
         return self._json({"wrong": wrong, "by_subject": by_subject, "answered": total})
 
+    def _wrong_grade(self, b):
+        """푼 오답노트 PDF 업로드 → Gemini 비전으로 표시된 답 읽어 채점. (attempts 미기록 → 오답노트 유지)"""
+        try:
+            import fitz
+        except ImportError:
+            return self._json({"error": "no_fitz"}, 501)
+        if not gemini_key():
+            return self._json({"error": "no-ai"}, 503)
+        data = b.get("data", "")
+        if "," in data:
+            data = data.split(",", 1)[1]
+        try:
+            raw = base64.b64decode(data)
+        except Exception:
+            return self._json({"error": "bad_base64"}, 400)
+        if raw[:4] != b"%PDF":
+            return self._json({"error": "not_pdf"}, 400)
+        # 오답노트 문항 목록(생성 PDF와 동일 순서) + 정답
+        c = db()
+        rows = c.execute("""SELECT a.question_id qid, a.qnum qnum, a.subject subj, a.year year, a.exam_round rnd, k.answer ans
+                            FROM attempts a
+                            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts GROUP BY question_id,qnum) l
+                              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt
+                            LEFT JOIN qkey k ON k.question_id=a.question_id AND k.qnum=a.qnum
+                            WHERE a.correct=0 ORDER BY a.subject, a.year, a.exam_round, a.qnum""").fetchall()
+        c.close()
+        wn = [dict(r) for r in rows]
+        if not wn:
+            return self._json({"error": "no_wrong"}, 404)
+        # PDF → 이미지
+        try:
+            doc = fitz.open("pdf", raw)
+            images = [pg.get_pixmap(matrix=fitz.Matrix(1.7, 1.7)).tobytes("png") for pg in doc]
+            doc.close()
+        except Exception as e:
+            return self._json({"error": "pdf_read_failed", "detail": str(e)}, 400)
+        images = images[:8]   # 과도한 업로드 방지
+        prompt = ("이 이미지는 학생이 손으로 푼 검정고시 '오답노트' 답안지입니다. "
+                  "각 페이지 상단에 [과목]이 적혀 있고, 문항마다 번호와 ①②③④ 보기가 있습니다. "
+                  "학생이 동그라미·체크·색칠 등으로 '표시한' 보기 번호(1~4)를 각 문항마다 읽어주세요. "
+                  "화면에 보이는 순서(위→아래, 왼쪽 단→오른쪽 단, 페이지 순)대로 JSON 배열로만 답하세요: "
+                  '[{"subject":"과학","qnum":1,"marked":3}, ...]. '
+                  "표시가 없거나 불확실하면 marked를 0으로 하세요. 다른 설명 없이 JSON만 출력하세요.")
+        try:
+            txt = ai_vision(prompt, images)
+        except Exception as e:
+            return self._json({"error": "ai_failed", "detail": str(e)}, 502)
+        if not txt:
+            return self._json({"error": "ai_empty"}, 502)
+        try:
+            marks = json.loads(txt)
+            if not isinstance(marks, list):
+                marks = marks.get("answers") or marks.get("items") or []
+        except Exception:
+            return self._json({"error": "ai_parse", "raw": txt[:400]}, 502)
+        # (과목,qnum)로 마킹을 순서대로 소진하며 오답노트 문항에 매칭
+        from collections import defaultdict, deque
+        bucket = defaultdict(deque)
+        for m in marks:
+            try:
+                bucket[(str(m.get("subject", "")).strip(), int(m.get("qnum")))].append(int(m.get("marked") or 0))
+            except (TypeError, ValueError):
+                continue
+        pos = deque(int(m.get("marked") or 0) for m in marks if isinstance(m, dict))   # 폴백: 순수 순서
+        results, by_subject = [], {}
+        for it in wn:
+            key = (it["subj"], it["qnum"])
+            marked = bucket[key].popleft() if bucket[key] else (pos.popleft() if pos else 0)
+            ans = it["ans"]
+            correct = 1 if (ans is not None and marked == ans) else 0
+            results.append({"subject": it["subj"], "year": it["year"], "exam_round": it["rnd"],
+                            "qnum": it["qnum"], "marked": marked, "answer": ans, "correct": correct})
+            s = by_subject.setdefault(it["subj"], {"total": 0, "correct": 0, "score": 0, "pts": 5 if it["subj"] == "수학" else 4})
+            s["total"] += 1; s["correct"] += correct; s["score"] += correct * s["pts"]
+        graded = sum(1 for r in results if r["marked"])
+        return self._json({"results": results, "by_subject": by_subject,
+                           "total": len(results), "read": graded,
+                           "correct": sum(r["correct"] for r in results)})
+
     def _wrong_analyze(self):
         c = db()
         rows = c.execute("""
@@ -984,6 +1086,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 return
             c = db(); c.execute("DELETE FROM attempts"); c.commit(); c.close()
             return self._json({"ok": True})
+        if p == "/api/wrong/grade":
+            if self._guard():
+                return
+            return self._wrong_grade(b)
         if p in ("/api/questions", "/api/units", "/api/cards", "/api/schedule"):
             return self._admin_write(p.rsplit("/", 1)[1], b, create=True)
         return self._json({"error": "not_found"}, 404)

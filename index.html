@@ -62,7 +62,7 @@ const S = {
   qFacets:{subject:[],year:[],exam_round:[],level:[]}, qFilter:{}, qList:[], qCurrent:null, qMsg:'',
   quizItems:[], quizIdx:0, quizMarks:{}, showRaw:false, streak:0,
   bankMode:'instant', picks:{}, graded:false,
-  wrongData:null, wrongAnalysis:'', wrongPdfMsg:'',
+  wrongData:null, wrongAnalysis:'', wrongPdfMsg:'', wrongGradeMsg:'', wrongGradeResult:null,
   examSel:{}, examKeys:null, examInputs:{}, examScore:null, examResults:[], examMsg:'',
   history:[],
   towerSubject:'도덕', dodeok:null, towerConcept:{},
@@ -623,7 +623,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0730g · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0730h · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -800,6 +800,7 @@ function vWrong(){
       <button data-act="wrongclear" style="padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:13px;cursor:pointer;">기록 초기화</button>`:''}</div></div>
     ${S.wrongPdfMsg?`<div style="margin-bottom:12px;color:var(--blue);font-size:13px;">${h(S.wrongPdfMsg)}</div>`:''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">${chips}</div>
+    ${totalWrong?wrongGradeCard():''}
     ${totalWrong?analyzeBox():''}
     <div style="display:grid;gap:10px;">${items}</div>
     ${totalWrong?'<p style="margin-top:14px;color:var(--text3);font-size:12.5px;">틀린 문제를 다시 풀어 맞히면 이 목록에서 자동으로 사라져요.</p>':''}</div>`;
@@ -973,6 +974,7 @@ const SFX={
   towersub:()=>tone(720,0.06,'triangle',0.1),
   towerconcept:()=>seq([[587,0],[880,0.06]]),
   wrongpdf:()=>seq([[440,0],[554,0.07],[659,0.14]]),
+  wronggrade:()=>seq([[523,0],[659,0.07],[784,0.14]]),
   uploadpdf:()=>seq([[523,0],[698,0.07]]),
   theme:()=>tone(494,0.08,'sine',0.1),
   mute:()=>tone(400,0.06,'sine',0.1),
@@ -986,6 +988,35 @@ function playSfx(act){
     if(_ac.state==='suspended') _ac.resume();
     (SFX[act]||(()=>tone(500,0.045,'square',0.08)))();   // 미지정 버튼: 기본 블립
   }catch(e){}
+}
+
+// ========== 푼 오답노트 PDF 업로드 → AI 채점 ==========
+let _wnFile=null;
+async function gradeWrongNote(){
+  const f=_wnFile || (document.getElementById('wn_file')&&document.getElementById('wn_file').files[0]);
+  if(!f){ S.wrongGradeMsg='⚠️ 푼 오답노트 PDF를 선택하세요.'; render(); return; }
+  S.wrongGradeMsg='📄 AI가 표시된 답을 읽어 채점하는 중... (수십 초 걸릴 수 있어요)'; S.wrongGradeResult=null; render();
+  const data=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f);});
+  const res=await api('/api/wrong/grade',{method:'POST',...jbody({data})});
+  if(res.results){ S.wrongGradeResult=res; S.wrongGradeMsg=`✅ 채점 완료 · AI가 읽은 답 ${res.read}/${res.total} · 맞음 ${res.correct}`; }
+  else S.wrongGradeMsg = res.error==='no-ai'?'🧚 수호령 미연결(GEMINI_API_KEY 필요).':(res.error==='no_wrong'?'오답노트가 비어 있어요.':(res.error==='not_pdf'?'PDF 파일이 아니에요.':(res.error==='ai_parse'?'AI가 답안을 인식하지 못했어요. 더 선명한 스캔으로 다시 시도하세요.':'채점 실패: '+(res.detail||res.error||res.status))));
+  _wnFile=null; render();
+}
+function wrongGradeCard(){
+  const r=S.wrongGradeResult;
+  const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--bluebd);background:var(--inset);color:var(--text);font-size:13px;';
+  const rows = r ? Object.entries(r.by_subject).map(([subj,s])=>`
+    <div style="margin-top:10px;"><b style="font-size:14.5px;">${h(subj)}</b> <span style="font-size:13px;color:${s.correct===s.total?'var(--accent-b)':'var(--text2)'};">· ${s.correct}/${s.total} · ${s.score}점</span>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;">${r.results.filter(x=>x.subject===subj).map(x=>`<span title="내 표기 ${x.marked||'미인식'} · 정답 ${x.answer||'?'}" style="padding:3px 9px;border-radius:8px;font-size:12.5px;border:1px solid ${x.correct?'rgba(46,230,166,.55)':'rgba(255,84,104,.5)'};background:${x.correct?'rgba(20,117,92,.16)':'rgba(255,84,104,.12)'};color:${x.correct?'var(--accent-b)':'var(--danger-b)'};">${x.qnum}번 ${x.correct?'✓':(x.marked?('✗ '+CIRC[x.marked]||'✗'):'—')}</span>`).join('')}</div></div>`).join('') : '';
+  return `<div style="border:1px dashed var(--bluebd);border-radius:14px;padding:16px;background:var(--tintB);margin-bottom:18px;">
+    <div style="font-weight:800;color:var(--blue);margin-bottom:4px;">📥 푼 오답노트 채점 (AI)</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">인쇄한 오답노트를 풀고(정답 번호에 <b>동그라미</b>), 스캔·사진을 <b>PDF로 올리면</b> AI가 표시한 답을 읽어 채점해요. 채점해도 <b>오답노트에서 지우지 않아요.</b></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input id="wn_file" type="file" accept="application/pdf,.pdf" style="${inp}flex:1;min-width:200px;">
+      <button data-act="wronggrade" style="padding:9px 18px;border-radius:10px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-weight:700;cursor:pointer;">채점하기</button></div>
+    ${S.wrongGradeMsg?`<div style="margin-top:10px;font-size:13px;color:var(--blue);">${h(S.wrongGradeMsg)}</div>`:''}
+    ${r?`<div style="margin-top:8px;border-top:1px solid var(--bluebd);padding-top:8px;">${rows}<div style="margin-top:10px;font-size:11.5px;color:var(--text3);">※ AI가 손글씨 표기를 읽는 방식이라 가끔 틀리게 읽을 수 있어요. 표기가 선명할수록 정확해요.</div></div>`:''}
+  </div>`;
 }
 
 // ---------- event delegation ----------
@@ -1023,12 +1054,14 @@ const ACTS = {
   examgrade:()=>gradeExam(),
   examsave:()=>saveExam(),
   wrongpdf:()=>downloadWrongPdf(),
+  wronggrade:()=>gradeWrongNote(),
 };
 $.addEventListener('click', e=>{ const el=e.target.closest('[data-act]'); if(!el) return; const a=el.getAttribute('data-act'); playSfx(a); if(ACTS[a]) ACTS[a](el.getAttribute('data-arg'), el); });
 function bindInputs(){
   $.querySelectorAll('[data-model]').forEach(el=>{ el.oninput=()=>{ S[el.getAttribute('data-model')]=el.value; }; });
   $.querySelectorAll('[data-filter]').forEach(el=>{ el.onchange=()=>{ S.qFilter[el.getAttribute('data-filter')]=el.value; }; });
   const uf=document.getElementById('up_file'); if(uf) uf.onchange=()=>{ _upFiles=[...uf.files]; };  // 선택 즉시 저장 → 재렌더에도 안 날아감
+  const wf=document.getElementById('wn_file'); if(wf) wf.onchange=()=>{ _wnFile=wf.files[0]||null; };
   $.querySelectorAll('[data-exam]').forEach(el=>{ el.onchange=()=>{ S.examSel[el.getAttribute('data-exam')]=el.value; }; });
   $.querySelectorAll('[data-examin]').forEach(el=>{ el.oninput=()=>{ S.examInputs[el.getAttribute('data-examin')]=el.value; }; });
   const ci=document.getElementById('chatInput'); if(ci) ci.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); send(); } };

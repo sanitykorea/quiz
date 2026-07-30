@@ -491,84 +491,122 @@ function dodeokNotes(){
     <div style="padding:4px 16px 14px;font-size:14px;line-height:1.85;color:var(--text);">${s.items.map(x=>`<div style="margin:3px 0;padding-left:12px;border-left:2px solid var(--orangebd);">${md(x)}</div>`).join('')}</div>
   </details>`).join('');
 }
-// ===== 도덕 학습 모드: 빈칸 채우기 · 용어 4지선다 (하이라이트 데이터 활용) =====
+// ===== 도덕 학습 모드: 빈칸 · 용어 4지선다 · OX (라벨↔내용 카드 활용) =====
 function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
-function dodeokPool(){
-  const pool=[];
-  ((S.dodeok&&S.dodeok.sections)||[]).forEach(s=>{
-    const cat=s.title.replace(/^📖\s*/,'');
-    s.items.forEach(it=>{
-      const m=it.match(/\*\*(.+?)\*\*/);
-      if(!m) return;
-      const term=m[1].trim();
-      if(term.length<1||term.length>42) return;
-      const blank=it.replace(/\*\*.+?\*\*/,'§').replace(/\*\*(.+?)\*\*/g,'$1');  // 첫 하이라이트만 빈칸, 나머지 ** 마커 제거
-      const ctx=blank.replace(/§/g,'').replace(/[\s·,.（）()①②③④⑤]/g,'');
-      pool.push({term, blank, cat, hasCtx:ctx.length>=5});
-    });
+const DGEN=new Set('의미 뜻 특징 성격 예 방법 배경 입장 관점 원칙 종류 정의 개념 구분 관계 문제점 해결책 조건 목적 역할 기능 내용 사례 요소 특성 장점 단점 한계 효과 유형'.split(' '));
+const DSAGE=/공자|맹자|순자|노자|장자|석가|부처|칸트|밀|벤담|롤스|노직|싱어|요나스|프롬|아리스토텔레스|플라톤|소크라테스|흄|하버마스|레건|테일러|슈바이처|레오폴드|네스|베이컨|데카르트|스피노자|니부어|왈처|에피쿠로스|홉스|로크|루소|마르크스|정약용|이황|이이/;
+const DJUNK=/소단원|^PART$|^\d|^[A-Za-z0-9 ()]+$/;
+const dqPlain=s=>s.replace(/\*\*(.+?)\*\*/g,'$1');
+function dodeokItems(){   // 빈칸/4지선다용: 프레임 있는 문항
+  const cards=(S.dodeok&&S.dodeok.cards)||[]; const items=[];
+  cards.forEach(c=>{
+    if(DJUNK.test(c.label)) return;
+    const hlm=c.content.match(/\*\*(.+?)\*\*/);
+    if(hlm && hlm[1].trim().length<=28){        // 내용 속 핵심어 빈칸 (프레임=주제·라벨)
+      const term=hlm[1].trim();
+      const body=c.content.replace(/\*\*.+?\*\*/,'§').replace(/\*\*(.+?)\*\*/g,'$1');
+      items.push({body, frame:`「${c.topic}」 · ${c.label}`, answer:term, dk:'term', blank:true});
+    } else if(!DGEN.has(c.label)){              // 설명→용어/사상가 맞히기
+      const body=dqPlain(c.content);
+      if(body.length>=4 && body.length<=120 && c.label.length<=18)
+        items.push({body, frame: DSAGE.test(c.label)?'다음 주장을 한 사상가는?':'다음 설명에 해당하는 것은?', answer:c.label, dk: DSAGE.test(c.label)?'sage':'concept', blank:false});
+    }
   });
-  return pool;
+  return items;
 }
 function dodeokStart(mode){
   S.dodeokMode=mode;
   if(mode==='read'){ S.dq=null; render(); return; }
-  const pool=shuffle(dodeokPool());
-  S.dq={pool, idx:0, reveal:false, score:0, answered:0, pick:null, choices:[]};
-  if(mode==='quiz') dodeokMakeChoices();
+  if(mode==='ox'){
+    const cards=((S.dodeok&&S.dodeok.cards)||[]).filter(c=>!DGEN.has(c.label)&&!DJUNK.test(c.label)&&c.label.length<=18&&dqPlain(c.content).length>=6&&dqPlain(c.content).length<=140);
+    S.dq={mode, cards:shuffle(cards), idx:0, pick:null, score:0, answered:0, ox:null};
+    dodeokMakeOX();
+  } else {
+    S.dq={mode, items:shuffle(dodeokItems()), idx:0, reveal:false, pick:null, score:0, answered:0, choices:[]};
+    if(mode==='quiz') dodeokMakeChoices();
+  }
   render();
 }
 function dodeokMakeChoices(){
-  const q=S.dq, cur=q.pool[q.idx]; if(!cur) return;
-  const others=[...new Set(q.pool.map(p=>p.term).filter(t=>t!==cur.term))];
-  q.choices=shuffle([cur.term, ...shuffle(others).slice(0,3)]); q.pick=null;
+  const q=S.dq, cur=q.items[q.idx]; if(!cur) return;
+  const others=[...new Set(q.items.filter(i=>i.dk===cur.dk&&i.answer!==cur.answer).map(i=>i.answer))];
+  q.choices=shuffle([cur.answer, ...shuffle(others).slice(0,3)]); q.pick=null;
 }
-function dodeokPick(term){
+function dodeokMakeOX(){
+  const q=S.dq, cur=q.cards[q.idx]; if(!cur) return;
+  const mkFalse=Math.random()<0.5;
+  let shown=cur.label;
+  if(mkFalse){
+    const sameType=q.cards.filter(c=>c.label!==cur.label && DSAGE.test(c.label)===DSAGE.test(cur.label));  // 사상가↔사상가
+    const o=shuffle(sameType.length?sameType:q.cards.filter(c=>c.label!==cur.label))[0];
+    if(o) shown=o.label;
+  }
+  q.ox={shown, statement:dqPlain(cur.content), truth:cur.label, answer:(shown===cur.label?'O':'X')}; q.pick=null;
+}
+function dodeokPick(v){
   const q=S.dq; if(!q||q.pick!=null) return;
-  q.pick=term; q.answered++;
-  if(term===q.pool[q.idx].term){ q.score++; toast('⚔️ 정답!','good'); } else toast('💧 오답','bad');
+  q.pick=v; q.answered++;
+  const ok = q.mode==='ox' ? (v===q.ox.answer) : (v===q.items[q.idx].answer);
+  if(ok){ q.score++; toast('⚔️ 정답!','good'); } else toast('💧 오답','bad');
   render();
 }
 function dodeokNext(){
   const q=S.dq; if(!q) return;
-  q.idx=(q.idx+1)%q.pool.length; q.reveal=false;
-  if(S.dodeokMode==='quiz') dodeokMakeChoices();
+  const n=(q.mode==='ox'?q.cards:q.items).length;
+  q.idx=(q.idx+1)%n; q.reveal=false; q.pick=null;
+  if(q.mode==='quiz') dodeokMakeChoices();
+  if(q.mode==='ox') dodeokMakeOX();
   render();
 }
+const dqCounter=(a,b)=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px;"><span style="color:var(--text3);">${a}</span><span style="color:var(--accent-b);font-weight:700;">${b}</span></div>`;
+const dqBody=inner=>`<div style="background:var(--inset);border:1px solid var(--orangebd);border-radius:12px;padding:18px;font-size:15.5px;line-height:1.9;color:var(--text);">${inner}</div>`;
+const dqBlankSpan='<span style="display:inline-block;min-width:64px;border-bottom:2px solid var(--orange);color:var(--orange);text-align:center;font-weight:800;">?</span>';
 function dodeokBlankView(){
-  const q=S.dq, cur=q.pool[q.idx];
-  const sent=cur.hasCtx ? h(cur.blank).replace(/§/,'<span style="display:inline-block;min-width:70px;border-bottom:2px solid var(--orange);color:var(--orange);text-align:center;font-weight:800;">?</span>') : `「${h(cur.cat)}」의 핵심 용어는?`;
-  return `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:8px;"><span>빈칸 ${q.idx+1} / ${q.pool.length}</span><span>${h(cur.cat)}</span></div>
-    <div style="background:var(--inset);border:1px solid var(--orangebd);border-radius:12px;padding:18px;font-size:16px;line-height:1.9;color:var(--text);min-height:70px;">${sent}</div>
-    ${q.reveal?`<div style="margin-top:12px;padding:12px 14px;border-radius:10px;background:rgba(255,224,102,.14);border:1px solid var(--gold-d);font-size:15px;">정답 &nbsp;<b style="color:var(--gold);">${h(cur.term)}</b></div>`:''}
-    <div style="display:flex;gap:8px;margin-top:12px;">
-      ${q.reveal?'':`<button data-act="dodeokreveal" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-weight:800;font-size:14px;cursor:pointer;">정답 확인 👁</button>`}
-      <button data-act="dodeoknext" style="flex:1;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 ▶</button></div>`;
+  const q=S.dq, cur=q.items[q.idx]; if(!cur) return '<div style="color:var(--text3);">문항이 없어요.</div>';
+  const body = cur.blank ? h(cur.body).replace('§',dqBlankSpan) : h(cur.body);
+  return dqCounter(`빈칸 ${q.idx+1} / ${q.items.length}`, h(cur.frame))
+    + dqBody(`${cur.blank?'':'<div style="font-size:12.5px;color:var(--orange);font-weight:700;margin-bottom:8px;">'+h(cur.frame)+'</div>'}${body}`)
+    + (q.reveal?`<div style="margin-top:12px;padding:12px 14px;border-radius:10px;background:rgba(255,224,102,.14);border:1px solid var(--gold-d);font-size:15px;">정답 &nbsp;<b style="color:var(--gold);">${h(cur.answer)}</b></div>`:'')
+    + `<div style="display:flex;gap:8px;margin-top:12px;">
+       ${q.reveal?'':`<button data-act="dodeokreveal" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-weight:800;font-size:14px;cursor:pointer;">정답 확인 👁</button>`}
+       <button data-act="dodeoknext" style="flex:1;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 ▶</button></div>`;
 }
 function dodeokQuizView(){
-  const q=S.dq, cur=q.pool[q.idx];
-  const prompt=cur.hasCtx ? h(cur.blank).replace(/§/,'<span style="color:var(--orange);font-weight:800;">□□□</span>') : `「${h(cur.cat)}」의 핵심 용어는?`;
+  const q=S.dq, cur=q.items[q.idx]; if(!cur) return '<div style="color:var(--text3);">문항이 없어요.</div>';
+  const body = cur.blank ? h(cur.body).replace('§','<span style="color:var(--orange);font-weight:800;">□□□</span>') : h(cur.body);
   const choices=q.choices.map(t=>{
     let bg='var(--panel2)',bd='var(--border)',col='var(--text)';
-    if(q.pick!=null){ if(t===cur.term){bg='rgba(20,117,92,.28)';bd='rgba(46,230,166,.6)';col='var(--accent-b)';} else if(t===q.pick){bg='rgba(255,84,104,.18)';bd='rgba(255,84,104,.6)';col='var(--danger-b)';} else col='var(--text3)'; }
+    if(q.pick!=null){ if(t===cur.answer){bg='rgba(20,117,92,.28)';bd='rgba(46,230,166,.6)';col='var(--accent-b)';} else if(t===q.pick){bg='rgba(255,84,104,.18)';bd='rgba(255,84,104,.6)';col='var(--danger-b)';} else col='var(--text3)'; }
     return `<button data-act="dodeokpick" data-arg="${encodeURIComponent(t)}" ${q.pick!=null?'disabled':''} style="text-align:left;padding:13px 15px;border-radius:12px;border:1px solid ${bd};background:${bg};color:${col};font-size:14.5px;cursor:${q.pick!=null?'default':'pointer'};">${h(t)}</button>`;
   }).join('');
-  return `<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px;"><span style="color:var(--text3);">${h(cur.cat)}</span><span style="color:var(--accent-b);font-weight:700;">점수 ${q.score} / ${q.answered}</span></div>
-    <div style="background:var(--inset);border:1px solid var(--orangebd);border-radius:12px;padding:16px;font-size:15.5px;line-height:1.85;color:var(--text);margin-bottom:10px;">${prompt}</div>
-    <div style="display:grid;gap:8px;">${choices}</div>
-    ${q.pick!=null?`<button data-act="dodeoknext" style="width:100%;margin-top:12px;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 문제 ▶</button>`:''}`;
+  return dqCounter(h(cur.frame), `점수 ${q.score} / ${q.answered}`)
+    + dqBody(body) + `<div style="display:grid;gap:8px;margin-top:10px;">${choices}</div>`
+    + (q.pick!=null?`<button data-act="dodeoknext" style="width:100%;margin-top:12px;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 문제 ▶</button>`:'');
+}
+function dodeokOXView(){
+  const q=S.dq, x=q.ox; if(!x) return '<div style="color:var(--text3);">문항이 없어요.</div>';
+  const oxBtn=(v,lb,c)=>{ let bg='var(--panel2)',bd='var(--border)',col='var(--text)';
+    if(q.pick!=null){ if(v===x.answer){bg='rgba(20,117,92,.28)';bd='rgba(46,230,166,.6)';col='var(--accent-b)';} else if(v===q.pick){bg='rgba(255,84,104,.18)';bd='rgba(255,84,104,.6)';col='var(--danger-b)';} }
+    return `<button data-act="dodeokpick" data-arg="${v}" ${q.pick!=null?'disabled':''} style="flex:1;padding:16px;border-radius:12px;border:1px solid ${bd};background:${bg};color:${col};font-size:22px;font-weight:900;cursor:${q.pick!=null?'default':'pointer'};">${lb}</button>`; };
+  return dqCounter('OX 퀴즈', `점수 ${q.score} / ${q.answered}`)
+    + dqBody(`다음 설명이 <b style="color:var(--orange);">「${h(x.shown)}」</b>에 대한 것이면 O, 아니면 X<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--orangebd);">${h(x.statement)}</div>`)
+    + `<div style="display:flex;gap:10px;margin-top:12px;">${oxBtn('O','⭕ O')}${oxBtn('X','❌ X')}</div>`
+    + (q.pick!=null?`<div style="margin-top:10px;font-size:14px;color:${q.pick===x.answer?'var(--accent-b)':'var(--danger-b)'};">${q.pick===x.answer?'✓ 정답!':'✗ 오답'} — 이 설명은 <b>「${h(x.truth)}」</b>에 대한 것이에요.</div>
+       <button data-act="dodeoknext" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 문제 ▶</button>`:'');
 }
 function conceptPanel(){
   const subj=S.towerSubject;
   const bar=SUBJS.map(s=>`<button data-act="towersub" data-arg="${s}" style="padding:8px 14px;border-radius:999px;font-size:13.5px;font-weight:700;cursor:pointer;border:1px solid ${s===subj?'var(--orange)':'var(--border)'};background:${s===subj?'var(--tintO)':'var(--panel2)'};color:${s===subj?'var(--orange)':'var(--text2)'};">${s}</button>`).join('');
   let body;
   if(subj==='도덕'){
-    const modes=[['read','📖 개념노트'],['blank','✏️ 빈칸 채우기'],['quiz','🎯 용어 퀴즈']];
+    const modes=[['read','📖 개념노트'],['blank','✏️ 빈칸 채우기'],['quiz','🎯 용어 퀴즈'],['ox','⭕ OX 퀴즈']];
     const modeBar=modes.map(([m,lb])=>`<button data-act="dodeokmode" data-arg="${m}" style="padding:7px 13px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:1px solid ${S.dodeokMode===m?'var(--orange)':'var(--border)'};background:${S.dodeokMode===m?'var(--tintO)':'var(--panel2)'};color:${S.dodeokMode===m?'var(--orange)':'var(--text2)'};">${lb}</button>`).join('');
     let inner;
+    const dqLen = S.dq ? (S.dq.mode==='ox'?(S.dq.cards||[]).length:(S.dq.items||[]).length) : 0;
     if(!S.dodeok) inner=`<div style="color:var(--text3);font-size:14px;">도덕 노트를 불러오는 중...</div>`;
     else if(S.dodeokMode==='read') inner=`<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">📎 첨부한 <b>검정고시 도덕 정리</b> · <mark style="background:rgba(255,224,102,.35);padding:0 3px;border-radius:3px;">노란색</mark>은 원본 하이라이트예요.</div>${dodeokNotes()}`;
-    else if(!S.dq||!S.dq.pool.length) inner=`<div style="color:var(--text3);">퀴즈로 만들 하이라이트가 없어요.</div>`;
-    else inner = S.dodeokMode==='blank' ? dodeokBlankView() : dodeokQuizView();
+    else if(!S.dq||!dqLen) inner=`<div style="color:var(--text3);">문제로 만들 데이터가 없어요.</div>`;
+    else inner = S.dodeokMode==='blank' ? dodeokBlankView() : S.dodeokMode==='quiz' ? dodeokQuizView() : dodeokOXView();
     body=`<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;">${modeBar}</div>${inner}`;
   } else {
     const c=S.towerConcept[subj];
@@ -698,7 +736,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731c · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731d · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">

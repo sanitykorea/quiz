@@ -210,6 +210,8 @@ def init_db():
     """)
     if "answer_text" not in [r["name"] for r in c.execute("PRAGMA table_info(questions)")]:
         c.execute("ALTER TABLE questions ADD COLUMN answer_text TEXT")
+    if "source" not in [r["name"] for r in c.execute("PRAGMA table_info(attempts)")]:
+        c.execute("ALTER TABLE attempts ADD COLUMN source TEXT DEFAULT 'quiz'")   # quiz(문제은행·복습) / pdf(오답노트 스캔 채점)
     if not c.execute("SELECT 1 FROM questions LIMIT 1").fetchone():
         _load_questions(c)                        # 첫 실행: 기출 42문항 + 정답키 적재
     # 지문/카드 콘텐츠: 버전이 바뀌면 새 항목만 추가(중복 제목/질문은 건너뜀 → 사용자 편집 보존)
@@ -746,8 +748,8 @@ class H(http.server.BaseHTTPRequestHandler):
         rows = c.execute("""SELECT a.question_id qid, a.qnum qnum, a.subject subj, a.year year, a.exam_round rnd,
                                    qu.level level
                             FROM attempts a
-                            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts GROUP BY question_id,qnum) l
-                              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt
+                            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
                             JOIN questions qu ON qu.id=a.question_id
                             WHERE a.correct=0 ORDER BY a.subject, a.year, a.exam_round, a.qnum""").fetchall()
         c.close()
@@ -761,7 +763,9 @@ class H(http.server.BaseHTTPRequestHandler):
         # A4 세로 · 3열 그리드 (실제 시험지처럼 여러 문항이 한 페이지에)
         W, H, MARGIN, GAP, COLS = 595.0, 842.0, 28.0, 18.0, 2   # 실제 검정고시처럼 세로 2단
         cellW = (W - 2 * MARGIN - (COLS - 1) * GAP) / COLS
+        LABELH = 14   # 문항마다 고유번호(#N) 라벨 자리 → 채점 시 정확 매칭
         out = fitz.open()
+        gidx = 1      # 전체 문항 통짜 순번(오답노트 목록 순서와 동일) → 채점 정렬 기준
         for subj, items in groups.items():
             imgs = []
             for r in items:
@@ -783,20 +787,22 @@ class H(http.server.BaseHTTPRequestHandler):
             y = MARGIN + 24
             for i in range(0, len(imgs), COLS):
                 rowitems = imgs[i:i + COLS]
-                scaled = [(qn, png, cellW, ph * (cellW / pw)) for (qn, png, pw, ph) in rowitems]   # 셀 폭에 맞춰 스케일
-                rowH = max(h for *_, h in scaled)
+                scaled = [(png, cellW, ph * (cellW / pw)) for (qn, png, pw, ph) in rowitems]   # (png, 폭, 이미지높이)
+                imgH = max(h for _, _, h in scaled)
                 avail = H - MARGIN - y
-                if rowH > avail:                       # 이 행이 페이지에 안 들어가면
+                if imgH + LABELH > avail:              # 이 행이 페이지에 안 들어가면
                     if y > MARGIN + 24:                # 첫 행이 아니면 새 페이지
                         page = out.new_page(width=W, height=H); y = MARGIN; avail = H - 2 * MARGIN
-                    if rowH > avail:                   # 새 페이지에도 안 들어갈 만큼 크면 행 전체 축소
-                        sh = avail / rowH
-                        scaled = [(qn, png, w * sh, h * sh) for (qn, png, w, h) in scaled]
-                        rowH = avail
-                for j, (qn, png, w, hgt) in enumerate(scaled):
-                    x = MARGIN + j * (cellW + GAP) + (cellW - w) / 2
-                    page.insert_image(fitz.Rect(x, y, x + w, y + hgt), stream=png)
-                y += rowH + GAP
+                    if imgH + LABELH > avail:          # 새 페이지에도 안 들어갈 만큼 크면 행 전체 축소
+                        sh = (avail - LABELH) / imgH
+                        scaled = [(png, w * sh, h * sh) for (png, w, h) in scaled]
+                        imgH = avail - LABELH
+                for j, (png, w, hgt) in enumerate(scaled):
+                    cx = MARGIN + j * (cellW + GAP)
+                    page.insert_text((cx, y + 10), f"#{gidx}", fontsize=11, color=(0.85, 0, 0))   # 고유번호(채점 매칭 기준)
+                    page.insert_image(fitz.Rect(cx + (cellW - w) / 2, y + LABELH, cx + (cellW - w) / 2 + w, y + LABELH + hgt), stream=png)
+                    gidx += 1
+                y += imgH + LABELH + GAP
         if out.page_count == 0:
             out.close(); return self._json({"error": "no_image"}, 404)
         data = out.tobytes(deflate=True)
@@ -890,18 +896,26 @@ class H(http.server.BaseHTTPRequestHandler):
 
     def _wrong(self):
         c = db()
+        # 멤버십: 최신 '문제은행(quiz)' 시도가 오답인 문항 (PDF 채점은 멤버십에 영향 X → 정답 맞혀도 유지)
+        # wrong_count: quiz+pdf 통틀어 틀린 횟수 → 2회 이상이면 '반복 오답'(복습·PDF에서 또 틀림)
         rows = c.execute("""
-            SELECT a.* FROM attempts a
-            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts GROUP BY question_id,qnum) l
-              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt
-            WHERE a.correct=0 ORDER BY a.ts DESC""").fetchall()
+            SELECT a.*, wc.wc wrong_count FROM attempts a
+            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
+            JOIN (SELECT question_id,qnum,SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) wc
+                    FROM attempts GROUP BY question_id,qnum) wc
+              ON wc.question_id=a.question_id AND wc.qnum=a.qnum
+            WHERE a.correct=0 ORDER BY wc.wc DESC, a.ts DESC""").fetchall()
         wrong = [dict(r) for r in rows]
-        by_subject = {}
+        by_subject, repeat = {}, 0
         for w in wrong:
+            w["repeat"] = w["wrong_count"] >= 2       # 반복 오답 라벨
+            if w["repeat"]:
+                repeat += 1
             by_subject[w["subject"]] = by_subject.get(w["subject"], 0) + 1
-        total = c.execute("SELECT COUNT(DISTINCT question_id||'-'||qnum) n FROM attempts").fetchone()["n"]
+        total = c.execute("SELECT COUNT(DISTINCT question_id||'-'||qnum) n FROM attempts WHERE source='quiz'").fetchone()["n"]
         c.close()
-        return self._json({"wrong": wrong, "by_subject": by_subject, "answered": total})
+        return self._json({"wrong": wrong, "by_subject": by_subject, "answered": total, "repeat": repeat})
 
     def _wrong_grade(self, b):
         """푼 오답노트 PDF 업로드 → Gemini 비전으로 표시된 답 읽어 채점. (attempts 미기록 → 오답노트 유지)"""
@@ -924,8 +938,8 @@ class H(http.server.BaseHTTPRequestHandler):
         c = db()
         rows = c.execute("""SELECT a.question_id qid, a.qnum qnum, a.subject subj, a.year year, a.exam_round rnd, k.answer ans
                             FROM attempts a
-                            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts GROUP BY question_id,qnum) l
-                              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt
+                            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
                             LEFT JOIN qkey k ON k.question_id=a.question_id AND k.qnum=a.qnum
                             WHERE a.correct=0 ORDER BY a.subject, a.year, a.exam_round, a.qnum""").fetchall()
         c.close()
@@ -941,11 +955,11 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._json({"error": "pdf_read_failed", "detail": str(e)}, 400)
         images = images[:8]   # 과도한 업로드 방지
         prompt = ("이 이미지는 학생이 손으로 푼 검정고시 '오답노트' 답안지입니다. "
-                  "각 페이지 상단에 [과목]이 적혀 있고, 문항마다 번호와 ①②③④ 보기가 있습니다. "
-                  "학생이 동그라미·체크·색칠 등으로 '표시한' 보기 번호(1~4)를 각 문항마다 읽어주세요. "
-                  "화면에 보이는 순서(위→아래, 왼쪽 단→오른쪽 단, 페이지 순)대로 JSON 배열로만 답하세요: "
-                  '[{"subject":"과학","qnum":1,"marked":3}, ...]. '
-                  "표시가 없거나 불확실하면 marked를 0으로 하세요. 다른 설명 없이 JSON만 출력하세요.")
+                  "각 문항 왼쪽 위에는 빨간색 '#숫자'(예: #1, #2 …) 고유번호가 적혀 있고, 문항마다 ①②③④ 보기가 있습니다. "
+                  "★중요: 당신은 문제를 풀지 마세요. 오직 학생이 펜으로 '동그라미·체크·색칠 등으로 표시한' 보기 번호(1~4)만 그대로 읽어 주세요. "
+                  "표시가 없거나 불확실하면 marked를 0으로 하세요. "
+                  "각 문항의 '#숫자'(index)와 학생이 표시한 번호(marked)를 JSON 배열로만 답하세요: "
+                  '[{"index":1,"marked":3},{"index":2,"marked":0}, ...]. 다른 설명 없이 JSON만 출력하세요.')
         try:
             txt = ai_vision(prompt, images)
         except Exception as e:
@@ -958,26 +972,36 @@ class H(http.server.BaseHTTPRequestHandler):
                 marks = marks.get("answers") or marks.get("items") or []
         except Exception:
             return self._json({"error": "ai_parse", "raw": txt[:400]}, 502)
-        # (과목,qnum)로 마킹을 순서대로 소진하며 오답노트 문항에 매칭
-        from collections import defaultdict, deque
-        bucket = defaultdict(deque)
+        # #번호(index)로 정확히 매칭 (index 없으면 순서 폴백)
+        from collections import deque
+        by_index = {}
         for m in marks:
-            try:
-                bucket[(str(m.get("subject", "")).strip(), int(m.get("qnum")))].append(int(m.get("marked") or 0))
-            except (TypeError, ValueError):
-                continue
+            if isinstance(m, dict) and m.get("index") is not None:
+                try:
+                    by_index[int(m["index"])] = int(m.get("marked") or 0)
+                except (TypeError, ValueError):
+                    pass
         pos = deque(int(m.get("marked") or 0) for m in marks if isinstance(m, dict))   # 폴백: 순수 순서
         results, by_subject = [], {}
-        for it in wn:
-            key = (it["subj"], it["qnum"])
-            marked = bucket[key].popleft() if bucket[key] else (pos.popleft() if pos else 0)
+        for gi, it in enumerate(wn, start=1):
+            if gi in by_index:
+                marked = by_index[gi]
+            else:
+                marked = pos.popleft() if pos else 0
             ans = it["ans"]
             correct = 1 if (ans is not None and marked == ans) else 0
-            results.append({"subject": it["subj"], "year": it["year"], "exam_round": it["rnd"],
+            results.append({"index": gi, "subject": it["subj"], "year": it["year"], "exam_round": it["rnd"],
                             "qnum": it["qnum"], "marked": marked, "answer": ans, "correct": correct})
             s = by_subject.setdefault(it["subj"], {"total": 0, "correct": 0, "score": 0, "pts": 5 if it["subj"] == "수학" else 4})
             s["total"] += 1; s["correct"] += correct; s["score"] += correct * s["pts"]
         graded = sum(1 for r in results if r["marked"])
+        # AI가 읽은 문항을 source='pdf'로 기록 → 반복 오답 카운트 반영(멤버십엔 영향 없음: 정답이어도 오답노트 유지)
+        c2 = db(); now = int(time.time())
+        for it, r in zip(wn, results):
+            if r["marked"]:
+                c2.execute("INSERT INTO attempts(question_id,subject,year,exam_round,qnum,chosen,answer,correct,ts,source) VALUES(?,?,?,?,?,?,?,?,?,'pdf')",
+                           (it["qid"], it["subj"], it["year"], it["rnd"], it["qnum"], r["marked"], it["ans"], r["correct"], now))
+        c2.commit(); c2.close()
         return self._json({"results": results, "by_subject": by_subject,
                            "total": len(results), "read": graded,
                            "correct": sum(r["correct"] for r in results)})
@@ -986,8 +1010,8 @@ class H(http.server.BaseHTTPRequestHandler):
         c = db()
         rows = c.execute("""
             SELECT a.* FROM attempts a
-            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts GROUP BY question_id,qnum) l
-              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt
+            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
             WHERE a.correct=0 ORDER BY a.ts DESC LIMIT 30""").fetchall()
         if not rows:
             c.close(); return self._json({"analysis": "", "empty": True})
@@ -1172,7 +1196,7 @@ class H(http.server.BaseHTTPRequestHandler):
         if not row or not meta:
             c.close(); return self._json({"error": "no_key"}, 404)
         ans = row["answer"]; correct = 1 if chosen == ans else 0
-        c.execute("INSERT INTO attempts(question_id,subject,year,exam_round,qnum,chosen,answer,correct,ts) VALUES(?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO attempts(question_id,subject,year,exam_round,qnum,chosen,answer,correct,ts,source) VALUES(?,?,?,?,?,?,?,?,?,'quiz')",
                   (qid, meta["subject"], meta["year"], meta["exam_round"], qnum, chosen, ans, correct, int(time.time())))
         c.commit(); c.close()
         return self._json({"correct": bool(correct), "answer": ans})

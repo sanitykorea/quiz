@@ -623,7 +623,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0730h · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731a · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -785,25 +785,29 @@ function vWrong(){
   const subs=Object.entries(d.by_subject||{}).sort((a,b)=>b[1]-a[1]);
   const totalWrong=(d.wrong||[]).length;
   const chips=subs.length?subs.map(([s,n])=>`<div style="padding:10px 14px;border-radius:12px;border:1px solid rgba(255,84,104,.4);background:rgba(255,84,104,.08);display:flex;gap:10px;align-items:center;"><span style="font-weight:700;">${h(s)}</span><span style="font-family:'Press Start 2P',monospace;font-size:12px;color:var(--danger-b);">${n}</span></div>`).join(''):'<div style="color:var(--text3);">아직 틀린 문제가 없어요 🎉</div>';
-  const items=(d.wrong||[]).map(w=>`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--panel);">
+  const item=w=>`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid ${w.repeat?'rgba(255,140,40,.55)':'var(--border)'};border-radius:12px;padding:12px 14px;background:${w.repeat?'rgba(255,140,40,.08)':'var(--panel)'};">
+      ${w.repeat?`<span style="font-size:11px;font-weight:800;color:#fff;background:linear-gradient(180deg,#ff9a3d,#e0603b);padding:3px 8px;border-radius:7px;">🔁 반복 ${w.wrong_count}회</span>`:''}
       <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(w.subject)}</span>
       <span style="font-size:13px;color:var(--text2);">${h(w.year)} · ${h(w.exam_round)}</span>
       <span style="font-size:14px;font-weight:700;">${w.qnum}번</span>
       <span style="font-size:13px;color:${w.chosen?'var(--danger-b)':'var(--pink)'};">${w.chosen?'내 선택 '+CIRC[w.chosen]:'🤔 모름'}</span>
       <span style="font-size:13px;color:var(--accent-b);">정답 ${CIRC[w.answer]}</span>
       <button data-act="review" data-arg="${w.question_id}|${h(w.subject)}|${h(w.year)}|${h(w.exam_round)}|${w.qnum}" style="margin-left:auto;padding:6px 13px;border-radius:999px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer;">↺ 복습</button>
-    </div>`).join('');
+    </div>`;
+  const repeats=(d.wrong||[]).filter(w=>w.repeat), normals=(d.wrong||[]).filter(w=>!w.repeat);
+  const items=`${repeats.length?`<div style="font-size:14px;font-weight:800;color:var(--orange);margin:2px 0 8px;">🔁 반복해서 틀리는 문제 <span style="font-size:12px;color:var(--text3);">· 복습·PDF에서 또 틀린 ${repeats.length}문항</span></div><div style="display:grid;gap:10px;margin-bottom:16px;">${repeats.map(item).join('')}</div>`:''}
+    ${normals.length?`${repeats.length?`<div style="font-size:14px;font-weight:800;color:var(--text2);margin:2px 0 8px;">📕 그 외 오답 ${normals.length}문항</div>`:''}<div style="display:grid;gap:10px;">${normals.map(item).join('')}</div>`:''}`;
   return `<div><div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">WRONG-ANSWER LOG</div>
       <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">📕 오답노트 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 틀린 문제 모음 (채점 ${d.answered||0}문항)</span></h2></div>
       <div style="display:flex;gap:8px;">${totalWrong?`<button data-act="wrongpdf" style="padding:8px 14px;border-radius:10px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;">📄 오답 PDF 출력</button>
       <button data-act="wrongclear" style="padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:13px;cursor:pointer;">기록 초기화</button>`:''}</div></div>
     ${S.wrongPdfMsg?`<div style="margin-bottom:12px;color:var(--blue);font-size:13px;">${h(S.wrongPdfMsg)}</div>`:''}
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">${chips}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">${d.repeat?`<div style="padding:10px 14px;border-radius:12px;border:1px solid rgba(255,140,40,.5);background:rgba(255,140,40,.1);display:flex;gap:10px;align-items:center;"><span style="font-weight:800;color:var(--orange);">🔁 반복 오답</span><span style="font-family:'Press Start 2P',monospace;font-size:12px;color:var(--orange);">${d.repeat}</span></div>`:''}${chips}</div>
     ${totalWrong?wrongGradeCard():''}
     ${totalWrong?analyzeBox():''}
-    <div style="display:grid;gap:10px;">${items}</div>
-    ${totalWrong?'<p style="margin-top:14px;color:var(--text3);font-size:12.5px;">틀린 문제를 다시 풀어 맞히면 이 목록에서 자동으로 사라져요.</p>':''}</div>`;
+    ${items}
+    ${totalWrong?'<p style="margin-top:14px;color:var(--text3);font-size:12.5px;">문제은행에서 다시 풀어 맞히면 목록에서 사라져요. <b>🔁 반복 오답</b>은 복습·PDF 채점에서 또 틀린 문항이에요.</p>':''}</div>`;
 }
 function analyzeBox(){
   const a=S.wrongAnalysis;
@@ -1007,7 +1011,7 @@ function wrongGradeCard(){
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--bluebd);background:var(--inset);color:var(--text);font-size:13px;';
   const rows = r ? Object.entries(r.by_subject).map(([subj,s])=>`
     <div style="margin-top:10px;"><b style="font-size:14.5px;">${h(subj)}</b> <span style="font-size:13px;color:${s.correct===s.total?'var(--accent-b)':'var(--text2)'};">· ${s.correct}/${s.total} · ${s.score}점</span>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;">${r.results.filter(x=>x.subject===subj).map(x=>`<span title="내 표기 ${x.marked||'미인식'} · 정답 ${x.answer||'?'}" style="padding:3px 9px;border-radius:8px;font-size:12.5px;border:1px solid ${x.correct?'rgba(46,230,166,.55)':'rgba(255,84,104,.5)'};background:${x.correct?'rgba(20,117,92,.16)':'rgba(255,84,104,.12)'};color:${x.correct?'var(--accent-b)':'var(--danger-b)'};">${x.qnum}번 ${x.correct?'✓':(x.marked?('✗ '+CIRC[x.marked]||'✗'):'—')}</span>`).join('')}</div></div>`).join('') : '';
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;">${r.results.filter(x=>x.subject===subj).map(x=>`<span style="padding:3px 9px;border-radius:8px;font-size:12px;border:1px solid ${x.correct?'rgba(46,230,166,.55)':'rgba(255,84,104,.5)'};background:${x.correct?'rgba(20,117,92,.16)':'rgba(255,84,104,.12)'};color:${x.correct?'var(--accent-b)':'var(--danger-b)'};">#${x.index} ${x.correct?'✓':'✗'} 내표기 ${x.marked?CIRC[x.marked]:'미인식'}·정답 ${CIRC[x.answer]||'?'}</span>`).join('')}</div></div>`).join('') : '';
   return `<div style="border:1px dashed var(--bluebd);border-radius:14px;padding:16px;background:var(--tintB);margin-bottom:18px;">
     <div style="font-weight:800;color:var(--blue);margin-bottom:4px;">📥 푼 오답노트 채점 (AI)</div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">인쇄한 오답노트를 풀고(정답 번호에 <b>동그라미</b>), 스캔·사진을 <b>PDF로 올리면</b> AI가 표시한 답을 읽어 채점해요. 채점해도 <b>오답노트에서 지우지 않아요.</b></div>

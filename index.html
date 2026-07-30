@@ -254,6 +254,8 @@ async function mark(qnum, choice){
     if(r.correct){ S.streak=(S.streak||0)+1; const xp=10*Math.min(S.streak,5); toast(S.streak>=2?`🔥 ${S.streak} 연속!  +${xp} XP`:`⚔️ 명중!  +10 XP`, 'good'); }
     else { const had=S.streak; S.streak=0; toast(choice===0?'🤔 다음엔 맞혀보자':(had>=2?`💥 콤보 끊김…`:'💧 아쉬워요'), 'bad'); }
     render();
+  } else if(r.error==='no_key'){
+    toast('🔑 이 문제는 정답키가 아직 없어요', 'bad');   // 정답표 미등록 → 채점 불가
   }
 }
 function toast(text, kind){
@@ -574,7 +576,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0730d · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0730e · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -608,8 +610,10 @@ function parseMeta(fn){
 }
 async function uploadPdf(){
   const inp=document.getElementById('up_file');
-  const files=_upFiles.length?_upFiles:(inp?[...inp.files]:[]);   // 저장분 우선(재렌더 대비)
+  let files=_upFiles.length?_upFiles:(inp?[...inp.files]:[]);   // 저장분 우선(재렌더 대비)
   if(!files.length){ S.adminMsg='⚠️ 파일을 선택하세요.'; render(); return; }
+  // 문제를 먼저 처리해야 정답표가 붙을 문제가 존재함(정답은 맨 뒤로)
+  files=files.slice().sort((a,b)=>(/정답|답안/.test(a.name.normalize('NFC'))?1:0)-(/정답|답안/.test(b.name.normalize('NFC'))?1:0));
   const form={type:document.getElementById('up_type').value, year:document.getElementById('up_year').value.trim(), exam_round:document.getElementById('up_round').value, level:document.getElementById('up_level').value, subject:document.getElementById('up_subject').value.trim()};
   let ok=0, fail=0, errs=[];
   for(let i=0;i<files.length;i++){

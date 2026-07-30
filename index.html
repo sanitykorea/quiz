@@ -505,11 +505,11 @@ function dodeokItems(){   // 빈칸/4지선다용: 프레임 있는 문항
     if(hlm && hlm[1].trim().length<=28){        // 내용 속 핵심어 빈칸 (프레임=주제·라벨)
       const term=hlm[1].trim();
       const body=c.content.replace(/\*\*.+?\*\*/,'§').replace(/\*\*(.+?)\*\*/g,'$1');
-      items.push({body, frame:`「${c.topic}」 · ${c.label}`, answer:term, dk:'term', blank:true});
+      items.push({body, frame:`「${c.topic}」 · ${c.label}`, answer:term, dk:'term', blank:true, topic:c.topic, label:c.label});
     } else if(!DGEN.has(c.label)){              // 설명→용어/사상가 맞히기
       const body=dqPlain(c.content);
       if(body.length>=4 && body.length<=120 && c.label.length<=18)
-        items.push({body, frame: DSAGE.test(c.label)?'다음 주장을 한 사상가는?':'다음 설명에 해당하는 것은?', answer:c.label, dk: DSAGE.test(c.label)?'sage':'concept', blank:false});
+        items.push({body, frame: DSAGE.test(c.label)?'다음 주장을 한 사상가는?':'다음 설명에 해당하는 것은?', answer:c.label, dk: DSAGE.test(c.label)?'sage':'concept', blank:false, topic:c.topic, label:c.label});
     }
   });
   return items;
@@ -529,16 +529,22 @@ function dodeokStart(mode){
 }
 function dodeokMakeChoices(){
   const q=S.dq, cur=q.items[q.idx]; if(!cur) return;
-  const others=[...new Set(q.items.filter(i=>i.dk===cur.dk&&i.answer!==cur.answer).map(i=>i.answer))];
-  q.choices=shuffle([cur.answer, ...shuffle(others).slice(0,3)]); q.pick=null;
+  const uniq=arr=>[...new Set(arr)].filter(a=>a!==cur.answer);
+  // 같은 유형(사상가↔사상가) 중 '같은 주제'의 형제 개념을 우선 오답으로 (정보윤리 ↔ 환경윤리 처럼 인접)
+  const sameTopic=uniq(q.items.filter(i=>i.dk===cur.dk&&i.topic===cur.topic).map(i=>i.answer));
+  const sameKind =uniq(q.items.filter(i=>i.dk===cur.dk).map(i=>i.answer));
+  let picks=shuffle(sameTopic).slice(0,3);
+  if(picks.length<3) picks=picks.concat(shuffle(sameKind.filter(a=>!picks.includes(a))).slice(0,3-picks.length));
+  q.choices=shuffle([cur.answer, ...picks]); q.pick=null;
 }
 function dodeokMakeOX(){
   const q=S.dq, cur=q.cards[q.idx]; if(!cur) return;
   const mkFalse=Math.random()<0.5;
   let shown=cur.label;
   if(mkFalse){
-    const sameType=q.cards.filter(c=>c.label!==cur.label && DSAGE.test(c.label)===DSAGE.test(cur.label));  // 사상가↔사상가
-    const o=shuffle(sameType.length?sameType:q.cards.filter(c=>c.label!==cur.label))[0];
+    const sameKind=q.cards.filter(c=>c.label!==cur.label && DSAGE.test(c.label)===DSAGE.test(cur.label));  // 사상가↔사상가
+    const sameTopic=sameKind.filter(c=>c.topic===cur.topic);   // 같은 주제의 형제(인접) 우선
+    const o=shuffle(sameTopic.length?sameTopic:(sameKind.length?sameKind:q.cards.filter(c=>c.label!==cur.label)))[0];
     if(o) shown=o.label;
   }
   q.ox={shown, statement:dqPlain(cur.content), truth:cur.label, answer:(shown===cur.label?'O':'X')}; q.pick=null;
@@ -736,7 +742,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731d · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731e · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">

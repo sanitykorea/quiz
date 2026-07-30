@@ -206,6 +206,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, question_id INTEGER, subject TEXT, year TEXT, exam_round TEXT, qnum INTEGER, chosen INTEGER, answer INTEGER, correct INTEGER, ts INTEGER);
     CREATE TABLE IF NOT EXISTS study_log(date TEXT PRIMARY KEY, math REAL DEFAULT 0, sci REAL DEFAULT 0, kor REAL DEFAULT 0, nc2 REAL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS pdf_files(name TEXT PRIMARY KEY, data TEXT);
+    CREATE TABLE IF NOT EXISTS exam_results(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, year TEXT, exam_round TEXT, level TEXT, json TEXT, avg REAL, ts INTEGER);
     """)
     if "answer_text" not in [r["name"] for r in c.execute("PRAGMA table_info(questions)")]:
         c.execute("ALTER TABLE questions ADD COLUMN answer_text TEXT")
@@ -664,7 +665,97 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._study_get(q.get("today", ""), q.get("weekStart", ""), q.get("periodStart", ""))
+        if p == "/dodeok.json":
+            return self._file(os.path.join(HERE, "dodeok.json"), "application/json; charset=utf-8")
+        if p == "/api/examkeys":
+            return self._examkeys(q)
+        if p == "/api/examresults":
+            if self._guard():
+                return
+            c = db(); rows = [dict(x) for x in c.execute("SELECT id,date,year,exam_round,level,json,avg FROM exam_results ORDER BY ts DESC")]; c.close()
+            for r in rows:
+                r["detail"] = json.loads(r.pop("json") or "{}")
+            return self._json({"results": rows})
+        if p == "/api/history":
+            if self._guard():
+                return
+            return self._history()
+        if p == "/api/wrong/pdf":
+            if self._guard():
+                return
+            return self._wrong_pdf()
         return self._json({"error": "not_found"}, 404)
+
+    def _examkeys(self, q):
+        """한 회차(연도·회차·과정)의 모든 과목 정답키 반환 → 실전 채점용."""
+        year, rnd, level = q.get("year"), q.get("exam_round"), q.get("level")
+        c = db()
+        rows = c.execute("""SELECT qu.subject subj, k.qnum qnum, k.answer ans
+                            FROM qkey k JOIN questions qu ON qu.id=k.question_id
+                            WHERE qu.year=? AND qu.exam_round=? AND qu.level=?
+                            ORDER BY qu.subject, k.qnum""", (year, rnd, level))
+        keys = {}
+        for r in rows:
+            keys.setdefault(r["subj"], {})[str(r["qnum"])] = r["ans"]
+        c.close()
+        return self._json({"keys": keys})
+
+    def _history(self):
+        """attempts를 (날짜·연도·회차·과목) 세션으로 집계 → 기출 풀이 기록."""
+        c = db()
+        rows = c.execute("""SELECT date(ts,'unixepoch','localtime') d, year, exam_round, subject,
+                                   COUNT(*) total, SUM(CASE WHEN correct=1 THEN 1 ELSE 0 END) correct,
+                                   MAX(ts) ts
+                            FROM attempts GROUP BY d, year, exam_round, subject
+                            ORDER BY ts DESC LIMIT 200""").fetchall()
+        out = [{"date": r["d"], "year": r["year"], "exam_round": r["exam_round"], "subject": r["subject"],
+                "total": r["total"], "correct": r["correct"], "wrong": r["total"] - r["correct"]} for r in rows]
+        c.close()
+        return self._json({"history": out})
+
+    def _wrong_pdf(self):
+        """최근 오답 문항들을 이미지로 렌더해 하나의 PDF로 합쳐 반환."""
+        try:
+            import fitz
+        except ImportError:
+            return self._json({"error": "no_fitz"}, 501)
+        c = db()
+        rows = c.execute("""SELECT a.question_id qid, a.qnum qnum, a.subject subj, a.year year, a.exam_round rnd,
+                                   qu.level level
+                            FROM attempts a
+                            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts GROUP BY question_id,qnum) l
+                              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt
+                            JOIN questions qu ON qu.id=a.question_id
+                            WHERE a.correct=0 ORDER BY a.subject, a.year, a.exam_round, a.qnum""").fetchall()
+        c.close()
+        if not rows:
+            return self._json({"error": "no_wrong"}, 404)
+        out = fitz.open()
+        for r in rows:
+            row = {"id": r["qid"], "year": r["year"], "exam_round": r["rnd"], "level": r["level"], "subject": r["subj"]}
+            try:
+                path = render_qimage(row, r["qnum"])
+            except Exception:
+                path = None
+            if not path or not os.path.exists(path):
+                continue
+            png = open(path, "rb").read()
+            pix = fitz.open("png", png)
+            rect = pix[0].rect
+            page = out.new_page(width=rect.width + 60, height=rect.height + 90)
+            page.insert_text((30, 40), f"[{r['subj']}] {r['year']} {r['rnd']} - {r['qnum']}", fontsize=13)
+            page.insert_image(fitz.Rect(30, 60, 30 + rect.width, 60 + rect.height), stream=png)
+            pix.close()
+        if out.page_count == 0:
+            out.close(); return self._json({"error": "no_image"}, 404)
+        data = out.tobytes()
+        out.close()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Disposition", "attachment; filename=wrong_notes.pdf")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def _study_get(self, today, week_start, period_start):
         c = db()
@@ -839,6 +930,17 @@ class H(http.server.BaseHTTPRequestHandler):
             c.execute("""INSERT INTO study_log(date,math,sci,kor,nc2) VALUES(?,?,?,?,?)
                          ON CONFLICT(date) DO UPDATE SET math=excluded.math,sci=excluded.sci,kor=excluded.kor,nc2=excluded.nc2""",
                       (date, *vals))
+            c.commit(); c.close()
+            return self._json({"ok": True})
+        if p == "/api/examresult":
+            if self._guard():
+                return
+            import time as _t
+            date = str(b.get("date", ""))
+            c = db()
+            c.execute("INSERT INTO exam_results(date,year,exam_round,level,json,avg,ts) VALUES(?,?,?,?,?,?,?)",
+                      (date, b.get("year", ""), b.get("exam_round", ""), b.get("level", ""),
+                       json.dumps(b.get("detail", {}), ensure_ascii=False), float(b.get("avg", 0) or 0), int(_t.time())))
             c.commit(); c.close()
             return self._json({"ok": True})
         if p == "/api/upload":

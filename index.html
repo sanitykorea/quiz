@@ -131,6 +131,7 @@ async function openApp(){
   S.gateMode = 'open';
   if(saved.day!==today) persist(); // 일일 초기화 저장
   render();
+  if(S.towerSubject==='도덕' && !S.dodeok) loadDodeok().then(render);   // 도덕 노트 미리 로드(초기 탭이 수련의 탑이어도 표시)
 }
 
 // ---------- gate ----------
@@ -623,7 +624,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731a · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731b · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -792,7 +793,11 @@ function vWrong(){
       <span style="font-size:14px;font-weight:700;">${w.qnum}번</span>
       <span style="font-size:13px;color:${w.chosen?'var(--danger-b)':'var(--pink)'};">${w.chosen?'내 선택 '+CIRC[w.chosen]:'🤔 모름'}</span>
       <span style="font-size:13px;color:var(--accent-b);">정답 ${CIRC[w.answer]}</span>
-      <button data-act="review" data-arg="${w.question_id}|${h(w.subject)}|${h(w.year)}|${h(w.exam_round)}|${w.qnum}" style="margin-left:auto;padding:6px 13px;border-radius:999px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer;">↺ 복습</button>
+      <div style="margin-left:auto;display:flex;gap:6px;">
+        ${w.wrong_count>1?`<button data-act="wrongdec" data-arg="${w.question_id}|${w.qnum}" title="오답 횟수 1회 차감" style="padding:6px 11px;border-radius:999px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-size:12.5px;font-weight:700;cursor:pointer;">−1 차감</button>`:''}
+        <button data-act="wrongremove" data-arg="${w.question_id}|${w.qnum}" title="이 문제를 오답노트에서 제거" style="padding:6px 11px;border-radius:999px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.14);color:var(--accent-b);font-size:12.5px;font-weight:700;cursor:pointer;">✓ 해결</button>
+        <button data-act="review" data-arg="${w.question_id}|${h(w.subject)}|${h(w.year)}|${h(w.exam_round)}|${w.qnum}" style="padding:6px 13px;border-radius:999px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer;">↺ 복습</button>
+      </div>
     </div>`;
   const repeats=(d.wrong||[]).filter(w=>w.repeat), normals=(d.wrong||[]).filter(w=>!w.repeat);
   const items=`${repeats.length?`<div style="font-size:14px;font-weight:800;color:var(--orange);margin:2px 0 8px;">🔁 반복해서 틀리는 문제 <span style="font-size:12px;color:var(--text3);">· 복습·PDF에서 또 틀린 ${repeats.length}문항</span></div><div style="display:grid;gap:10px;margin-bottom:16px;">${repeats.map(item).join('')}</div>`:''}
@@ -979,6 +984,8 @@ const SFX={
   towerconcept:()=>seq([[587,0],[880,0.06]]),
   wrongpdf:()=>seq([[440,0],[554,0.07],[659,0.14]]),
   wronggrade:()=>seq([[523,0],[659,0.07],[784,0.14]]),
+  wrongdec:()=>tone(340,0.07,'sine',0.1),
+  wrongremove:()=>seq([[659,0],[988,0.06]]),
   uploadpdf:()=>seq([[523,0],[698,0.07]]),
   theme:()=>tone(494,0.08,'sine',0.1),
   mute:()=>tone(400,0.06,'sine',0.1),
@@ -1023,6 +1030,12 @@ function wrongGradeCard(){
   </div>`;
 }
 
+// ========== 오답 횟수 차감 / 제거 ==========
+async function wrongAdjust(qid, qnum, action){
+  await api('/api/wrong/adjust',{method:'POST',...jbody({question_id:+qid, qnum:+qnum, action})});
+  await loadWrong(); render();
+}
+
 // ---------- event delegation ----------
 const ACTS = {
   key:tapKey, del:delKey, relock,
@@ -1059,6 +1072,8 @@ const ACTS = {
   examsave:()=>saveExam(),
   wrongpdf:()=>downloadWrongPdf(),
   wronggrade:()=>gradeWrongNote(),
+  wrongdec:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'dec');},
+  wrongremove:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'remove');},
 };
 $.addEventListener('click', e=>{ const el=e.target.closest('[data-act]'); if(!el) return; const a=el.getAttribute('data-act'); playSfx(a); if(ACTS[a]) ACTS[a](el.getAttribute('data-arg'), el); });
 function bindInputs(){

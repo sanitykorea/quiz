@@ -1114,6 +1114,27 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._wrong_grade(b)
+        if p == "/api/wrong/adjust":
+            if self._guard():
+                return
+            try:
+                qid = int(b["question_id"]); qnum = int(b["qnum"])
+            except (KeyError, ValueError, TypeError):
+                return self._json({"error": "bad_input"}, 400)
+            action = b.get("action", "dec")
+            c = db()
+            if action == "remove":          # 완전히 제거(오답노트에서 내림)
+                c.execute("DELETE FROM attempts WHERE question_id=? AND qnum=?", (qid, qnum))
+            else:                           # dec: 오답 1회 차감(가장 최근 오답 기록 삭제)
+                r = c.execute("SELECT id FROM attempts WHERE question_id=? AND qnum=? AND correct=0 ORDER BY ts DESC LIMIT 1",
+                              (qid, qnum)).fetchone()
+                if r:
+                    c.execute("DELETE FROM attempts WHERE id=?", (r["id"],))
+            c.commit()
+            left = c.execute("SELECT SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) n FROM attempts WHERE question_id=? AND qnum=?",
+                             (qid, qnum)).fetchone()["n"] or 0
+            c.close()
+            return self._json({"ok": True, "wrong_count": left})
         if p in ("/api/questions", "/api/units", "/api/cards", "/api/schedule"):
             return self._admin_write(p.rsplit("/", 1)[1], b, create=True)
         return self._json({"error": "not_found"}, 404)

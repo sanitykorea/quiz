@@ -730,25 +730,53 @@ class H(http.server.BaseHTTPRequestHandler):
         c.close()
         if not rows:
             return self._json({"error": "no_wrong"}, 404)
-        out = fitz.open()
+        # 과목별로 묶기(입력이 이미 subject 정렬)
+        from collections import OrderedDict
+        groups = OrderedDict()
         for r in rows:
-            row = {"id": r["qid"], "year": r["year"], "exam_round": r["rnd"], "level": r["level"], "subject": r["subj"]}
-            try:
-                path = render_qimage(row, r["qnum"])
-            except Exception:
-                path = None
-            if not path or not os.path.exists(path):
+            groups.setdefault(r["subj"], []).append(r)
+        # A4 세로 · 3열 그리드 (실제 시험지처럼 여러 문항이 한 페이지에)
+        W, H, MARGIN, GAP, COLS = 595.0, 842.0, 28.0, 14.0, 3
+        cellW = (W - 2 * MARGIN - (COLS - 1) * GAP) / COLS
+        out = fitz.open()
+        for subj, items in groups.items():
+            imgs = []
+            for r in items:
+                row = {"id": r["qid"], "year": r["year"], "exam_round": r["rnd"], "level": r["level"], "subject": r["subj"]}
+                try:
+                    path = render_qimage(row, r["qnum"])
+                except Exception:
+                    path = None
+                if not path or not os.path.exists(path):
+                    continue
+                src = fitz.open("png", open(path, "rb").read())
+                sp = src[0].get_pixmap(matrix=fitz.Matrix(0.62, 0.62))   # 셀이 작으니 다운샘플 → 용량 절감
+                imgs.append((r["qnum"], sp.tobytes("png"), sp.width, sp.height))
+                src.close()
+            if not imgs:
                 continue
-            png = open(path, "rb").read()
-            pix = fitz.open("png", png)
-            rect = pix[0].rect
-            page = out.new_page(width=rect.width + 60, height=rect.height + 90)
-            page.insert_text((30, 40), f"[{r['subj']}] {r['year']} {r['rnd']} - {r['qnum']}", fontsize=13)
-            page.insert_image(fitz.Rect(30, 60, 30 + rect.width, 60 + rect.height), stream=png)
-            pix.close()
+            page = out.new_page(width=W, height=H)
+            page.insert_text((MARGIN, MARGIN + 8), f"[{subj}] 오답 {len(imgs)}문항", fontsize=15, fontname="korea")   # 내장 한국어 폰트
+            y = MARGIN + 24
+            for i in range(0, len(imgs), COLS):
+                rowitems = imgs[i:i + COLS]
+                scaled = [(qn, png, cellW, ph * (cellW / pw)) for (qn, png, pw, ph) in rowitems]   # 셀 폭에 맞춰 스케일
+                rowH = max(h for *_, h in scaled)
+                avail = H - MARGIN - y
+                if rowH > avail:                       # 이 행이 페이지에 안 들어가면
+                    if y > MARGIN + 24:                # 첫 행이 아니면 새 페이지
+                        page = out.new_page(width=W, height=H); y = MARGIN; avail = H - 2 * MARGIN
+                    if rowH > avail:                   # 새 페이지에도 안 들어갈 만큼 크면 행 전체 축소
+                        sh = avail / rowH
+                        scaled = [(qn, png, w * sh, h * sh) for (qn, png, w, h) in scaled]
+                        rowH = avail
+                for j, (qn, png, w, hgt) in enumerate(scaled):
+                    x = MARGIN + j * (cellW + GAP) + (cellW - w) / 2
+                    page.insert_image(fitz.Rect(x, y, x + w, y + hgt), stream=png)
+                y += rowH + GAP
         if out.page_count == 0:
             out.close(); return self._json({"error": "no_image"}, 404)
-        data = out.tobytes()
+        data = out.tobytes(deflate=True)
         out.close()
         self.send_response(200)
         self.send_header("Content-Type", "application/pdf")

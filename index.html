@@ -574,7 +574,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0730c · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0730d · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -595,7 +595,8 @@ let _upFiles=[];   // 선택한 업로드 파일(재렌더로 input이 비워져
 const SUBJS=['국어','수학','영어','사회','과학','도덕','한국사'];
 function parseMeta(fn){
   // 파일명에서 연도·회차·과정·과목을 유연하게 추출 (구분자·순서 무관)
-  const base=fn.replace(/\.[pP][dD][fF]$/,'');
+  // 맥 파일명은 NFD(자모 분리)라 NFC로 정규화해야 한글 매칭됨
+  const base=fn.replace(/\.[pP][dD][fF]$/,'').normalize('NFC');
   const type=/정답|답안/.test(base)?'정답':'문제';
   const ym=base.match(/(20\d\d)/);
   const rm=base.match(/([12])\s*(?:차|회|교시)/) || base.replace(/20\d\d/,'').match(/(?:^|[_\-\s])([12])(?:[_\-\s]|$)/);

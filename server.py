@@ -475,7 +475,7 @@ def render_qimage(row, qnum):
     pg = doc[starts[qnum][0]]
     rect = _qbox(pg, starts, qnum, _pbreaks_cache.get(path))
     rect = fitz.Rect(rect.x0, rect.y0 - 6, rect.x1, rect.y1 - 6)
-    pg.get_pixmap(matrix=fitz.Matrix(2.6, 2.6), clip=rect).save(out)
+    pg.get_pixmap(matrix=fitz.Matrix(2.2, 2.2), clip=rect).save(out)   # 2.6→2.2: 렌더·다운로드 속도↑, 모바일에도 충분
     doc.close()
     return out
 
@@ -635,6 +635,8 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         if ctype.startswith("text/html"):
             self.send_header("Cache-Control", "no-cache, must-revalidate")  # 배포 즉시 반영
+        elif ctype.startswith("image/"):
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")  # 문항 이미지는 불변 → 브라우저 캐시(재요청 X)
         self.end_headers()
         self.wfile.write(data)
 
@@ -863,6 +865,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 figs = qfigs(path)
             except Exception:
                 figs = None
+        def wants_img(it):   # 그림·표·그래프·지도·보기박스 언급 → 이미지가 필요한 문항
+            b = (it.get("stem", "") + " " + " ".join(c.get("text", "") for c in it.get("choices", [])))
+            return bool(re.search(r'그림|도표|그래프|지도|다음\s*표|아래\s*표|〈보기〉|<보기>|\[보기\]|【보기】|다음\s*자료', b))
         for it in items:
             it["answer"] = key.get(it["qnum"])
             if not has_pdf:
@@ -870,9 +875,10 @@ class H(http.server.BaseHTTPRequestHandler):
             elif subj == "수학":
                 it["img"] = True
             elif figs is not None:
-                it["img"] = it["qnum"] in figs
+                it["img"] = (it["qnum"] in figs) or it["image"] or wants_img(it)
             else:
-                it["img"] = it["image"]
+                it["img"] = it["image"] or wants_img(it)
+            it["hasPdf"] = has_pdf   # 클라이언트: PDF 있으면 '원본 사진 보기' 버튼 노출
         meta = {k: row[k] for k in ("id", "subject", "year", "exam_round", "level")}
         return self._json({"meta": meta, "items": items})
 

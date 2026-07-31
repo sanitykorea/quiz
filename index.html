@@ -60,7 +60,7 @@ const S = {
   stance:'A', messages:[], input:'', chatLoading:false,
   units:[], cards:[], schedule:[], studyStats:null, explain:{},
   qFacets:{subject:[],year:[],exam_round:[],level:[]}, qFilter:{}, qList:[], qCurrent:null, qMsg:'',
-  quizItems:[], quizIdx:0, quizMarks:{}, showRaw:false, streak:0,
+  quizItems:[], quizIdx:0, quizMarks:{}, showRaw:false, streak:0, showImg:{},
   bankMode:'instant', picks:{}, graded:false,
   wrongData:null, wrongAnalysis:'', wrongPdfMsg:'', wrongGradeMsg:'', wrongGradeResult:null,
   examSel:{}, examKeys:null, examInputs:{}, examScore:null, examResults:[], examMsg:'',
@@ -242,9 +242,9 @@ async function loadQuestions(random){
 async function loadQuiz(){
   S.quizItems=[]; S.quizIdx=0; S.quizMarks={}; S.showRaw=false; S.explain={}; S.streak=0; S.picks={}; S.graded=false;
   if(!S.qCurrent) return;
-  const r=await api('/api/quiz?question_id='+S.qCurrent.id); S.quizItems=r.items||[];
-  // 이미지 문항 미리 로드 → '다음' 즉시 반응
-  S.quizItems.filter(it=>it.img).forEach(it=>{ const im=new Image(); im.src='/api/qimage?question_id='+S.qCurrent.id+'&qnum='+it.qnum; });
+  const r=await api('/api/quiz?question_id='+S.qCurrent.id); S.quizItems=r.items||[]; S.showImg={};
+  // 앞쪽 이미지 문항만 미리 로드(서버 과부하 방지) → 나머지는 캐시로 즉시
+  S.quizItems.filter(it=>it.img).slice(0,4).forEach(it=>{ const im=new Image(); im.src='/api/qimage?question_id='+S.qCurrent.id+'&qnum='+it.qnum; });
 }
 async function explainQ(qnum){
   const it=S.quizItems.find(x=>x.qnum===qnum); if(!it || S.explain[qnum]==='...') return;
@@ -497,19 +497,23 @@ const DGEN=new Set('의미 뜻 특징 성격 예 방법 배경 입장 관점 원
 const DSAGE=/공자|맹자|순자|노자|장자|석가|부처|칸트|밀|벤담|롤스|노직|싱어|요나스|프롬|아리스토텔레스|플라톤|소크라테스|흄|하버마스|레건|테일러|슈바이처|레오폴드|네스|베이컨|데카르트|스피노자|니부어|왈처|에피쿠로스|홉스|로크|루소|마르크스|정약용|이황|이이/;
 const DJUNK=/소단원|^PART$|^\d|^[A-Za-z0-9 ()]+$/;
 const dqPlain=s=>s.replace(/\*\*(.+?)\*\*/g,'$1');
-function dodeokItems(){   // 빈칸/4지선다용: 프레임 있는 문항
+const dqFirst=s=>dqPlain(s).split(' / ')[0].trim();   // 첫 문단만(런온·나열 방지)
+const dqRunon=s=>/(다|음|함|됨|임|기)[가-힣]{2}/.test(s.replace(/다음|다양|다만|다수|다문화|다각|다시|기준|기술|기후|기본|기업|기능/g,''));
+function dodeokItems(){   // 빈칸/4지선다용: 프레임 있는 문항 (품질 필터)
   const cards=(S.dodeok&&S.dodeok.cards)||[]; const items=[];
   cards.forEach(c=>{
-    if(DJUNK.test(c.label)) return;
+    if(DJUNK.test(c.label) || DGEN.has(c.label)) return;
     const hlm=c.content.match(/\*\*(.+?)\*\*/);
-    if(hlm && hlm[1].trim().length<=28){        // 내용 속 핵심어 빈칸 (프레임=주제·라벨)
+    if(hlm && hlm[1].trim().length>=2 && hlm[1].trim().length<=24){   // 내용 속 핵심어 빈칸
       const term=hlm[1].trim();
-      const body=c.content.replace(/\*\*.+?\*\*/,'§').replace(/\*\*(.+?)\*\*/g,'$1');
-      items.push({body, frame:`「${c.topic}」 · ${c.label}`, answer:term, dk:'term', blank:true, topic:c.topic, label:c.label});
-    } else if(!DGEN.has(c.label)){              // 설명→용어/사상가 맞히기
-      const body=dqPlain(c.content);
-      if(body.length>=4 && body.length<=120 && c.label.length<=18)
-        items.push({body, frame: DSAGE.test(c.label)?'다음 주장을 한 사상가는?':'다음 설명에 해당하는 것은?', answer:c.label, dk: DSAGE.test(c.label)?'sage':'concept', blank:false, topic:c.topic, label:c.label});
+      const seg=c.content.split(' / ').find(x=>x.includes('**')) || c.content.split(' / ')[0];
+      const body=seg.replace(/\*\*.+?\*\*/,'§').replace(/\*\*(.+?)\*\*/g,'$1');
+      if(body.length<=90 && body.length>=6) items.push({body, frame:`「${c.topic}」 · ${c.label}`, answer:term, dk:'term', blank:true, topic:c.topic, label:c.label});
+    } else {                                     // 설명→용어/사상가 (첫 문단만, 품질 게이트)
+      const desc=dqFirst(c.content);
+      const ok = desc.length>=10 && desc.length<=74 && c.label.length>=2 && c.label.length<=16
+                 && !desc.includes(c.label) && /[가-힣]/.test(desc) && !dqRunon(desc);
+      if(ok) items.push({body:desc, frame: DSAGE.test(c.label)?'다음 주장을 한 사상가는?':'다음 설명에 해당하는 것은?', answer:c.label, dk: DSAGE.test(c.label)?'sage':'concept', blank:false, topic:c.topic, label:c.label});
     }
   });
   return items;
@@ -518,7 +522,11 @@ function dodeokStart(mode){
   S.dodeokMode=mode;
   if(mode==='read'){ S.dq=null; render(); return; }
   if(mode==='ox'){
-    const cards=((S.dodeok&&S.dodeok.cards)||[]).filter(c=>!DGEN.has(c.label)&&!DJUNK.test(c.label)&&c.label.length<=18&&dqPlain(c.content).length>=6&&dqPlain(c.content).length<=140);
+    const cards=((S.dodeok&&S.dodeok.cards)||[]).filter(c=>{
+      if(DGEN.has(c.label)||DJUNK.test(c.label)||c.label.length<2||c.label.length>16) return false;
+      const d=dqFirst(c.content);
+      return d.length>=10 && d.length<=74 && !d.includes(c.label) && /[가-힣]/.test(d) && !dqRunon(d);
+    });
     S.dq={mode, cards:shuffle(cards), idx:0, pick:null, score:0, answered:0, ox:null};
     dodeokMakeOX();
   } else {
@@ -547,7 +555,7 @@ function dodeokMakeOX(){
     const o=shuffle(sameTopic.length?sameTopic:(sameKind.length?sameKind:q.cards.filter(c=>c.label!==cur.label)))[0];
     if(o) shown=o.label;
   }
-  q.ox={shown, statement:dqPlain(cur.content), truth:cur.label, answer:(shown===cur.label?'O':'X')}; q.pick=null;
+  q.ox={shown, statement:dqFirst(cur.content), truth:cur.label, answer:(shown===cur.label?'O':'X')}; q.pick=null;
 }
 function dodeokPick(v){
   const q=S.dq; if(!q||q.pick!=null) return;
@@ -742,7 +750,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731e · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731f · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -826,6 +834,19 @@ function vAdmin(){
 }
 
 const CIRC=['','①','②','③','④','⑤'];
+// 문항 원본 이미지 (로딩 실패 시 재시도 폴백)
+function qImg(qnum){
+  const src=`/api/qimage?question_id=${S.qCurrent.id}&qnum=${qnum}`;
+  return `<div class="qimgw" style="position:relative;">
+    <img src="${src}" alt="${qnum}번 문항" loading="eager" decoding="async"
+      onload="var f=this.parentNode.querySelector('.qimgfb');if(f)f.style.display='none';"
+      onerror="this.style.display='none';var f=this.parentNode.querySelector('.qimgfb');if(f)f.style.display='flex';"
+      style="width:100%;max-width:680px;border-radius:12px;background:#fff;display:block;margin:0 auto 4px;min-height:60px;">
+    <div class="qimgfb" style="display:none;flex-direction:column;align-items:center;gap:10px;padding:26px;border:1px dashed var(--gold-d);border-radius:12px;background:rgba(255,224,102,.08);color:var(--gold);font-size:13px;">
+      <span>🖼 이미지를 불러오지 못했어요</span>
+      <button onclick="var w=this.closest('.qimgw'),i=w.querySelector('img');i.style.display='block';this.parentNode.style.display='none';i.src='${src}&r='+Date.now();" style="padding:9px 18px;border-radius:10px;border:1px solid var(--gold-d);background:var(--panel2);color:var(--gold);font-weight:700;cursor:pointer;">다시 불러오기</button>
+    </div></div>`;
+}
 function quiz(){
   const its=S.quizItems;
   if(!its.length) return `<div style="border:1px solid var(--border);border-radius:16px;padding:24px;color:var(--text3);font-size:14px;text-align:center;">문항을 불러오는 중이거나 분해할 수 없는 기출이에요. <b>📄 전체 원문</b>으로 확인하세요.</div>`;
@@ -840,12 +861,11 @@ function quiz(){
   const passage = it.passage ? `<div style="border:1px solid var(--bluebd);background:var(--tintB);border-radius:14px;padding:14px 16px;margin-bottom:14px;">
       <div style="font-family:'Cinzel',serif;font-size:11px;color:var(--blue);letter-spacing:1px;margin-bottom:8px;">📖 지문 ${samePassage?'· 앞 문항과 동일':''}</div>
       <div style="max-height:34vh;overflow:auto;white-space:pre-wrap;font-size:14.5px;line-height:1.85;color:var(--text);">${h(it.passage)}</div></div>` : '';
-  // 발문 (수학 등: PDF 원본 이미지)
+  // 발문 (수학·그림·표: PDF 원본 이미지 / 텍스트 문항은 '원본 사진 보기' 버튼)
+  const imgBtn = it.hasPdf ? `<button data-act="showimg" data-arg="${it.qnum}" style="margin-top:10px;padding:9px 15px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.1);color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;">${S.showImg[it.qnum]?'🖼 사진 숨기기':'🖼 원본 사진(표·그림) 보기'}</button>` : '';
   const stem = it.img
-    ? `<img src="/api/qimage?question_id=${S.qCurrent.id}&qnum=${it.qnum}" alt="${it.qnum}번 문항" style="width:100%;max-width:680px;border-radius:12px;background:#fff;display:block;margin:0 auto 4px;">`
-    : it.image
-    ? `<div style="font-size:17px;font-weight:700;line-height:1.6;">${it.stem?h(it.stem):''}</div><div style="margin-top:10px;padding:10px 12px;border-radius:10px;border:1px dashed var(--gold-d);background:rgba(255,224,102,.08);color:var(--gold);font-size:13px;">🖼 원문 이미지를 준비하지 못한 문항이에요. <b>📄 전체 원문</b>으로 확인하세요.</div>`
-    : `<div style="font-size:18px;font-weight:700;line-height:1.7;white-space:pre-wrap;font-family:'Nanum Myeongjo','Batang',serif;">${h(it.stem)}</div>`;
+    ? qImg(it.qnum)
+    : `<div style="font-size:18px;font-weight:700;line-height:1.7;white-space:pre-wrap;font-family:'Nanum Myeongjo','Batang',serif;">${h(it.stem)}</div>${S.showImg[it.qnum]?`<div style="margin-top:10px;">${qImg(it.qnum)}</div>`:''}${imgBtn}`;
   // 선지 (이미지 문항은 원 버튼만; 텍스트 문항은 선지 텍스트 포함)
   const act = batch ? 'pick' : 'mark';
   const disabled = batch ? false : !!m;
@@ -1178,6 +1198,7 @@ const ACTS = {
   qpick:id=>pickQuestion(id), qscore:scoreQuestion,
   mark:arg=>{const[n,c]=arg.split(':').map(Number); mark(n,c);},
   qnav:d=>quizNav(+d), toggleraw:()=>{S.showRaw=!S.showRaw;render();}, explainq:n=>explainQ(+n),
+  showimg:n=>{ S.showImg[n]=!S.showImg[n]; render(); },
   review:arg=>{const[id,s,y,r,qn]=arg.split('|'); reviewWrong(+id,s,y,r,+qn);},
   wrongclear:async()=>{ if(confirm('오답노트 기록을 모두 지울까요?')){ await api('/api/wrong/clear',{method:'POST'}); await loadWrong(); } },
   atab:async id=>{S.adminTab=id;S.adminMsg='';await adminReload();},

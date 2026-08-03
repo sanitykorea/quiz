@@ -2,8 +2,16 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>지식의 탑</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0b1120">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="지식의 탑">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css">
@@ -136,6 +144,7 @@ async function openApp(){
   if(saved.day!==today) persist(); // 일일 초기화 저장
   render();
   if(S.towerSubject==='도덕' && !S.dodeok) loadDodeok().then(render);   // 도덕 노트 미리 로드(초기 탭이 수련의 탑이어도 표시)
+  loadRecommend().then(loadToday).then(()=>{ if(dday()<=1) return loadWrong(); }).then(render);   // 캠프 카드(추천·리포트·D-1) 초기 로드
 }
 
 // ---------- gate ----------
@@ -478,7 +487,7 @@ function vCamp(){
     return `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid ${on?'rgba(255,84,104,.5)':'var(--border)'};background:${on?'rgba(255,84,104,.10)':'var(--panel2)'};"><div style="font-size:20px;">${on?(s.kind==='seal'?'🔒':'🛡️'):'🗓'}</div><div><div style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--text3);">${h(s.day)} ${h(s.t_start)}–${h(s.t_end)}</div><div style="font-size:14px;font-weight:700;margin-top:5px;">${h(s.name)}</div></div><div style="margin-left:auto;font-size:11px;font-weight:700;color:${on?'var(--danger-b)':'var(--text3)'};">${on?'발동 중':'대기'}</div></div>`;
   }).join('') || '<div style="color:var(--text3);font-size:13px;">고정일정이 없어요. 관리소 → 고정일정에서 추가하세요.</div>';
   const totalPct=Math.min(100,total/360*100);
-  return `<div style="display:grid;gap:22px;">${examDayCard()}${recommendCard()}${todayCard()}${planCard()}<section>
+  return `<div style="display:grid;gap:22px;">${finalCheckCard()}${examDayCard()}${recommendCard()}${todayCard()}${planCard()}<section>
     <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">DAILY QUESTS</div>
       <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">⛺ 일일 퀘스트 현황 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 황금비 2:1:1:2 (총 6시간)</span></h2></div>
@@ -834,7 +843,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804c · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804d · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1039,6 +1048,7 @@ function vWrong(){
     ${S.wrongPdfMsg?`<div style="margin-bottom:12px;color:var(--blue);font-size:13px;">${h(S.wrongPdfMsg)}</div>`:''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">${d.repeat?`<div style="padding:10px 14px;border-radius:12px;border:1px solid rgba(255,140,40,.5);background:rgba(255,140,40,.1);display:flex;gap:10px;align-items:center;"><span style="font-weight:800;color:var(--orange);">🔁 반복 오답</span><span style="font-family:'Press Start 2P',monospace;font-size:12px;color:var(--orange);">${d.repeat}</span></div>`:''}${chips}</div>
     ${diagCard()}
+    ${totalWrong?rxCard():''}
     ${totalWrong?wrongGradeCard():''}
     ${totalWrong?analyzeBox():''}
     ${items}
@@ -1366,14 +1376,83 @@ function examDayCard(){
         <div style="margin-top:8px;font-size:11.5px;color:var(--text3);">※ 영어는 과목합격(면제) — 해당 교시 대기실 이용. 쉬는 시간엔 다음 과목 암기 노트만!</div></div>
     </div></div>`;
 }
+// ========== 오답 원인별 맞춤 처방 ==========
+const RX={
+  concept:{ico:'📘',name:'개념 몰라서',color:'var(--blue)',
+    tips:s=>[`${s} 개념 정리부터 — 수련의 탑 → ${s} → 🧚 오답 기반 개념 정리`,
+             `틀린 문항의 <b>정답 선지 개념</b>을 노트에 한 줄로 옮겨 적기`,
+             `같은 개념 다른 회차를 '🔗 비슷한 기출'로 2~3문항 더 풀기`]},
+  mistake:{ico:'✏️',name:'실수',color:'var(--gold)',
+    tips:s=>['<b>검산 루틴</b>: ①문제 조건 다시 읽기 ②단위·부호 확인 ③답 대입',
+             '"옳지 <b>않은</b> 것"·"모두 고른" 같은 <b>부정·복수 조건에 동그라미</b> 치고 풀기',
+             `${s}는 실수가 원인 — 새 개념 공부보다 <b>같은 회차 재풀이</b>가 효과적`]},
+  confuse:{ico:'🌀',name:'헷갈림',color:'var(--pink)',
+    tips:s=>['헷갈리는 <b>짝 개념을 2열 표</b>로 비교 정리 (예: 이온결합 vs 공유결합)',
+             '도덕/사회는 <b>OX 퀴즈</b>로 인접 개념 구분 훈련',
+             '오답 선지가 왜 매력적이었는지 <b>한 줄로 적기</b>']},
+  time:{ico:'⏱',name:'시간 부족',color:'var(--orange)',
+    tips:s=>['<b>실전 모의고사(40분)</b>로 문항당 1분 36초 감각 만들기',
+             '막히면 <b>60초 룰</b> — 표시하고 넘어간 뒤 마지막에 복귀',
+             `${s} 계산·자료 해석 문항은 <b>풀이 순서를 고정</b>해 시간 단축`]},
+  guess:{ico:'🎲',name:'찍음',color:'var(--danger-b)',
+    tips:s=>[`찍어서 맞은 건 <b>실력이 아니에요</b> — ${s} 해당 단원 개념부터`,
+             '모르면 <b>🤔 모름</b>을 눌러 정확히 기록 (찍기 통계가 정확해져요)',
+             '오답노트에서 해당 문항 <b>🔬 상세 진단</b>으로 단원 특정']},
+};
+function rxCard(){
+  const st=S.diag||[];
+  const all={}; let n=0;
+  st.forEach(s=>Object.entries(s.tags||{}).forEach(([k,v])=>{ all[k]=(all[k]||0)+v; n+=v; }));
+  const untagged=st.reduce((a,s)=>a+s.wrong,0)-n;
+  if(!n) return `<div style="border:1px dashed var(--pinkbd);border-radius:14px;padding:15px;background:var(--tintP);margin-bottom:18px;font-size:13.5px;color:var(--text2);">
+    🏷 아래 오답에 <b>왜 틀렸는지</b> 태그를 달아보세요. 원인별 <b>맞춤 처방</b>이 여기 나타나요.${untagged>0?` (미태그 ${untagged}문항)`:''}</div>`;
+  const top=Object.entries(all).sort((a,b)=>b[1]-a[1]);
+  const worst=st.slice().sort((a,b)=>a.acc-b.acc)[0];
+  const subj=worst?worst.subject:'취약 과목';
+  return `<div style="border:1px solid var(--pinkbd);border-radius:16px;padding:18px;background:linear-gradient(180deg,var(--tintP),var(--panel2));margin-bottom:18px;">
+    <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--pink);letter-spacing:1px;margin-bottom:10px;">PRESCRIPTION · 원인별 처방</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">${top.map(([k,v])=>`<span style="padding:5px 11px;border-radius:999px;border:1px solid ${RX[k].color};background:var(--panel2);color:${RX[k].color};font-size:12.5px;font-weight:700;">${RX[k].ico} ${RX[k].name} ${v}</span>`).join('')}${untagged>0?`<span style="padding:5px 11px;border-radius:999px;border:1px solid var(--border);color:var(--text3);font-size:12.5px;">미태그 ${untagged}</span>`:''}</div>
+    ${top.slice(0,2).map(([k,v])=>`<div style="border:1px solid ${RX[k].color};border-radius:12px;padding:13px 15px;background:var(--inset);margin-bottom:8px;">
+      <div style="font-size:14px;font-weight:800;color:${RX[k].color};margin-bottom:7px;">${RX[k].ico} ${RX[k].name} ${v}건 <span style="font-size:11.5px;color:var(--text3);font-weight:600;">· 전체의 ${Math.round(v/n*100)}%</span></div>
+      <div style="display:grid;gap:5px;font-size:13.2px;line-height:1.65;color:var(--text);">${RX[k].tips(subj).map(t=>`<div>· ${t}</div>`).join('')}</div></div>`).join('')}
+    <div style="font-size:11.5px;color:var(--text3);">※ 가장 많은 원인 2가지의 처방이에요. 태그를 더 달수록 정확해져요.</div></div>`;
+}
+// ========== D-1 최종 점검 모드 ==========
+function finalCheckCard(){
+  const d=dday(); if(d>1) return '';
+  const w=(S.wrongData&&S.wrongData.wrong)||[];
+  const rep=w.filter(x=>x.repeat);
+  const bySub={}; w.forEach(x=>{ bySub[x.subject]=(bySub[x.subject]||0)+1; });
+  const list=Object.entries(bySub).sort((a,b)=>b[1]-a[1]);
+  return `<div style="border:2px solid var(--danger-b);border-radius:16px;padding:18px;background:linear-gradient(180deg,rgba(255,84,104,.12),var(--panel2));margin-bottom:18px;box-shadow:0 0 28px rgba(255,84,104,.18);">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--danger-b);letter-spacing:1px;">FINAL CHECK · ${d===0?'시험 당일':'D-1 최종 점검'}</div>
+      <span style="font-size:12px;color:var(--gold);font-weight:700;">${d===0?'오늘이 그날이에요 ⚔️':'내일이 시험이에요'}</span></div>
+    <div style="border:1px solid var(--gold-d);border-radius:12px;padding:13px 15px;background:rgba(255,224,102,.08);margin-bottom:12px;font-size:13.4px;line-height:1.85;">
+      <b style="color:var(--gold);">오늘의 원칙</b><br>
+      · <b>새 문제는 풀지 않기</b> — 아는 것만 확인해서 자신감 유지<br>
+      · 틀렸던 문항과 핵심 개념만 빠르게 훑기<br>
+      · ${d===1?'23:00 전 취침 · 준비물 미리 챙기기':'쉬는 시간엔 다음 과목 요약만'}</div>
+    ${rep.length?`<div style="margin-bottom:10px;">
+      <div style="font-size:13.5px;font-weight:800;color:var(--orange);margin-bottom:7px;">🔁 반드시 다시 볼 반복 오답 ${rep.length}문항</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">${rep.slice(0,14).map(x=>`<button data-act="review" data-arg="${x.question_id}|${h(x.subject)}|${h(x.year)}|${h(x.exam_round)}|${x.qnum}" style="padding:6px 11px;border-radius:9px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-size:12.5px;font-weight:700;cursor:pointer;">${h(x.subject)} ${x.qnum}번</button>`).join('')}</div></div>`:''}
+    ${list.length?`<div style="margin-bottom:10px;">
+      <div style="font-size:13.5px;font-weight:800;margin-bottom:7px;">📕 과목별 남은 오답</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">${list.map(([s,n])=>`<span style="padding:5px 11px;border-radius:999px;border:1px solid rgba(255,84,104,.4);background:rgba(255,84,104,.08);font-size:12.5px;">${h(s)} <b style="color:var(--danger-b);">${n}</b></span>`).join('')}</div></div>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button data-act="tab" data-arg="wrong" style="flex:1;min-width:130px;padding:11px;border-radius:11px;border:1px solid var(--danger-b);background:rgba(255,84,104,.14);color:var(--danger-b);font-weight:800;font-size:14px;cursor:pointer;">📕 오답노트 훑기</button>
+      <button data-act="finaldodeok" style="flex:1;min-width:130px;padding:11px;border-radius:11px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-weight:800;font-size:14px;cursor:pointer;">✏️ 도덕 핵심 훑기</button></div></div>`;
+}
 // ========== 하루 마감 리포트 ==========
 async function loadToday(){ const r=await api('/api/today?date='+ymd(new Date())); S.today=r; render(); }
 function todayCard(){
   const t=S.today; if(!t) return '';
-  if(!t.total) return `<div style="border:1px solid var(--border);border-radius:14px;padding:14px 16px;background:var(--panel);margin-bottom:18px;font-size:13.5px;color:var(--text2);">📋 오늘 아직 푼 문항이 없어요. 위 추천에서 한 회차만 시작해볼까요?</div>`;
+  const strk=t.streak?`<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;background:linear-gradient(180deg,#ff8a3d,#e0603b);color:#fff;font-weight:800;font-size:13px;box-shadow:0 0 14px rgba(255,120,60,.45);">🔥 ${t.streak}일 연속</span>`:'';
+  if(!t.total) return `<div style="border:1px solid var(--border);border-radius:14px;padding:14px 16px;background:var(--panel);margin-bottom:18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13.5px;color:var(--text2);">${strk}<span>📋 오늘 아직 푼 문항이 없어요.${t.streak?' <b>연속 기록을 지키려면</b> 한 문항이라도 풀어보세요!':' 위 추천에서 한 회차만 시작해볼까요?'}</span></div>`;
   const c=t.acc>=90?'var(--accent-b)':t.acc>=75?'var(--gold)':'var(--danger-b)';
   return `<div style="border:1px solid var(--bluebd);border-radius:16px;padding:18px;background:linear-gradient(180deg,var(--tintB),var(--panel2));margin-bottom:18px;">
-    <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--blue);letter-spacing:1px;margin-bottom:10px;">DAILY REPORT · 오늘의 성과</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--blue);letter-spacing:1px;">DAILY REPORT · 오늘의 성과</div>${strk}</div>
     <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:10px;">
       <div><div style="font-size:12px;color:var(--text2);">푼 문항</div><div style="font-size:26px;font-weight:900;">${t.total}</div></div>
       <div><div style="font-size:12px;color:var(--text2);">정답률</div><div style="font-size:26px;font-weight:900;color:${c};">${t.acc}%</div></div>
@@ -1598,7 +1677,7 @@ const ACTS = {
     if(id==='wrong'){await loadWrong(); await loadDiag(false);}
     if(id==='admin'){await adminReload();}
     if(id==='exam'){ if(!S.qFacets.subject.length)await loadFacets(); await loadExamRecords(); if(!S.diag)await loadDiag(false); render(); }
-    if(id==='camp'){ await loadRecommend(); await loadToday(); if(!S.diag)await loadDiag(false); render(); }
+    if(id==='camp'){ await loadRecommend(); await loadToday(); if(!S.diag)await loadDiag(false); if(dday()<=1&&!S.wrongData)await loadWrong(); render(); }
     if(id==='tower'&&S.towerSubject==='도덕'&&!S.dodeok){ await loadDodeok(); render(); } },
   timer:sub=>toggleTimer(sub), add:arg=>{const[s,d]=arg.split(':');addMins(s,+d);}, nc2:pickNc2, preview:()=>{S.lockPreview=!S.lockPreview;render();},
   nextUnit, flip, critical, dodge, verify, clearBlank:()=>{S.blankText='';S.blankResult='';render();},
@@ -1645,6 +1724,8 @@ const ACTS = {
   chkexam:i=>{ S.checkExam={...S.checkExam,[i]:!S.checkExam[i]}; render(); },
   cqstart:s=>cqStart(s), cqclose:()=>{ S.cq=null; render(); },
   cqpick:n=>cqPick(+n), cqnext:()=>cqNext(),
+  finaldodeok:()=>{ S.tab='tower'; S.towerSubject='도덕'; S.dodeokMode='blank';
+    (S.dodeok?Promise.resolve():loadDodeok()).then(()=>{ dodeokStart('blank'); render(); }); },
   wrongdec:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'dec');},
   wrongremove:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'remove');},
 };

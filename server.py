@@ -718,6 +718,10 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._study_get(q.get("today", ""), q.get("weekStart", ""), q.get("periodStart", ""))
         if p == "/dodeok.json":
             return self._file(os.path.join(HERE, "dodeok.json"), "application/json; charset=utf-8")
+        if p == "/manifest.json":
+            return self._file(os.path.join(HERE, "manifest.json"), "application/manifest+json; charset=utf-8")
+        if p in ("/icon-192.png", "/icon-512.png"):
+            return self._file(os.path.join(HERE, p.lstrip("/")), "image/png")
         if p == "/api/examkeys":
             return self._examkeys(q)
         if p == "/api/examresults":
@@ -1185,7 +1189,18 @@ class H(http.server.BaseHTTPRequestHandler):
               AND EXISTS (SELECT 1 FROM attempts b WHERE b.question_id=a.question_id AND b.qnum=a.qnum
                           AND b.correct=0 AND b.ts<a.ts)
               GROUP BY a.question_id,a.qnum)""", (date,)).fetchone()["n"]
+        # 연속 학습일: 오늘(또는 어제)부터 거꾸로 끊기지 않은 날 수
+        days = {r["d"] for r in c.execute(
+            """SELECT DISTINCT date(ts,'unixepoch','localtime') d FROM attempts WHERE source='quiz'
+               UNION SELECT date FROM study_log WHERE (math+sci+kor+nc2)>0""")}
         c.close()
+        import datetime as _dt
+        base = _dt.date.fromisoformat(date)
+        streak, cur = 0, base
+        if base.isoformat() not in days:
+            cur = base - _dt.timedelta(days=1)     # 오늘 아직 안 했으면 어제부터 세되 유지로 인정
+        while cur.isoformat() in days:
+            streak += 1; cur -= _dt.timedelta(days=1)
         by = {}
         for r in rows:
             s = by.setdefault(r["subject"], {"total": 0, "correct": 0})
@@ -1194,7 +1209,8 @@ class H(http.server.BaseHTTPRequestHandler):
         mins = sum(round(study[k] or 0) for k in ("math", "sci", "kor", "nc2")) if study else 0
         return self._json({"date": date, "total": total, "correct": correct,
                            "acc": round(correct / total * 100) if total else 0,
-                           "by_subject": by, "fixed": fixed, "minutes": mins})
+                           "by_subject": by, "fixed": fixed, "minutes": mins,
+                           "streak": streak, "today_done": date in days})
 
     def _subject_exam_meta(self, subject):
         """해당 과목 기출에서 (1)실제 선지 묶음 (2)빈출 용어를 추출 → 기출 수준의 퀴즈 재료."""

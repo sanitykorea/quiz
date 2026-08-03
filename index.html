@@ -792,7 +792,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804a · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804b · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -907,7 +907,7 @@ function quiz(){
   const imgBtn = it.hasPdf ? `<button data-act="showimg" data-arg="${it.qnum}" style="margin-top:10px;padding:9px 15px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.1);color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;">${S.showImg[it.qnum]?'🖼 사진 숨기기':'🖼 원본 사진(표·그림) 보기'}</button>` : '';
   const stem = it.img
     ? qImg(it.qnum)
-    : `<div style="font-size:18px;font-weight:700;line-height:1.7;white-space:pre-wrap;font-family:'Nanum Myeongjo','Batang',serif;">${h(it.stem)}</div>${S.showImg[it.qnum]?`<div style="margin-top:10px;">${qImg(it.qnum)}</div>`:''}${imgBtn}`;
+    : `<div style="font-size:17.5px;font-weight:700;line-height:1.75;white-space:pre-wrap;letter-spacing:-.1px;">${h(it.stem)}</div>${S.showImg[it.qnum]?`<div style="margin-top:10px;">${qImg(it.qnum)}</div>`:''}${imgBtn}`;
   // 선지 (이미지 문항은 원 버튼만; 텍스트 문항은 선지 텍스트 포함)
   const act = batch ? 'pick' : 'mark';
   const disabled = batch ? false : !!m;
@@ -920,7 +920,7 @@ function quiz(){
       else { col='var(--text3)'; }
     }
     if(it.img) return `<button data-act="${act}" data-arg="${it.qnum}:${c.n}" ${disabled?'disabled':''} style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:14px 0;border-radius:12px;border:1px solid ${bd};background:${bg};color:${col};font-size:20px;cursor:${disabled?'default':'pointer'};">${CIRC[c.n]}<span style="font-size:15px;font-weight:800;">${extra}</span></button>`;
-    return `<button data-act="${act}" data-arg="${it.qnum}:${c.n}" ${disabled?'disabled':''} style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 15px;border-radius:12px;border:1px solid ${bd};background:${bg};color:${col};font-size:15.5px;cursor:${disabled?'default':'pointer'};font-family:'Nanum Myeongjo','Batang',serif;">
+    return `<button data-act="${act}" data-arg="${it.qnum}:${c.n}" ${disabled?'disabled':''} style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 15px;border-radius:12px;border:1px solid ${bd};background:${bg};color:${col};font-size:15.5px;cursor:${disabled?'default':'pointer'};line-height:1.6;">
       <span style="font-size:18px;flex:0 0 auto;">${CIRC[c.n]}</span><span style="flex:1;${c.text?'':'color:var(--text3)'}">${h(c.text)||'(원문·이미지 참조)'}</span><span style="color:inherit;font-weight:800;">${extra}</span></button>`;
   }).join('');
   const choiceWrap = it.img ? 'display:flex;gap:9px;' : 'display:grid;gap:9px;';

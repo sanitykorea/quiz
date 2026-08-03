@@ -212,6 +212,8 @@ def init_db():
         c.execute("ALTER TABLE questions ADD COLUMN answer_text TEXT")
     if "source" not in [r["name"] for r in c.execute("PRAGMA table_info(attempts)")]:
         c.execute("ALTER TABLE attempts ADD COLUMN source TEXT DEFAULT 'quiz'")   # quiz(문제은행·복습) / pdf(오답노트 스캔 채점)
+    if "tag" not in [r["name"] for r in c.execute("PRAGMA table_info(attempts)")]:
+        c.execute("ALTER TABLE attempts ADD COLUMN tag TEXT")                     # 오답 원인: concept/mistake/confuse/time/guess
     if not c.execute("SELECT 1 FROM questions LIMIT 1").fetchone():
         _load_questions(c)                        # 첫 실행: 기출 42문항 + 정답키 적재
     # 지문/카드 콘텐츠: 버전이 바뀌면 새 항목만 추가(중복 제목/질문은 건너뜀 → 사용자 편집 보존)
@@ -694,6 +696,14 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._diagnose(q)
         if p == "/api/exammeta":
             return self._json(self._subject_exam_meta(q.get("subject", "도덕")))
+        if p == "/api/conceptquiz":
+            if self._guard():
+                return
+            return self._concept_quiz(q.get("subject", ""))
+        if p == "/api/today":
+            if self._guard():
+                return
+            return self._today(q.get("date", ""))
         if p == "/api/recommend":
             if self._guard():
                 return
@@ -1133,6 +1143,59 @@ class H(http.server.BaseHTTPRequestHandler):
         out.sort(key=lambda x: -x["score"])
         return self._json({"items": out[:6], "subject": row["subject"]})
 
+    def _concept_quiz(self, subject):
+        """해당 과목 기출 발문+선지+정답을 모아 속사포 개념 퀴즈로 제공(그림 문항 제외)."""
+        if not subject:
+            return self._json({"error": "bad_input"}, 400)
+        c = db()
+        rows = c.execute("SELECT id,year,exam_round,level,raw_text FROM questions WHERE subject=?", (subject,)).fetchall()
+        keys = {}
+        for r in c.execute("""SELECT k.question_id qid,k.qnum qnum,k.answer ans FROM qkey k
+                              JOIN questions q ON q.id=k.question_id WHERE q.subject=?""", (subject,)):
+            keys[(r["qid"], r["qnum"])] = r["ans"]
+        c.close()
+        out = []
+        for r in rows:
+            for it in parse_items(r["raw_text"]):
+                ans = keys.get((r["id"], it["qnum"]))
+                stem = (it.get("stem") or "").strip()
+                chs = [ch for ch in it.get("choices", []) if ch.get("text")]
+                # 텍스트만으로 풀 수 있는 문항(그림·수식 의존 제외)
+                if not ans or len(chs) < 4 or len(stem) < 8 or it.get("image"):
+                    continue
+                if re.search(r'그림|그래프|지도|다음\s*표|아래\s*표|자료를 보고', stem):
+                    continue
+                out.append({"question_id": r["id"], "qnum": it["qnum"], "stem": stem, "choices": chs,
+                            "answer": ans, "year": r["year"], "exam_round": r["exam_round"],
+                            "passage": (it.get("passage") or "")[:400]})
+        return self._json({"items": out, "subject": subject, "count": len(out)})
+
+    def _today(self, date):
+        """하루 마감 리포트: 오늘 푼 문항·정답률·과목별·해결한 반복오답."""
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date or ""):
+            return self._json({"error": "bad_date"}, 400)
+        c = db()
+        rows = [dict(r) for r in c.execute(
+            "SELECT * FROM attempts WHERE date(ts,'unixepoch','localtime')=? AND source='quiz'", (date,))]
+        study = c.execute("SELECT math,sci,kor,nc2 FROM study_log WHERE date=?", (date,)).fetchone()
+        # 오늘 이전에 틀렸다가 오늘 맞힌 문항(=회복)
+        fixed = c.execute("""SELECT COUNT(*) n FROM (
+              SELECT a.question_id qid,a.qnum qn FROM attempts a
+              WHERE a.correct=1 AND date(a.ts,'unixepoch','localtime')=? AND source='quiz'
+              AND EXISTS (SELECT 1 FROM attempts b WHERE b.question_id=a.question_id AND b.qnum=a.qnum
+                          AND b.correct=0 AND b.ts<a.ts)
+              GROUP BY a.question_id,a.qnum)""", (date,)).fetchone()["n"]
+        c.close()
+        by = {}
+        for r in rows:
+            s = by.setdefault(r["subject"], {"total": 0, "correct": 0})
+            s["total"] += 1; s["correct"] += r["correct"] or 0
+        total = len(rows); correct = sum(r["correct"] or 0 for r in rows)
+        mins = sum(round(study[k] or 0) for k in ("math", "sci", "kor", "nc2")) if study else 0
+        return self._json({"date": date, "total": total, "correct": correct,
+                           "acc": round(correct / total * 100) if total else 0,
+                           "by_subject": by, "fixed": fixed, "minutes": mins})
+
     def _subject_exam_meta(self, subject):
         """해당 과목 기출에서 (1)실제 선지 묶음 (2)빈출 용어를 추출 → 기출 수준의 퀴즈 재료."""
         c = db()
@@ -1170,7 +1233,9 @@ class H(http.server.BaseHTTPRequestHandler):
         stats, wrongs = {}, {}
         for r in rows:
             s = stats.setdefault(r["subject"], {"subject": r["subject"], "total": 0, "correct": 0, "wrong": 0,
-                                                "repeat": 0, "unknown": 0, "rounds": {}})
+                                                "repeat": 0, "unknown": 0, "rounds": {}, "tags": {}})
+            if not r["correct"] and r.get("tag"):
+                s["tags"][r["tag"]] = s["tags"].get(r["tag"], 0) + 1
             s["total"] += 1
             rk = f'{r["year"]} {r["exam_round"]}'
             rr = s["rounds"].setdefault(rk, {"total": 0, "wrong": 0})
@@ -1327,6 +1392,22 @@ class H(http.server.BaseHTTPRequestHandler):
             if txt is None:
                 return self._json({"error": "no-ai"}, 503)
             return self._json({"text": (txt or "").strip()})
+        if p == "/api/wrong/tag":
+            if self._guard():
+                return
+            try:
+                qid = int(b["question_id"]); qnum = int(b["qnum"])
+            except (KeyError, ValueError, TypeError):
+                return self._json({"error": "bad_input"}, 400)
+            tag = b.get("tag") or None
+            if tag not in (None, "concept", "mistake", "confuse", "time", "guess"):
+                return self._json({"error": "bad_tag"}, 400)
+            c = db()
+            c.execute("""UPDATE attempts SET tag=? WHERE id=(SELECT id FROM attempts
+                         WHERE question_id=? AND qnum=? AND correct=0 ORDER BY ts DESC LIMIT 1)""",
+                      (tag, qid, qnum))
+            c.commit(); c.close()
+            return self._json({"ok": True, "tag": tag})
         if p == "/api/wrong/adjust":
             if self._guard():
                 return

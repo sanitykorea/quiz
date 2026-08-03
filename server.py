@@ -688,6 +688,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._wrong_analyze()
+        if p == "/api/diagnose":
+            if self._guard():
+                return
+            return self._diagnose(q)
         if p == "/api/study":
             if self._guard():
                 return
@@ -847,6 +851,13 @@ class H(http.server.BaseHTTPRequestHandler):
                 rows = [dict(x) for x in c.execute(base + clause + " ORDER BY RANDOM() LIMIT 1", args)]
         else:
             rows = [dict(x) for x in c.execute(base + clause + " ORDER BY id LIMIT 200", args)]
+            # 회차별 풀이 현황(푼 문항수·맞은수) → 미풀이 기출을 목록에서 바로 구분
+            prog = {r["qid"]: (r["n"], r["ok"]) for r in c.execute(
+                "SELECT question_id qid, COUNT(DISTINCT qnum) n, SUM(correct) ok FROM attempts WHERE source='quiz' GROUP BY question_id")}
+            for r in rows:
+                n, ok = prog.get(r["id"], (0, 0))
+                r["solved"] = n
+                r["correct"] = ok or 0
         c.close()
         return self._json({"questions": rows})
 
@@ -1043,6 +1054,69 @@ class H(http.server.BaseHTTPRequestHandler):
         if out is None:
             return self._json({"error": "no-ai"}, 503)
         return self._json({"analysis": out.strip(), "count": len(rows)})
+
+    def _diagnose(self, q):
+        """오답노트 기반 과목별 취약점 상세 진단(통계 + AI 코칭)."""
+        c = db()
+        latest = """SELECT a.* FROM attempts a
+            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'"""
+        rows = [dict(r) for r in c.execute(latest)]
+        if not rows:
+            c.close(); return self._json({"empty": True, "stats": []})
+        rep = {(r["question_id"], r["qnum"]): r["wc"] for r in c.execute(
+            "SELECT question_id,qnum,SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) wc FROM attempts GROUP BY question_id,qnum")}
+        stats, wrongs = {}, {}
+        for r in rows:
+            s = stats.setdefault(r["subject"], {"subject": r["subject"], "total": 0, "correct": 0, "wrong": 0,
+                                                "repeat": 0, "unknown": 0, "rounds": {}})
+            s["total"] += 1
+            rk = f'{r["year"]} {r["exam_round"]}'
+            rr = s["rounds"].setdefault(rk, {"total": 0, "wrong": 0})
+            rr["total"] += 1
+            if r["correct"]:
+                s["correct"] += 1
+            else:
+                s["wrong"] += 1; rr["wrong"] += 1
+                if r["chosen"] == 0:
+                    s["unknown"] += 1
+                if rep.get((r["question_id"], r["qnum"]), 0) >= 2:
+                    s["repeat"] += 1
+                wrongs.setdefault(r["subject"], []).append(r)
+        for s in stats.values():
+            s["acc"] = round(s["correct"] / s["total"] * 100) if s["total"] else 0
+            s["rounds"] = [dict(k=k, **v) for k, v in sorted(s["rounds"].items())]
+        out = sorted(stats.values(), key=lambda x: (x["acc"], -x["wrong"]))
+        if not q.get("ai"):
+            c.close(); return self._json({"stats": out})
+        # AI 상세 진단: 과목별 오답 발문 모아 전달
+        pages, lines = {}, []
+        for subj, ws in wrongs.items():
+            lines.append(f"[{subj}] 정답률 {stats[subj]['acc']}% · 오답 {stats[subj]['wrong']}/{stats[subj]['total']} · 반복오답 {stats[subj]['repeat']}")
+            for w in ws[:12]:
+                qid = w["question_id"]
+                if qid not in pages:
+                    pr = c.execute("SELECT raw_text FROM questions WHERE id=?", (qid,)).fetchone()
+                    pages[qid] = {it["qnum"]: it for it in parse_items(pr["raw_text"])} if pr else {}
+                it = pages[qid].get(w["qnum"], {})
+                stem = (it.get("stem") or "").replace("\n", " ").strip()[:80]
+                lines.append(f"  - {w['qnum']}번: {stem} (내 답 {'모름' if w['chosen']==0 else str(w['chosen'])+'번'}, 정답 {w['answer']}번)")
+        c.close()
+        prompt = ("아래는 검정고시(고졸) 수험생의 과목별 오답 데이터입니다. 시험이 얼마 남지 않았습니다.\n"
+                  "과목마다 다음을 구체적으로 진단해 주세요:\n"
+                  "1) 취약한 단원·개념 (틀린 문제들의 공통 주제를 묶어서)\n"
+                  "2) 틀리는 원인 유형 (개념 미숙지 / 자료·그래프 해석 / 계산 실수 / 헷갈리는 개념 혼동 / 찍음)\n"
+                  "3) 지금 당장 해야 할 학습 처방 (우선순위 순으로 2~3개, 구체적으로)\n"
+                  "과목 제목은 [과목명] 형태로 쓰고, 마지막에 [총평]으로 남은 기간 공부 우선순위를 정리해 주세요.\n\n"
+                  + "\n".join(lines))
+        try:
+            txt = ai_complete("당신은 검정고시 학습 코치입니다. 데이터에 근거해 구체적이고 실행 가능한 진단을 존댓말로 제공합니다.",
+                              [{"role": "user", "content": prompt}], 1600)
+        except Exception as e:
+            return self._json({"stats": out, "error": "ai_failed", "detail": str(e)}, 502)
+        if txt is None:
+            return self._json({"stats": out, "error": "no-ai"}, 503)
+        return self._json({"stats": out, "diagnosis": txt.strip()})
 
     # -- POST --
     def do_POST(self):

@@ -61,7 +61,8 @@ const S = {
   units:[], cards:[], schedule:[], studyStats:null, explain:{},
   qFacets:{subject:[],year:[],exam_round:[],level:[]}, qFilter:{}, qList:[], qCurrent:null, qMsg:'',
   quizItems:[], quizIdx:0, quizMarks:{}, showRaw:false, streak:0, showImg:{},
-  bankMode:'instant', picks:{}, graded:false,
+  bankMode:'instant', picks:{}, graded:false, onlyNew:false,
+  diag:null, diagText:'', diagLoading:false,
   wrongData:null, wrongAnalysis:'', wrongPdfMsg:'', wrongGradeMsg:'', wrongGradeResult:null,
   examSel:{}, examKeys:null, examInputs:{}, examScore:null, examResults:[], examMsg:'',
   history:[],
@@ -724,7 +725,18 @@ function vBank(){
   const sel=(name,label)=>{const opts=['<option value="">'+label+' 전체</option>'].concat((S.qFacets[name]||[]).map(v=>`<option value="${h(v)}" ${S.qFilter[name]===v?'selected':''}>${h(v)}</option>`)).join('');
     return `<select data-filter="${name}" style="padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:14px;">${opts}</select>`;};
   const q=S.qCurrent;
-  const list = S.qList.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">${S.qList.map(x=>`<button data-act="qpick" data-arg="${x.id}" style="padding:7px 12px;border-radius:999px;font-size:12.5px;cursor:pointer;border:1px solid ${q&&q.id===x.id?'var(--gold-d)':'var(--border)'};background:${q&&q.id===x.id?'rgba(255,224,102,.14)':'var(--panel2)'};color:${q&&q.id===x.id?'var(--gold)':'var(--text2)'};">${h(x.subject)} · ${h(x.year)} ${h(x.exam_round)}</button>`).join('')}</div>` : '';
+  const shown = S.onlyNew ? S.qList.filter(x=>!x.solved) : S.qList;
+  const newCnt = S.qList.filter(x=>!x.solved).length;
+  const list = S.qList.length ? `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;">
+      <button data-act="onlynew" style="padding:6px 13px;border-radius:999px;font-size:12.5px;font-weight:700;cursor:pointer;border:1px solid ${S.onlyNew?'var(--accent-b)':'var(--border)'};background:${S.onlyNew?'rgba(20,117,92,.2)':'var(--panel2)'};color:${S.onlyNew?'var(--accent-b)':'var(--text2)'};">${S.onlyNew?'✓ ':''}🆕 안 푼 기출만 (${newCnt})</button>
+      <span style="font-size:12px;color:var(--text3);">눌러서 바로 풀기 · 🆕=미풀이</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:9px;">${shown.map(x=>{
+      const done=x.solved>0, sel=q&&q.id===x.id;
+      const rate=done?Math.round(x.correct/x.solved*100):0;
+      return `<button data-act="qpick" data-arg="${x.id}" style="padding:7px 12px;border-radius:999px;font-size:12.5px;cursor:pointer;border:1px solid ${sel?'var(--gold-d)':(done?'var(--border)':'rgba(46,230,166,.5)')};background:${sel?'rgba(255,224,102,.14)':(done?'var(--panel2)':'rgba(20,117,92,.12)')};color:${sel?'var(--gold)':(done?'var(--text3)':'var(--accent-b)')};">${done?'':'🆕 '}${h(x.subject)} · ${h(x.year)} ${h(x.exam_round)}${done?` <span style="opacity:.8;">· ${rate}%</span>`:''}</button>`;
+    }).join('')}</div>` : '';
   const paper = q ? `<div style="margin-top:16px;">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;"><span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(q.subject)}</span><span style="font-size:13px;color:var(--text2);">${h(q.year)} · ${h(q.exam_round)} · ${h(q.level)}</span>
         <button data-act="toggleraw" style="margin-left:auto;padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-size:12px;cursor:pointer;">${S.showRaw?'원문 숨기기':'📄 전체 원문'}</button>
@@ -750,7 +762,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731f · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731g · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -947,6 +959,7 @@ function vWrong(){
       <button data-act="wrongclear" style="padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:13px;cursor:pointer;">기록 초기화</button>`:''}</div></div>
     ${S.wrongPdfMsg?`<div style="margin-bottom:12px;color:var(--blue);font-size:13px;">${h(S.wrongPdfMsg)}</div>`:''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">${d.repeat?`<div style="padding:10px 14px;border-radius:12px;border:1px solid rgba(255,140,40,.5);background:rgba(255,140,40,.1);display:flex;gap:10px;align-items:center;"><span style="font-weight:800;color:var(--orange);">🔁 반복 오답</span><span style="font-family:'Press Start 2P',monospace;font-size:12px;color:var(--orange);">${d.repeat}</span></div>`:''}${chips}</div>
+    ${diagCard()}
     ${totalWrong?wrongGradeCard():''}
     ${totalWrong?analyzeBox():''}
     ${items}
@@ -1126,6 +1139,8 @@ const SFX={
   dodeokreveal:()=>tone(600,0.07,'triangle',0.1),
   wrongpdf:()=>seq([[440,0],[554,0.07],[659,0.14]]),
   wronggrade:()=>seq([[523,0],[659,0.07],[784,0.14]]),
+  onlynew:()=>tone(620,0.06,'triangle',0.1),
+  diagai:()=>seq([[523,0],[659,0.07],[880,0.14]]),
   wrongdec:()=>tone(340,0.07,'sine',0.1),
   wrongremove:()=>seq([[659,0],[988,0.06]]),
   uploadpdf:()=>seq([[523,0],[698,0.07]]),
@@ -1172,6 +1187,40 @@ function wrongGradeCard(){
   </div>`;
 }
 
+// ========== 과목별 취약점 진단 ==========
+async function loadDiag(withAI){
+  if(withAI){ S.diagLoading=true; S.diagText=''; render(); }
+  const r=await api('/api/diagnose'+(withAI?'?ai=1':''));
+  S.diag=r.stats||[];
+  if(withAI) S.diagText = r.diagnosis || (r.error==='no-ai'?'🧚 수호령 미연결(GEMINI_API_KEY 필요).':'진단 실패. 잠시 후 다시 시도하세요.');
+  S.diagLoading=false; render();
+}
+function diagCard(){
+  const st=S.diag;
+  if(!st) return '';
+  if(!st.length) return '';
+  const bar=s=>{const c=s.acc>=80?'var(--accent-b)':s.acc>=60?'var(--gold)':'var(--danger-b)';
+    return `<div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13.5px;margin-bottom:5px;">
+        <span><b style="font-size:14.5px;">${h(s.subject)}</b> <span style="color:var(--text3);font-size:12px;">${s.correct}/${s.total}문항</span>
+          ${s.repeat?`<span style="margin-left:6px;font-size:11px;color:var(--orange);">🔁 반복 ${s.repeat}</span>`:''}
+          ${s.unknown?`<span style="margin-left:6px;font-size:11px;color:var(--pink);">🤔 모름 ${s.unknown}</span>`:''}</span>
+        <b style="color:${c};">${s.acc}%</b></div>
+      <div style="height:8px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;"><div style="height:100%;width:${s.acc}%;background:${c};transition:width .4s;"></div></div>
+      <div style="margin-top:5px;font-size:11.5px;color:var(--text3);">${s.rounds.filter(r=>r.wrong).slice(0,4).map(r=>`${h(r.k)} <span style="color:var(--danger-b);">-${r.wrong}</span>`).join(' · ')||'회차별 오답 없음'}</div>
+    </div>`;};
+  const weakest=st[0];
+  return `<div style="border:1px solid var(--pinkbd);border-radius:16px;padding:18px;background:linear-gradient(180deg,var(--tintP),var(--panel2));margin-bottom:18px;">
+    <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--pink);letter-spacing:1px;margin-bottom:4px;">WEAKNESS SCAN · 취약점 진단</div>
+    <div style="font-size:12.5px;color:var(--text2);margin-bottom:14px;">정답률이 낮은 과목부터 정렬돼요. ${weakest?`지금 가장 급한 건 <b style="color:var(--danger-b);">${h(weakest.subject)}</b>(${weakest.acc}%)예요.`:''}</div>
+    ${st.map(bar).join('')}
+    ${S.diagLoading?`<div style="margin-top:12px;font-size:13px;color:var(--pink);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 과목별 취약 단원을 진단하는 중... (30초 정도 걸려요)</div>`
+      : S.diagText?`<div style="margin-top:14px;background:var(--inset);border:1px solid var(--pinkbd);border-radius:12px;padding:16px;font-size:14px;line-height:1.8;white-space:pre-wrap;color:var(--text);">${mdLite(S.diagText)}</div>
+        <button data-act="diagai" style="margin-top:10px;padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12.5px;cursor:pointer;">↻ 다시 진단</button>`
+      : `<button data-act="diagai" style="margin-top:12px;padding:12px 20px;border-radius:12px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-weight:800;font-size:14.5px;cursor:pointer;">🔬 취약 단원·원인 상세 진단받기</button>`}
+  </div>`;
+}
+
 // ========== 오답 횟수 차감 / 제거 ==========
 async function wrongAdjust(qid, qnum, action){
   await api('/api/wrong/adjust',{method:'POST',...jbody({question_id:+qid, qnum:+qnum, action})});
@@ -1185,7 +1234,7 @@ const ACTS = {
   sleep:()=>patch({sleepDone:!S.sleepDone}), wake:()=>patch({wakeDone:!S.wakeDone}),
   tab:async id=>{ S.tab=id; S.adminMsg=''; render();
     if(id==='bank'&&!S.qFacets.subject.length){await loadFacets();render();}
-    if(id==='wrong'){await loadWrong();}
+    if(id==='wrong'){await loadWrong(); await loadDiag(false);}
     if(id==='admin'){await adminReload();}
     if(id==='exam'){ if(!S.qFacets.subject.length)await loadFacets(); await loadExamRecords(); render(); }
     if(id==='tower'&&S.towerSubject==='도덕'&&!S.dodeok){ await loadDodeok(); render(); } },
@@ -1219,6 +1268,8 @@ const ACTS = {
   examsave:()=>saveExam(),
   wrongpdf:()=>downloadWrongPdf(),
   wronggrade:()=>gradeWrongNote(),
+  onlynew:()=>{ S.onlyNew=!S.onlyNew; render(); },
+  diagai:()=>loadDiag(true),
   wrongdec:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'dec');},
   wrongremove:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'remove');},
 };

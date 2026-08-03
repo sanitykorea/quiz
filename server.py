@@ -559,7 +559,7 @@ def ai_complete(system, messages, max_tokens=700):
     gk = gemini_key()
     return _gemini(system, messages, max_tokens, gk) if gk else None
 
-def ai_vision(prompt, images_png, max_tokens=2000):
+def ai_vision(prompt, images_png, max_tokens=2000, as_json=True):
     """이미지(PNG 바이트 리스트) + 프롬프트 → Gemini 비전. JSON 문자열 반환."""
     key = gemini_key()
     if not key:
@@ -570,8 +570,8 @@ def ai_vision(prompt, images_png, max_tokens=2000):
         parts.append({"inline_data": {"mime_type": "image/png", "data": base64.b64encode(png).decode()}})
     body = json.dumps({
         "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {"maxOutputTokens": int(max_tokens) + 3500, "thinkingConfig": {"thinkingBudget": 512},
-                             "responseMimeType": "application/json"},
+        "generationConfig": dict({"maxOutputTokens": int(max_tokens) + 3500, "thinkingConfig": {"thinkingBudget": 512}},
+                                 **({"responseMimeType": "application/json"} if as_json else {})),
     }).encode()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={urllib.parse.quote(key)}"
     req = urllib.request.Request(url, data=body, headers={"content-type": "application/json"})
@@ -692,6 +692,16 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._diagnose(q)
+        if p == "/api/exammeta":
+            return self._json(self._subject_exam_meta(q.get("subject", "도덕")))
+        if p == "/api/recommend":
+            if self._guard():
+                return
+            return self._recommend()
+        if p == "/api/similar":
+            if self._guard():
+                return
+            return self._similar(q)
         if p == "/api/study":
             if self._guard():
                 return
@@ -1055,6 +1065,97 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._json({"error": "no-ai"}, 503)
         return self._json({"analysis": out.strip(), "count": len(rows)})
 
+    def _recommend(self):
+        """오늘의 추천 학습: 취약 과목 · 반복오답 · 미풀이 회차를 조합해 할 일 제시."""
+        c = db()
+        st = {}
+        for r in c.execute("""SELECT a.subject subj, a.correct ok FROM attempts a
+                JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'"""):
+            s = st.setdefault(r["subj"], [0, 0]); s[0] += 1; s[1] += r["ok"] or 0
+        rep = {}
+        for r in c.execute("""SELECT a.subject subj, COUNT(*) n FROM attempts a
+                JOIN (SELECT question_id,qnum,SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) wc FROM attempts GROUP BY question_id,qnum) w
+                  ON w.question_id=a.question_id AND w.qnum=a.qnum
+                JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
+                WHERE a.correct=0 AND w.wc>=2 GROUP BY a.subject"""):
+            rep[r["subj"]] = r["n"]
+        unsolved = [dict(x) for x in c.execute(
+            """SELECT id,subject,year,exam_round,level FROM questions
+               WHERE id NOT IN (SELECT DISTINCT question_id FROM attempts WHERE source='quiz')
+               ORDER BY year DESC, exam_round DESC LIMIT 60""")]
+        c.close()
+        WEAK = ["과학", "도덕", "수학"]        # 전년도 실점 76%가 몰린 과목
+        accs = {k: (round(v[1] / v[0] * 100) if v[0] else None) for k, v in st.items()}
+        def prio(subj):
+            a = accs.get(subj)
+            base = (100 - a) if a is not None else 55      # 안 푼 과목도 우선순위 확보
+            return base + (12 if subj in WEAK else 0) + rep.get(subj, 0) * 3
+        subs = sorted({*accs.keys(), *WEAK, *[u["subject"] for u in unsolved]}, key=lambda s: -prio(s))
+        tasks = []
+        for s in subs[:3]:
+            un = [u for u in unsolved if u["subject"] == s]
+            tasks.append({"subject": s, "acc": accs.get(s), "repeat": rep.get(s, 0),
+                          "unsolved": un[0] if un else None, "unsolved_count": len(un)})
+        return self._json({"tasks": tasks, "acc": accs, "repeat": rep, "unsolved_total": len(unsolved)})
+
+    def _similar(self, q):
+        """같은 과목의 다른 회차에서 키워드가 겹치는 유사 문항 추천."""
+        try:
+            qid = int(q.get("question_id")); qnum = int(q.get("qnum"))
+        except (TypeError, ValueError):
+            return self._json({"error": "bad_input"}, 400)
+        c = db()
+        row = c.execute("SELECT id,subject,raw_text FROM questions WHERE id=?", (qid,)).fetchone()
+        if not row:
+            c.close(); return self._json({"error": "not_found"}, 404)
+        src = next((i for i in parse_items(row["raw_text"]) if i["qnum"] == qnum), None)
+        if not src:
+            c.close(); return self._json({"items": []})
+        def keys(it):
+            blob = (it.get("stem") or "") + " " + " ".join(ch.get("text", "") for ch in it.get("choices", []))
+            return {w for w in re.findall(r'[가-힣]{2,10}', blob) if len(w) >= 2 and w not in
+                    ("다음", "설명", "것은", "적절", "옳은", "가장", "무엇", "고른", "보기", "그림", "대한", "중에")}
+        ks = keys(src)
+        if not ks:
+            c.close(); return self._json({"items": []})
+        out = []
+        for r in c.execute("SELECT id,year,exam_round,level,raw_text FROM questions WHERE subject=? AND id<>?", (row["subject"], qid)):
+            for it in parse_items(r["raw_text"]):
+                ov = ks & keys(it)
+                if len(ov) >= 3:
+                    out.append({"question_id": r["id"], "qnum": it["qnum"], "year": r["year"],
+                                "exam_round": r["exam_round"], "level": r["level"], "subject": row["subject"],
+                                "score": len(ov), "shared": sorted(ov)[:5],
+                                "stem": (it.get("stem") or "").replace("\n", " ")[:70]})
+        c.close()
+        out.sort(key=lambda x: -x["score"])
+        return self._json({"items": out[:6], "subject": row["subject"]})
+
+    def _subject_exam_meta(self, subject):
+        """해당 과목 기출에서 (1)실제 선지 묶음 (2)빈출 용어를 추출 → 기출 수준의 퀴즈 재료."""
+        c = db()
+        rows = c.execute("SELECT raw_text FROM questions WHERE subject=? AND raw_text IS NOT NULL", (subject,)).fetchall()
+        c.close()
+        groups, freq = [], {}
+        seen = set()
+        for r in rows:
+            for it in parse_items(r["raw_text"]):
+                texts = [ch.get("text", "").strip() for ch in it.get("choices", [])]
+                texts = [t for t in texts if 1 <= len(t) <= 24]
+                if len(texts) == 4:                     # 4지선다 원본 보기 묶음
+                    k = tuple(sorted(texts))
+                    if k not in seen:
+                        seen.add(k); groups.append(texts)
+                for t in texts:                          # 선지 = 실제 출제 개념
+                    freq[t] = freq.get(t, 0) + 1
+        STOP = ("것은", "것을", "적절", "옳은", "않은", "다음", "설명", "고른", "보기", "가장", "무엇",
+                "내용", "용어", "들어갈", "대한", "이유", "한다", "이다", "모두")
+        freq = {k: v for k, v in freq.items() if 2 <= len(k) <= 20 and not any(s in k for s in STOP)}
+        top = sorted(freq.items(), key=lambda x: -x[1])[:400]
+        return {"groups": groups, "freq": dict(top)}
+
     def _diagnose(self, q):
         """오답노트 기반 과목별 취약점 상세 진단(통계 + AI 코칭)."""
         c = db()
@@ -1194,6 +1295,38 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._wrong_grade(b)
+        if p == "/api/askimage":
+            if self._guard():
+                return
+            data = b.get("data", "")
+            if "," in data:
+                data = data.split(",", 1)[1]
+            try:
+                raw = base64.b64decode(data)
+            except Exception:
+                return self._json({"error": "bad_base64"}, 400)
+            if not raw:
+                return self._json({"error": "bad_input"}, 400)
+            if raw[:4] == b"%PDF":                      # PDF면 첫 페이지를 이미지로
+                try:
+                    import fitz
+                    d = fitz.open("pdf", raw)
+                    raw = d[0].get_pixmap(matrix=fitz.Matrix(1.8, 1.8)).tobytes("png")
+                    d.close()
+                except Exception as e:
+                    return self._json({"error": "pdf_read_failed", "detail": str(e)}, 400)
+            ask = (b.get("q") or "").strip()
+            prompt = ("당신은 검정고시(고졸) 학습 튜터입니다. 사진 속 문제를 읽고 한국어 존댓말로 답하세요.\n"
+                      "1) 무엇을 묻는 문제인지 한 줄 요약\n2) 풀이 과정을 단계별로 쉽게\n3) 정답\n4) 관련 개념 한 줄 정리\n"
+                      "사진이 흐리면 읽을 수 있는 부분까지만 설명하세요."
+                      + (f"\n학생의 추가 질문: {ask}" if ask else ""))
+            try:
+                txt = ai_vision(prompt, [raw], 1400, as_json=False)
+            except Exception as e:
+                return self._json({"error": "ai_failed", "detail": str(e)}, 502)
+            if txt is None:
+                return self._json({"error": "no-ai"}, 503)
+            return self._json({"text": (txt or "").strip()})
         if p == "/api/wrong/adjust":
             if self._guard():
                 return

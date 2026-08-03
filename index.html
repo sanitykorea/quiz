@@ -67,7 +67,8 @@ const S = {
   examSel:{}, examKeys:null, examInputs:{}, examScore:null, examResults:[], examMsg:'',
   history:[],
   towerSubject:'도덕', dodeok:null, towerConcept:{},
-  dodeokMode:'read', dq:null,
+  dodeokMode:'read', dq:null, dodeokExam:null,
+  recommend:null, mock:null, askImg:{busy:false,text:'',q:''}, similar:null,
   adminTab:'questions', adminMsg:'', muted:false,
 };
 const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 4점/문항
@@ -262,6 +263,13 @@ async function explainQ(qnum){
   render();
 }
 async function pickQuestion(id){ S.qCurrent=S.qList.find(x=>x.id==id)||null; await loadQuiz(); render(); }
+// 목록에 없는 회차도 id로 바로 열기(추천·유사문제 이동용)
+async function pickQuestionById(id){
+  let q=S.qList.find(x=>x.id==id);
+  if(!q){ const r=await api('/api/questions'); S.qList=r.questions||[]; q=S.qList.find(x=>x.id==id); }
+  if(!q) return;
+  S.qCurrent=q; S.qFilter={subject:q.subject}; await loadQuiz();
+}
 async function mark(qnum, choice){
   if(!S.qCurrent || S.quizMarks[qnum]) return;   // 이미 채점된 문항은 재채점 안 함
   const r=await api('/api/attempt',{method:'POST',...jbody({question_id:S.qCurrent.id, qnum, chosen:choice})});
@@ -328,6 +336,10 @@ function tick(){
   const b=barrier();
   if(S.running && b.active) commit();
   if(b.active!==_barrierActive){ _barrierActive=b.active; render(); return; }
+  if(S.mock){                                  // 모의고사 카운트다운
+    if(S.now>=S.mock.endAt){ mockSubmit(true); return; }
+    render(); return;
+  }
   if(S.tab==='camp' && S.running) render(); // 타이머 작동 중에만 갱신(입력창 없어 안전)
 }
 
@@ -465,7 +477,7 @@ function vCamp(){
     return `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid ${on?'rgba(255,84,104,.5)':'var(--border)'};background:${on?'rgba(255,84,104,.10)':'var(--panel2)'};"><div style="font-size:20px;">${on?(s.kind==='seal'?'🔒':'🛡️'):'🗓'}</div><div><div style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--text3);">${h(s.day)} ${h(s.t_start)}–${h(s.t_end)}</div><div style="font-size:14px;font-weight:700;margin-top:5px;">${h(s.name)}</div></div><div style="margin-left:auto;font-size:11px;font-weight:700;color:${on?'var(--danger-b)':'var(--text3)'};">${on?'발동 중':'대기'}</div></div>`;
   }).join('') || '<div style="color:var(--text3);font-size:13px;">고정일정이 없어요. 관리소 → 고정일정에서 추가하세요.</div>';
   const totalPct=Math.min(100,total/360*100);
-  return `<div style="display:grid;gap:22px;"><section>
+  return `<div style="display:grid;gap:22px;">${recommendCard()}<section>
     <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">DAILY QUESTS</div>
       <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">⛺ 일일 퀘스트 현황 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 황금비 2:1:1:2 (총 6시간)</span></h2></div>
@@ -517,6 +529,9 @@ function dodeokItems(){   // 빈칸/4지선다용: 프레임 있는 문항 (품�
       if(ok) items.push({body:desc, frame: DSAGE.test(c.label)?'다음 주장을 한 사상가는?':'다음 설명에 해당하는 것은?', answer:c.label, dk: DSAGE.test(c.label)?'sage':'concept', blank:false, topic:c.topic, label:c.label});
     }
   });
+  items.forEach(i=>{ i.hit=examHit(i.answer); i.grp=!!examGroup(i.answer); });
+  // 기출에 실제 출제된 개념 우선(기출 선지묶음 보유 > 빈출 > 그 외)
+  items.sort((a,b)=>(b.grp-a.grp)||(b.hit-a.hit));
   return items;
 }
 function dodeokStart(mode){
@@ -531,20 +546,33 @@ function dodeokStart(mode){
     S.dq={mode, cards:shuffle(cards), idx:0, pick:null, score:0, answered:0, ox:null};
     dodeokMakeOX();
   } else {
-    S.dq={mode, items:shuffle(dodeokItems()), idx:0, reveal:false, pick:null, score:0, answered:0, choices:[]};
+    let items=dodeokItems();
+    if(mode==='quiz'){
+      const exam=items.filter(i=>i.grp);      // 기출 4지선다 묶음이 있는 개념만 = 기출 난이도 보장
+      items = exam.length>=12 ? shuffle(exam) : shuffle(items.filter(i=>i.grp||i.hit>0)).concat(shuffle(items.filter(i=>!i.grp&&!i.hit)));
+    } else {
+      const hot=items.filter(i=>i.hit>0);     // 빈칸도 기출 빈출 개념 먼저
+      items = shuffle(hot).concat(shuffle(items.filter(i=>!i.hit)));
+    }
+    S.dq={mode, items, idx:0, reveal:false, pick:null, score:0, answered:0, choices:[]};
     if(mode==='quiz') dodeokMakeChoices();
   }
   render();
 }
 function dodeokMakeChoices(){
   const q=S.dq, cur=q.items[q.idx]; if(!cur) return;
+  q.pick=null; q.fromExam=false;
+  // ① 실제 기출 4지선다 묶음이 있으면 그대로 사용 (출제자가 만든 오답 = 기출 난이도)
+  const eg=examGroup(cur.answer);
+  if(eg){ q.choices=shuffle(eg.group); q.answerText=eg.exact; q.fromExam=true; return; }
+  q.answerText=cur.answer;
+  // ② 없으면 같은 유형·같은 주제의 형제 개념을 오답으로
   const uniq=arr=>[...new Set(arr)].filter(a=>a!==cur.answer);
-  // 같은 유형(사상가↔사상가) 중 '같은 주제'의 형제 개념을 우선 오답으로 (정보윤리 ↔ 환경윤리 처럼 인접)
   const sameTopic=uniq(q.items.filter(i=>i.dk===cur.dk&&i.topic===cur.topic).map(i=>i.answer));
   const sameKind =uniq(q.items.filter(i=>i.dk===cur.dk).map(i=>i.answer));
   let picks=shuffle(sameTopic).slice(0,3);
   if(picks.length<3) picks=picks.concat(shuffle(sameKind.filter(a=>!picks.includes(a))).slice(0,3-picks.length));
-  q.choices=shuffle([cur.answer, ...picks]); q.pick=null;
+  q.choices=shuffle([cur.answer, ...picks]);
 }
 function dodeokMakeOX(){
   const q=S.dq, cur=q.cards[q.idx]; if(!cur) return;
@@ -561,7 +589,7 @@ function dodeokMakeOX(){
 function dodeokPick(v){
   const q=S.dq; if(!q||q.pick!=null) return;
   q.pick=v; q.answered++;
-  const ok = q.mode==='ox' ? (v===q.ox.answer) : (v===q.items[q.idx].answer);
+  const ok = q.mode==='ox' ? (v===q.ox.answer) : (v===(q.answerText||q.items[q.idx].answer));
   if(ok){ q.score++; toast('⚔️ 정답!','good'); } else toast('💧 오답','bad');
   render();
 }
@@ -589,12 +617,13 @@ function dodeokBlankView(){
 function dodeokQuizView(){
   const q=S.dq, cur=q.items[q.idx]; if(!cur) return '<div style="color:var(--text3);">문항이 없어요.</div>';
   const body = cur.blank ? h(cur.body).replace('§','<span style="color:var(--orange);font-weight:800;">□□□</span>') : h(cur.body);
-  const choices=q.choices.map(t=>{
+  const ansT=q.answerText||cur.answer;
+  const choices=q.choices.map((t,i)=>{
     let bg='var(--panel2)',bd='var(--border)',col='var(--text)';
-    if(q.pick!=null){ if(t===cur.answer){bg='rgba(20,117,92,.28)';bd='rgba(46,230,166,.6)';col='var(--accent-b)';} else if(t===q.pick){bg='rgba(255,84,104,.18)';bd='rgba(255,84,104,.6)';col='var(--danger-b)';} else col='var(--text3)'; }
-    return `<button data-act="dodeokpick" data-arg="${encodeURIComponent(t)}" ${q.pick!=null?'disabled':''} style="text-align:left;padding:13px 15px;border-radius:12px;border:1px solid ${bd};background:${bg};color:${col};font-size:14.5px;cursor:${q.pick!=null?'default':'pointer'};">${h(t)}</button>`;
+    if(q.pick!=null){ if(t===ansT){bg='rgba(20,117,92,.28)';bd='rgba(46,230,166,.6)';col='var(--accent-b)';} else if(t===q.pick){bg='rgba(255,84,104,.18)';bd='rgba(255,84,104,.6)';col='var(--danger-b)';} else col='var(--text3)'; }
+    return `<button data-act="dodeokpick" data-arg="${encodeURIComponent(t)}" ${q.pick!=null?'disabled':''} style="display:flex;gap:9px;align-items:center;text-align:left;padding:13px 15px;border-radius:12px;border:1px solid ${bd};background:${bg};color:${col};font-size:14.5px;cursor:${q.pick!=null?'default':'pointer'};"><span style="font-size:17px;flex:0 0 auto;">${CIRC[i+1]}</span><span>${h(t)}</span></button>`;
   }).join('');
-  return dqCounter(h(cur.frame), `점수 ${q.score} / ${q.answered}`)
+  return dqCounter(h(cur.frame)+(q.fromExam?' <span style="color:var(--gold);font-weight:700;">· 기출 선지</span>':''), `점수 ${q.score} / ${q.answered}`)
     + dqBody(body) + `<div style="display:grid;gap:8px;margin-top:10px;">${choices}</div>`
     + (q.pick!=null?`<button data-act="dodeoknext" style="width:100%;margin-top:12px;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 문제 ▶</button>`:'');
 }
@@ -704,7 +733,7 @@ function vSummon(){
   const msgs=S.messages.map(m=>`<div style="max-width:84%;align-self:${m.role==='user'?'flex-end':'flex-start'};background:${m.role==='user'?'var(--bg2)':'linear-gradient(180deg,rgba(20,117,92,.28),rgba(20,117,92,.14))'};border:${m.role==='user'?'1px solid var(--border)':'1px solid rgba(46,230,166,.35)'};box-shadow:${m.role==='user'?'none':'0 0 16px rgba(46,230,166,.14)'};color:var(--text);border-radius:16px;padding:11px 15px;font-size:14.5px;line-height:1.7;white-space:pre-wrap;animation:fadeUp .25s ease;">${m.role==='user'?h(m.text):mdLite(m.text)}</div>`).join('');
   const typing = S.chatLoading?`<div style="align-self:flex-start;background:linear-gradient(180deg,rgba(20,117,92,.28),rgba(20,117,92,.14));border:1px solid rgba(46,230,166,.35);border-radius:16px;padding:13px 16px;display:flex;gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent-b);animation:blink 1s infinite;"></span><span style="width:7px;height:7px;border-radius:50%;background:var(--accent-b);animation:blink 1s infinite .2s;"></span><span style="width:7px;height:7px;border-radius:50%;background:var(--accent-b);animation:blink 1s infinite .4s;"></span></div>`:'';
   const quicks=[['오늘 퀘스트 추천해 줘','오늘 퀘스트 추천해 줘'],['면접 몬스터 소환 (질문)','면접 몬스터 소환: 성공회대 열린인재 면접 예상 질문 하나만 내줘'],['나의 스탯(루틴) 점검해 줘','나의 스탯(루틴) 점검해 줘']].map(([lb,msg])=>`<button data-act="quick" data-arg="${h(msg)}" style="white-space:nowrap;padding:7px 13px;border-radius:999px;border:1px solid rgba(46,230,166,.35);background:rgba(20,117,92,.14);color:var(--accent-b);font-size:12.5px;font-weight:600;cursor:pointer;">${lb}</button>`).join('');
-  return `<div style="max-width:840px;margin:0 auto;">
+  return `<div style="max-width:840px;margin:0 auto;">${askImageCard()}
     <div style="text-align:center;margin-bottom:16px;"><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">SUMMON GUARDIAN</div>
     <h2 style="margin:6px 0 8px;font-size:22px;font-weight:800;">🧚 수호령 소환</h2>
     <div style="margin-bottom:12px;font-size:12px;">${S.ai==='gemini'?'<span style="color:var(--accent-b);">● Google AI Studio (Gemini) 연결됨</span>':'<span style="color:var(--text3);">○ AI 미연결 · gemini_key.txt에 Google AI Studio 키를 넣어 주세요</span>'}</div>
@@ -753,16 +782,17 @@ function vBank(){
       <button data-act="qrandom" style="padding:9px 16px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-weight:700;font-size:14px;cursor:pointer;">🎲 랜덤 소환</button>
     </div>
     <div style="display:inline-flex;gap:0;margin-top:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden;">
-      ${[['instant','⚡ 즉시 채점'],['batch','🎯 한번에 채점']].map(([mo,lb])=>`<button data-act="bankmode" data-arg="${mo}" style="padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:${S.bankMode===mo?'rgba(255,224,102,.18)':'var(--panel2)'};color:${S.bankMode===mo?'var(--gold)':'var(--text2)'};">${lb}</button>`).join('')}
-      <span style="align-self:center;padding:0 12px;font-size:11.5px;color:var(--text3);">${S.bankMode==='batch'?'다 풀고 한번에 점수 확인':'선지 누르면 바로 정답 확인'}</span>
-    </div>${S.qMsg?`<div style="margin-top:10px;color:var(--pink);font-size:13px;">${h(S.qMsg)}</div>`:''}${list}${paper}</div>`;
+      ${[['instant','⚡ 즉시 채점'],['batch','🎯 한번에 채점'],['mock','⏱ 실전 모의고사']].map(([mo,lb])=>`<button data-act="bankmode" data-arg="${mo}" style="padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:${S.bankMode===mo?'rgba(255,224,102,.18)':'var(--panel2)'};color:${S.bankMode===mo?'var(--gold)':'var(--text2)'};">${lb}</button>`).join('')}
+      <span style="align-self:center;padding:0 12px;font-size:11.5px;color:var(--text3);">${S.bankMode==='mock'?'40분 타이머 · 시간 끝나면 자동 채점':S.bankMode==='batch'?'다 풀고 한번에 점수 확인':'선지 누르면 바로 정답 확인'}</span>
+    </div>
+    ${S.bankMode==='mock'&&S.qCurrent&&!S.graded?(S.mock?mockBar():`<button data-act="mockstart" style="margin-top:10px;width:100%;padding:13px;border-radius:12px;border:1px solid var(--danger-b);background:rgba(255,84,104,.12);color:var(--danger-b);font-weight:800;font-size:15px;cursor:pointer;">⏱ 40분 실전 모의고사 시작</button>`):''}${S.qMsg?`<div style="margin-top:10px;color:var(--pink);font-size:13px;">${h(S.qMsg)}</div>`:''}${list}${paper}</div>`;
 }
 
 function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0731g · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804a · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -863,7 +893,7 @@ function quiz(){
   const its=S.quizItems;
   if(!its.length) return `<div style="border:1px solid var(--border);border-radius:16px;padding:24px;color:var(--text3);font-size:14px;text-align:center;">문항을 불러오는 중이거나 분해할 수 없는 기출이에요. <b>📄 전체 원문</b>으로 확인하세요.</div>`;
   const idx=Math.min(S.quizIdx,its.length-1), it=its[idx];
-  const batch = S.bankMode==='batch' && !S.graded;   // 한번에 채점: 풀 땐 정답 숨김
+  const batch = (S.bankMode==='batch'||S.bankMode==='mock') && !S.graded;   // 한번에 채점·모의고사: 풀 땐 정답 숨김
   const picked = S.picks[it.qnum];
   const m=S.quizMarks[it.qnum];
   const marked=Object.keys(S.quizMarks).length, got=Object.values(S.quizMarks).filter(x=>x.correct).length;
@@ -921,6 +951,7 @@ function quiz(){
       ${unknownBtn}
       ${result}
       ${explainBox}
+      ${m&&!m.correct?similarBox(it.qnum):''}
     </div>
     ${scoreBanner}
     <div style="display:flex;gap:10px;margin-top:14px;">
@@ -1060,6 +1091,7 @@ function vExam(){
       <button data-act="examload" style="padding:9px 16px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-weight:700;font-size:14px;cursor:pointer;">정답키 불러오기</button></div>
     ${S.examMsg?`<div style="margin-top:10px;color:var(--pink);font-size:13px;">${h(S.examMsg)}</div>`:''}
     ${gradeArea}
+    <div style="margin-top:20px;">${predictCard()}${trendCard()}</div>
     ${records?`<h3 style="margin:22px 0 10px;font-size:16px;font-weight:800;">📊 채점 기록</h3><div style="display:grid;gap:8px;">${records}</div>`:''}
     <h3 style="margin:22px 0 10px;font-size:16px;font-weight:800;">📖 기출 풀이 기록 <span style="font-size:12px;color:var(--text3);font-weight:600;">· 언제 무엇을 풀고 몇 개 틀렸는지</span></h3>
     <div style="display:grid;gap:8px;">${hist||'<div style="color:var(--text3);font-size:13px;">아직 기출 풀이 기록이 없어요. 문제은행에서 풀면 여기 쌓여요.</div>'}</div></div>`;
@@ -1077,7 +1109,25 @@ async function gradeAll(){
 }
 
 // ========== 수련의 탑: 도덕 파일 · 오답 AI 개념정리 ==========
-async function loadDodeok(){ try{ const r=await fetch('/dodeok.json'); S.dodeok=await r.json(); }catch(e){ S.dodeok={sections:[]}; } }
+async function loadDodeok(){
+  try{ const r=await fetch('/dodeok.json'); S.dodeok=await r.json(); }catch(e){ S.dodeok={sections:[]}; }
+  try{ S.dodeokExam=await api('/api/exammeta?subject=도덕'); }catch(e){ S.dodeokExam={groups:[],freq:{}}; }
+}
+// 기출 개념 매칭: 정답 용어가 실제 기출 선지에 등장하는지 (부분일치 포함)
+function examHit(term){
+  const f=(S.dodeokExam&&S.dodeokExam.freq)||{}; if(f[term]) return f[term];
+  const t=term.replace(/\s|\(.*?\)|（.*?）/g,'');
+  for(const k in f){ const kk=k.replace(/\s/g,''); if(kk&&(kk.includes(t)||t.includes(kk))&&Math.min(kk.length,t.length)>=2) return f[k]; }
+  return 0;
+}
+// 정답이 포함된 '실제 기출 4지선다 묶음' → 출제자가 만든 오답 보기 그대로 사용
+function examGroup(term){
+  const gs=(S.dodeokExam&&S.dodeokExam.groups)||[];
+  const t=term.replace(/\s|\(.*?\)/g,'');
+  for(const g of gs){ const hit=g.find(x=>{const xx=x.replace(/\s/g,''); return xx===t||(xx.length>=2&&t.length>=2&&(xx.includes(t)||t.includes(xx)));});
+    if(hit) return {group:g, exact:hit}; }
+  return null;
+}
 async function towerConcept(){
   const subj=S.towerSubject;
   if(S.towerConcept[subj]==='...') return;
@@ -1141,6 +1191,13 @@ const SFX={
   wronggrade:()=>seq([[523,0],[659,0.07],[784,0.14]]),
   onlynew:()=>tone(620,0.06,'triangle',0.1),
   diagai:()=>seq([[523,0],[659,0.07],[880,0.14]]),
+  mockstart:()=>seq([[392,0],[523,0.08],[659,0.16]]),
+  mocksubmit:()=>seq([[784,0],[523,0.08]]),
+  askimg:()=>seq([[659,0],[880,0.06]]),
+  similar:()=>tone(560,0.06,'triangle',0.1),
+  gosimilar:()=>tone(700,0.05,'triangle',0.1),
+  gosolve:()=>seq([[523,0],[784,0.06]]),
+  goreview:()=>tone(480,0.06,'sine',0.1),
   wrongdec:()=>tone(340,0.07,'sine',0.1),
   wrongremove:()=>seq([[659,0],[988,0.06]]),
   uploadpdf:()=>seq([[523,0],[698,0.07]]),
@@ -1184,6 +1241,154 @@ function wrongGradeCard(){
       <button data-act="wronggrade" style="padding:9px 18px;border-radius:10px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-weight:700;cursor:pointer;">채점하기</button></div>
     ${S.wrongGradeMsg?`<div style="margin-top:10px;font-size:13px;color:var(--blue);">${h(S.wrongGradeMsg)}</div>`:''}
     ${r?`<div style="margin-top:8px;border-top:1px solid var(--bluebd);padding-top:8px;">${rows}<div style="margin-top:10px;font-size:11.5px;color:var(--text3);">※ AI가 손글씨 표기를 읽는 방식이라 가끔 틀리게 읽을 수 있어요. 표기가 선명할수록 정확해요.</div></div>`:''}
+  </div>`;
+}
+
+// ========== 실전 모의고사 (40분 타이머) ==========
+function mockStart(){
+  S.mock={endAt:Date.now()+40*60*1000, total:40*60*1000};
+  S.picks={}; S.quizMarks={}; S.graded=false; S.quizIdx=0; render();
+}
+function mockBar(){
+  const left=Math.max(0,S.mock.endAt-S.now), m=Math.floor(left/60000), s=Math.floor(left%60000/1000);
+  const pct=left/S.mock.total*100, danger=left<5*60*1000;
+  const done=Object.keys(S.picks).length, n=S.quizItems.length;
+  return `<div style="margin-top:10px;border:1px solid ${danger?'var(--danger-b)':'var(--gold-d)'};border-radius:12px;padding:12px 14px;background:${danger?'rgba(255,84,104,.1)':'rgba(255,224,102,.08)'};">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;">
+      <span style="font-family:'Press Start 2P',monospace;font-size:16px;color:${danger?'var(--danger-b)':'var(--gold)'};${danger?'animation:blink 1s infinite;':''}">${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}</span>
+      <span style="font-size:12.5px;color:var(--text2);">푼 문항 ${done}/${n}</span>
+      <button data-act="mocksubmit" style="padding:7px 14px;border-radius:999px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-size:12.5px;font-weight:700;cursor:pointer;">제출하고 채점</button></div>
+    <div style="height:6px;border-radius:99px;background:var(--panel2);margin-top:8px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${danger?'var(--danger-b)':'linear-gradient(90deg,#2ee6a6,#ffe066)'};transition:width 1s linear;"></div></div></div>`;
+}
+async function mockSubmit(auto){
+  if(!S.mock) return;
+  S.mock=null;
+  await gradeAll();
+  if(auto) toast('⏰ 시간 종료! 자동 채점했어요','bad');
+}
+// ========== 합격 예측 (성공회대 검정고시 환산 기준) ==========
+const EXAM6=[['국어',25,4],['수학',20,5],['사회',25,4],['과학',25,4],['한국사',25,4],['도덕',25,4]];
+const LASTYEAR={국어:88,수학:75,사회:96,과학:72,한국사:92,도덕:72};   // 전년도 실적(데이터 없는 과목 기본값)
+const BANDS=[[100,100,2,484],[98,99.99,3,476],[96,97.99,4,468],[94,95.99,5,460],[91,93.99,6,452],[88,90.99,7,444],[84,87.99,8,436],[0,83.99,9,428]];
+const GYOGWA=[['사회융합',478.0],['미디어콘텐츠융합',485.0],['경영',484.0],['인문융합콘텐츠',476.0],['자유전공',476.0],['미래융합',476.0],['소프트웨어융합',475.0]];
+function convert(avg){ const b=BANDS.find(x=>avg>=x[0]&&avg<=x[1])||BANDS[BANDS.length-1]; return {grade:b[2], score:b[3]}; }
+function predict(){
+  const acc=(S.diag||[]).reduce((m,s)=>(m[s.subject]=s.acc/100,m),{});
+  let lost=0; const per=[];
+  EXAM6.forEach(([subj,n,pt])=>{
+    const a = acc[subj]!=null ? acc[subj] : (LASTYEAR[subj]||80)/100;
+    const wrong=Math.round(n*(1-a)), l=wrong*pt;
+    lost+=l; per.push({subj, acc:Math.round(a*100), wrong, lost:l, src:acc[subj]!=null?'풀이':'전년'});
+  });
+  const avg=(700-lost)/7, cv=convert(Math.round(avg*100)/100);
+  return {avg:Math.round(avg*100)/100, lost, wrongTotal:per.reduce((s,x)=>s+x.wrong,0), per, ...cv};
+}
+function predictCard(){
+  const p=predict();
+  const hakjong = p.avg>=94;
+  const pass=GYOGWA.filter(g=>p.score>=g[1]).map(g=>g[0]);
+  const c = p.avg>=98?'var(--accent-b)':p.avg>=94?'var(--gold)':'var(--danger-b)';
+  return `<div style="border:1px solid var(--gold-d);border-radius:16px;padding:18px;background:linear-gradient(180deg,rgba(255,224,102,.09),var(--panel2));margin-bottom:18px;">
+    <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;margin-bottom:10px;">ADMISSION FORECAST · 지원선 예측</div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+      <div><div style="font-size:12px;color:var(--text2);">예상 평균 <span style="font-size:10.5px;">(영어 100 포함·7과목)</span></div>
+        <div style="font-size:34px;font-weight:900;color:${c};line-height:1.15;">${p.avg}<span style="font-size:16px;">점</span></div></div>
+      <div><div style="font-size:12px;color:var(--text2);">환산</div><div style="font-size:22px;font-weight:900;color:${c};">${p.score}<span style="font-size:13px;">점 (${p.grade}등급)</span></div></div>
+      <div><div style="font-size:12px;color:var(--text2);">예상 오답</div><div style="font-size:22px;font-weight:900;color:${c};">${p.wrongTotal}<span style="font-size:13px;">문항 · -${p.lost}점</span></div></div>
+    </div>
+    <div style="display:grid;gap:6px;margin-bottom:12px;">
+      <div style="padding:10px 13px;border-radius:10px;border:1px solid ${hakjong?'rgba(46,230,166,.5)':'rgba(255,84,104,.5)'};background:${hakjong?'rgba(20,117,92,.14)':'rgba(255,84,104,.1)'};font-size:13.5px;">
+        <b>${hakjong?'✅':'⚠️'} 열린인재(학종) · 사회융합</b> — 마지노선 평균 94+ ${hakjong?`도달 (여유 ${(p.avg-94).toFixed(2)}점)`:`미달 (${(94-p.avg).toFixed(2)}점 부족)`}</div>
+      <div style="padding:10px 13px;border-radius:10px;border:1px solid ${pass.length?'rgba(46,230,166,.5)':'var(--border)'};background:${pass.length?'rgba(20,117,92,.1)':'var(--panel2)'};font-size:13.5px;">
+        <b>${pass.length?'✅':'❌'} 교과성적</b> — 환산 ${p.score}점으로 지원 가능: ${pass.length?`<span style="color:var(--accent-b);font-weight:700;">${pass.join(' · ')}</span>`:'없음'}
+        <div style="margin-top:5px;font-size:12px;color:var(--text3);">사회융합 교과는 컷 478 → <b>오답 0개(484)</b>만 가능. 오답 1개만 나와도 476으로 떨어져요.</div></div>
+    </div>
+    <div style="display:grid;gap:5px;">${p.per.map(x=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;">
+      <span style="width:44px;font-weight:700;">${x.subj}</span>
+      <div style="flex:1;height:7px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;"><div style="height:100%;width:${x.acc}%;background:${x.acc>=90?'var(--accent-b)':x.acc>=80?'var(--gold)':'var(--danger-b)'};"></div></div>
+      <span style="width:112px;text-align:right;color:var(--text2);">${x.acc}% · 오답 ${x.wrong} <span style="color:var(--text3);font-size:11px;">(${x.src})</span></span></div>`).join('')}</div>
+    <div style="margin-top:10px;font-size:11.5px;color:var(--text3);">※ 푼 기출의 과목별 정답률로 추정해요. 안 푼 과목은 전년도 성적 기준. 많이 풀수록 정확해져요.</div>
+  </div>`;
+}
+// ========== 성적 추이 그래프 ==========
+function trendCard(){
+  const rs=(S.examResults||[]).slice().reverse();
+  if(rs.length<1) return '';
+  const W=560,H=140,P=26, max=100, min=Math.min(80,...rs.map(r=>r.avg))-2;
+  const x=i=>P+(rs.length<2?0:i*(W-2*P)/(rs.length-1)), y=v=>H-P-((v-min)/(max-min))*(H-2*P);
+  const pts=rs.map((r,i)=>`${x(i)},${y(r.avg)}`).join(' ');
+  const line=v=>`<line x1="${P}" y1="${y(v)}" x2="${W-P}" y2="${y(v)}" stroke="${v>=98?'rgba(46,230,166,.5)':'rgba(255,224,102,.45)'}" stroke-dasharray="4 4" stroke-width="1"/><text x="${W-P+2}" y="${y(v)+3}" font-size="9" fill="var(--text3)">${v}</text>`;
+  return `<div style="border:1px solid var(--bluebd);border-radius:16px;padding:18px;background:linear-gradient(180deg,var(--tintB),var(--panel2));margin-bottom:18px;">
+    <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--blue);letter-spacing:1px;margin-bottom:10px;">SCORE TREND · 성적 추이</div>
+    <div style="overflow-x:auto;"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:320px;height:auto;">
+      ${line(98)}${line(94)}
+      ${rs.length>1?`<polyline points="${pts}" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linejoin="round"/>`:''}
+      ${rs.map((r,i)=>`<circle cx="${x(i)}" cy="${y(r.avg)}" r="4.5" fill="${r.avg>=98?'#2ee6a6':r.avg>=94?'#ffe066':'#ff5468'}"/>
+        <text x="${x(i)}" y="${y(r.avg)-9}" font-size="10" fill="var(--text)" text-anchor="middle" font-weight="700">${r.avg}</text>
+        <text x="${x(i)}" y="${H-8}" font-size="9" fill="var(--text3)" text-anchor="middle">${h((r.year||'').replace('년도','')+' '+(r.exam_round||'').replace('시험',''))}</text>`).join('')}
+    </svg></div>
+    <div style="font-size:11.5px;color:var(--text3);margin-top:4px;">점선 = 98(교과 3등급선) · 94(학종 마지노선)</div></div>`;
+}
+// ========== 오늘의 추천 학습 ==========
+async function loadRecommend(){ const r=await api('/api/recommend'); S.recommend=r; }
+function recommendCard(){
+  const r=S.recommend; if(!r||!r.tasks) return '';
+  const dday=Math.max(0,Math.ceil((new Date(2026,7,11)-new Date())/86400000));
+  const t=r.tasks.map((x,i)=>{
+    const un=x.unsolved;
+    return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 13px;border-radius:12px;border:1px solid ${i===0?'var(--gold-d)':'var(--border)'};background:${i===0?'rgba(255,224,102,.09)':'var(--panel2)'};">
+      <span style="font-family:'Press Start 2P',monospace;font-size:10px;color:${i===0?'var(--gold)':'var(--text3)'};">${i+1}</span>
+      <b style="font-size:15px;">${h(x.subject)}</b>
+      <span style="font-size:12.5px;color:var(--text2);">${x.acc!=null?`정답률 ${x.acc}%`:'아직 안 풂'}${x.repeat?` · <span style="color:var(--orange);">🔁 반복오답 ${x.repeat}</span>`:''}</span>
+      <div style="margin-left:auto;display:flex;gap:6px;">
+        ${x.repeat?`<button data-act="goreview" data-arg="${h(x.subject)}" style="padding:6px 12px;border-radius:999px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-size:12.5px;font-weight:700;cursor:pointer;">반복오답 풀기</button>`:''}
+        ${un?`<button data-act="gosolve" data-arg="${un.id}" style="padding:6px 12px;border-radius:999px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.16);color:var(--accent-b);font-size:12.5px;font-weight:700;cursor:pointer;">🆕 ${h(un.year)} ${h(un.exam_round)} 풀기</button>`:''}
+      </div></div>`;}).join('');
+  return `<div style="border:1px solid var(--gold-d);border-radius:16px;padding:18px;background:linear-gradient(180deg,rgba(255,224,102,.1),var(--panel2));margin-bottom:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">TODAY'S QUEST · 오늘의 추천</div>
+      <span style="font-size:12px;color:var(--text2);">D-${dday} · 안 푼 기출 ${r.unsolved_total}회차</span></div>
+    <div style="display:grid;gap:7px;">${t}</div></div>`;
+}
+// ========== 유사문제 추천 ==========
+async function loadSimilar(qnum){
+  S.similar={loading:true,qnum}; render();
+  const r=await api(`/api/similar?question_id=${S.qCurrent.id}&qnum=${qnum}`);
+  S.similar={items:r.items||[], qnum}; render();
+}
+function similarBox(qnum){
+  const s=S.similar;
+  if(!s||s.qnum!==qnum) return `<button data-act="similar" data-arg="${qnum}" style="margin-top:10px;padding:9px 14px;border-radius:10px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;">🔗 이 문제와 비슷한 기출 찾기</button>`;
+  if(s.loading) return `<div style="margin-top:10px;font-size:13px;color:var(--blue);">유사 기출을 찾는 중...</div>`;
+  if(!s.items.length) return `<div style="margin-top:10px;font-size:13px;color:var(--text3);">비슷한 기출을 찾지 못했어요.</div>`;
+  return `<div style="margin-top:10px;border:1px solid var(--bluebd);border-radius:12px;padding:13px;background:var(--tintB);">
+    <div style="font-size:12.5px;font-weight:800;color:var(--blue);margin-bottom:8px;">🔗 비슷한 개념의 다른 기출 ${s.items.length}개</div>
+    <div style="display:grid;gap:6px;">${s.items.map(x=>`<button data-act="gosimilar" data-arg="${x.question_id}|${x.qnum}" style="text-align:left;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:var(--panel);color:var(--text);font-size:12.5px;cursor:pointer;">
+      <b>${h(x.year)} ${h(x.exam_round)} ${x.qnum}번</b> <span style="color:var(--text3);">· 공통 ${h(x.shared.join(', '))}</span><div style="color:var(--text2);margin-top:3px;">${h(x.stem)}</div></button>`).join('')}</div></div>`;
+}
+// ========== 사진으로 질문 ==========
+let _askFile=null;
+async function askImage(){
+  const f=_askFile||(document.getElementById('ask_file')&&document.getElementById('ask_file').files[0]);
+  if(!f){ S.askImg={busy:false,text:'⚠️ 사진(또는 PDF)을 선택하세요.',q:S.askImg.q}; render(); return; }
+  S.askImg={busy:true,text:'',q:S.askImg.q}; render();
+  const data=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(f);});
+  const r=await api('/api/askimage',{method:'POST',...jbody({data, q:S.askImg.q})});
+  S.askImg={busy:false, q:S.askImg.q,
+    text: r.text || (r.error==='no-ai'?'🧚 수호령 미연결(GEMINI_API_KEY 필요).':'읽지 못했어요. 더 선명한 사진으로 다시 시도해 주세요.')};
+  _askFile=null; render();
+}
+function askImageCard(){
+  const a=S.askImg||{};
+  return `<div style="border:1px dashed var(--pinkbd);border-radius:14px;padding:16px;background:var(--tintP);margin-bottom:14px;">
+    <div style="font-weight:800;color:var(--pink);margin-bottom:4px;">📷 사진으로 질문하기</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">모르는 문제를 <b>사진(또는 PDF)</b>으로 올리면 수호령이 읽고 풀이를 설명해줘요.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input id="ask_file" type="file" accept="image/*,application/pdf,.pdf" capture="environment" style="padding:9px 11px;border-radius:8px;border:1px solid var(--pinkbd);background:var(--inset);color:var(--text);font-size:13px;flex:1;min-width:190px;">
+      <button data-act="askimg" style="padding:9px 18px;border-radius:10px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-weight:700;cursor:pointer;">질문하기</button></div>
+    <input data-model="askq" value="${h(a.q||'')}" placeholder="추가 질문(선택): 예) 3번이 왜 답이야?" style="width:100%;margin-top:8px;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--inset);color:var(--text);font-size:13px;">
+    ${a.busy?`<div style="margin-top:10px;font-size:13px;color:var(--pink);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 사진을 읽는 중...</div>`:''}
+    ${a.text?`<div style="margin-top:10px;background:var(--inset);border:1px solid var(--pinkbd);border-radius:12px;padding:14px;font-size:14px;line-height:1.8;white-space:pre-wrap;color:var(--text);">${mdLite(a.text)}</div>`:''}
   </div>`;
 }
 
@@ -1236,7 +1441,8 @@ const ACTS = {
     if(id==='bank'&&!S.qFacets.subject.length){await loadFacets();render();}
     if(id==='wrong'){await loadWrong(); await loadDiag(false);}
     if(id==='admin'){await adminReload();}
-    if(id==='exam'){ if(!S.qFacets.subject.length)await loadFacets(); await loadExamRecords(); render(); }
+    if(id==='exam'){ if(!S.qFacets.subject.length)await loadFacets(); await loadExamRecords(); if(!S.diag)await loadDiag(false); render(); }
+    if(id==='camp'){ await loadRecommend(); render(); }
     if(id==='tower'&&S.towerSubject==='도덕'&&!S.dodeok){ await loadDodeok(); render(); } },
   timer:sub=>toggleTimer(sub), add:arg=>{const[s,d]=arg.split(':');addMins(s,+d);}, nc2:pickNc2, preview:()=>{S.lockPreview=!S.lockPreview;render();},
   nextUnit, flip, critical, dodge, verify, clearBlank:()=>{S.blankText='';S.blankResult='';render();},
@@ -1270,6 +1476,12 @@ const ACTS = {
   wronggrade:()=>gradeWrongNote(),
   onlynew:()=>{ S.onlyNew=!S.onlyNew; render(); },
   diagai:()=>loadDiag(true),
+  mockstart:()=>mockStart(), mocksubmit:()=>mockSubmit(false),
+  similar:n=>loadSimilar(+n),
+  gosimilar:async arg=>{ const[id,qn]=arg.split('|'); S.tab='bank'; S.similar=null; await pickQuestionById(+id); S.quizIdx=Math.max(0,S.quizItems.findIndex(x=>x.qnum==+qn)); render(); scrollTop(); },
+  gosolve:async id=>{ S.tab='bank'; await pickQuestionById(+id); render(); scrollTop(); },
+  goreview:async subj=>{ S.tab='wrong'; await loadWrong(); await loadDiag(false); render(); },
+  askimg:()=>askImage(),
   wrongdec:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'dec');},
   wrongremove:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'remove');},
 };
@@ -1281,6 +1493,8 @@ function bindInputs(){
   const wf=document.getElementById('wn_file'); if(wf) wf.onchange=()=>{ _wnFile=wf.files[0]||null; };
   $.querySelectorAll('[data-exam]').forEach(el=>{ el.onchange=()=>{ S.examSel[el.getAttribute('data-exam')]=el.value; }; });
   $.querySelectorAll('[data-examin]').forEach(el=>{ el.oninput=()=>{ S.examInputs[el.getAttribute('data-examin')]=el.value; }; });
+  const af=document.getElementById('ask_file'); if(af) af.onchange=()=>{ _askFile=af.files[0]||null; };
+  $.querySelectorAll('[data-model="askq"]').forEach(el=>{ el.oninput=()=>{ S.askImg.q=el.value; }; });
   const ci=document.getElementById('chatInput'); if(ci) ci.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); send(); } };
 }
 

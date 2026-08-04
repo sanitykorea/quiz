@@ -71,7 +71,7 @@ const S = {
   quizItems:[], quizIdx:0, quizMarks:{}, showRaw:false, streak:0, showImg:{},
   bankMode:'instant', picks:{}, graded:false, onlyNew:false,
   diag:null, diagText:'', diagLoading:false,
-  wrongData:null, wrongAnalysis:'', wrongPdfMsg:'', wrongGradeMsg:'', wrongGradeResult:null,
+  wrongData:null, wrongAnalysis:'', wrongPdfMsg:'', wrongGradeMsg:'', wrongGradeResult:null, wrongSubjFilter:'',
   examSel:{}, examKeys:null, examInputs:{}, examScore:null, examResults:[], examMsg:'',
   history:[],
   towerSubject:'도덕', dodeok:null, towerConcept:{},
@@ -364,6 +364,7 @@ function render(){
   if(S.gateMode==='loading'){ $.innerHTML=''; return; }
   $.innerHTML = (S.gateMode!=='open') ? gate() : app();
   bindInputs();
+  reattachEyeMedia();   // 다른 상태변화로 전체 재렌더돼도 웹캠/화면공유 스트림 유지
   if(S.tab==='summon') scrollChat();
 }
 function scrollChat(){ const el=document.getElementById('chatScroll'); if(el) el.scrollTop=el.scrollHeight; }
@@ -846,7 +847,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804h · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804i · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1022,7 +1023,11 @@ function vWrong(){
   if(!d) return '<div style="color:var(--text3);">불러오는 중...</div>';
   const subs=Object.entries(d.by_subject||{}).sort((a,b)=>b[1]-a[1]);
   const totalWrong=(d.wrong||[]).length;
-  const chips=subs.length?subs.map(([s,n])=>`<div style="padding:10px 14px;border-radius:12px;border:1px solid rgba(255,84,104,.4);background:rgba(255,84,104,.08);display:flex;gap:10px;align-items:center;"><span style="font-weight:700;">${h(s)}</span><span style="font-family:'Press Start 2P',monospace;font-size:12px;color:var(--danger-b);">${n}</span></div>`).join(''):'<div style="color:var(--text3);">아직 틀린 문제가 없어요 🎉</div>';
+  const fSubj=S.wrongSubjFilter;
+  const chips=subs.length?subs.map(([s,n])=>{
+    const on=fSubj===s;
+    return `<button data-act="wrongsubj" data-arg="${h(s)}" style="padding:10px 14px;border-radius:12px;border:1px solid ${on?'var(--danger-b)':'rgba(255,84,104,.4)'};background:${on?'rgba(255,84,104,.22)':'rgba(255,84,104,.08)'};display:flex;gap:10px;align-items:center;cursor:pointer;"><span style="font-weight:700;color:${on?'var(--danger-b)':'inherit'};">${h(s)}</span><span style="font-family:'Press Start 2P',monospace;font-size:12px;color:var(--danger-b);">${n}</span></button>`;
+  }).join(''):'<div style="color:var(--text3);">아직 틀린 문제가 없어요 🎉</div>';
   const item=w=>`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid ${w.repeat?'rgba(255,140,40,.55)':'var(--border)'};border-radius:12px;padding:12px 14px;background:${w.repeat?'rgba(255,140,40,.08)':'var(--panel)'};">
       ${w.repeat?`<span style="font-size:11px;font-weight:800;color:#fff;background:linear-gradient(180deg,#ff9a3d,#e0603b);padding:3px 8px;border-radius:7px;">🔁 반복 ${w.wrong_count}회</span>`:''}
       <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(w.subject)}</span>
@@ -1040,8 +1045,13 @@ function vWrong(){
         <button data-act="review" data-arg="${w.question_id}|${h(w.subject)}|${h(w.year)}|${h(w.exam_round)}|${w.qnum}" style="padding:6px 13px;border-radius:999px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer;">↺ 복습</button>
       </div>
     </div>`;
-  const repeats=(d.wrong||[]).filter(w=>w.repeat), normals=(d.wrong||[]).filter(w=>!w.repeat);
-  const items=`${repeats.length?`<div style="font-size:14px;font-weight:800;color:var(--orange);margin:2px 0 8px;">🔁 반복해서 틀리는 문제 <span style="font-size:12px;color:var(--text3);">· 복습·PDF에서 또 틀린 ${repeats.length}문항</span></div><div style="display:grid;gap:10px;margin-bottom:16px;">${repeats.map(item).join('')}</div>`:''}
+  const scoped=fSubj?(d.wrong||[]).filter(w=>w.subject===fSubj):(d.wrong||[]);
+  const repeats=scoped.filter(w=>w.repeat), normals=scoped.filter(w=>!w.repeat);
+  const filterBar=fSubj?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:13px;color:var(--text2);">
+      <span>📌 <b style="color:var(--danger-b);">${h(fSubj)}</b>만 보는 중 (${scoped.length}문항)</span>
+      <button data-act="wrongsubj" data-arg="${h(fSubj)}" style="padding:4px 11px;border-radius:999px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">전체 보기</button></div>`:'';
+  const items=`${filterBar}${!scoped.length?'<div style="color:var(--text3);font-size:13.5px;">이 과목엔 틀린 문제가 없어요 🎉</div>':''}
+    ${repeats.length?`<div style="font-size:14px;font-weight:800;color:var(--orange);margin:2px 0 8px;">🔁 반복해서 틀리는 문제 <span style="font-size:12px;color:var(--text3);">· 복습·PDF에서 또 틀린 ${repeats.length}문항</span></div><div style="display:grid;gap:10px;margin-bottom:16px;">${repeats.map(item).join('')}</div>`:''}
     ${normals.length?`${repeats.length?`<div style="font-size:14px;font-weight:800;color:var(--text2);margin:2px 0 8px;">📕 그 외 오답 ${normals.length}문항</div>`:''}<div style="display:grid;gap:10px;">${normals.map(item).join('')}</div>`:''}`;
   return `<div><div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">WRONG-ANSWER LOG</div>
@@ -1518,7 +1528,18 @@ function avatarFace(id, w, hgt){
   return `<div id="${id}" style="width:100%;aspect-ratio:${w}/${hgt};">${avatar(avatarMood(),EYE.speaking,e.pose||'sit')}</div>`;
 }
 // ========== 🔮 수호령의 눈: 화상 스터디 버디 ==========
-const EYE={cam:null, screen:null, timer:null, tick:null, rec:null, speaking:false, anim:null, keep:null, recOn:false};
+const EYE={cam:null, screen:null, timer:null, tick:null, rec:null, speaking:false, anim:null, keep:null, recOn:false, recTok:0};
+const fmtTimer=s=>`${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor(s%3600/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+const fmtTimerShort=s=>`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+// 웹캠·화면공유 스트림을 렌더 후 다시 연결(전체 렌더로 <video> 태그가 새로 생겨도 스트림 유지)
+function reattachEyeMedia(){
+  const e=(S.eye)||{};
+  if(!e.on) return;
+  const v=document.getElementById('eyeCam');
+  if(v&&EYE.cam&&v.srcObject!==EYE.cam){ v.srcObject=EYE.cam; v.play().catch(()=>{}); }
+  const sc=document.getElementById('eyeScr');
+  if(sc&&EYE.screen&&sc.srcObject!==EYE.screen){ sc.srcObject=EYE.screen; sc.play().catch(()=>{}); }
+}
 function eyeInit(){ if(!S.eye) S.eye={on:false,startAt:0,focusedSec:0,distract:0,checks:0,status:'',msg:'',log:[],useScreen:false,interval:60,busy:false,listening:false,muteTTS:false,input:'',pose:'stand',always:true,rate:1.0,pitch:0.85,voiceURI:''}; return S.eye; }
 function koVoices(){ try{ return speechSynthesis.getVoices().filter(v=>/ko/i.test(v.lang)); }catch(e){ return []; } }
 try{ if('speechSynthesis' in window) speechSynthesis.onvoiceschanged=()=>{ if(S.tab==='eye') render(); }; }catch(e){}
@@ -1535,28 +1556,37 @@ function pickVoice(){
     return sc; };
   return vs.slice().sort((a,b)=>score(b)-score(a))[0];
 }
+let _speakGen=0;
 function speak(text){
   const e=eyeInit(); if(e.muteTTS||!text||!('speechSynthesis' in window)) return;
   const clean=String(text).replace(/[*_`#>]/g,'').replace(/\s+/g,' ').trim();
   if(!clean) return;
+  const gen=++_speakGen;   // 이 발화 세션의 식별자 — 도중에 새 speak()가 끼어들면 옛 세션의 종료 처리를 무시
   try{
     stopRec();                                    // 말할 땐 마이크 정지(에코 방지)
-    speechSynthesis.cancel();
+    if(speechSynthesis.speaking||speechSynthesis.pending) speechSynthesis.cancel();
     if(EYE.keep) clearInterval(EYE.keep);
     EYE.keep=setInterval(()=>{ try{ if(speechSynthesis.speaking) speechSynthesis.resume(); else { clearInterval(EYE.keep); EYE.keep=null; } }catch(x){} },7000);
     // 문장 단위로 끊어 읽으면 더 자연스럽고 중간에 끊기지 않음
     const parts=clean.match(/[^.!?…\n]+[.!?…]?/g)||[clean];
+    let done=false;
+    const finishSpeak=()=>{
+      if(done||gen!==_speakGen) return;             // 이미 처리됐거나 새 발화로 대체됨 → 무시
+      done=true; EYE.speaking=false;
+      if(EYE.keep){clearInterval(EYE.keep);EYE.keep=null;}
+      const ee=eyeInit(); if(ee.always&&ee.on&&!ee.muteMic) setTimeout(startRec,400);
+    };
     parts.forEach((p,i)=>{
       const u=new SpeechSynthesisUtterance(p.trim());
       u.lang='ko-KR'; u.rate=e.rate||1.0; u.pitch=(e.pitch!=null?e.pitch:0.85); u.volume=1;
       const v=pickVoice(); if(v) u.voice=v;
       if(i===0){ u.onstart=()=>{ EYE.speaking=true; avatarLoop(); }; }
-      if(i===parts.length-1){ u.onend=()=>{ EYE.speaking=false;
-        if(EYE.keep){clearInterval(EYE.keep);EYE.keep=null;}
-        const ee=eyeInit(); if(ee.always&&ee.on&&!ee.muteMic) setTimeout(startRec,400); }; }
+      if(i===parts.length-1){ u.onend=finishSpeak; u.onerror=finishSpeak; }
       speechSynthesis.speak(u);
     });
-  }catch(err){}
+    // 일부 브라우저는 onend가 아예 안 불리는 버그가 있음 → 예상 낭독시간+여유 뒤 강제 해제(마이크 영구 정지 방지)
+    setTimeout(finishSpeak, Math.min(30000, clean.length*95+1500));
+  }catch(err){ EYE.speaking=false; }
 }
 // 말하거나 춤출 때만 아바타를 부분 갱신(입력창 포커스 유지)
 function avatarLoop(){
@@ -1609,7 +1639,15 @@ async function eyeStart(){
                    const s=document.getElementById('eyeScr'); if(s&&EYE.screen){s.srcObject=EYE.screen;s.play().catch(()=>{});} },80);
   speak('안녕 수영아, 오늘도 같이 공부하자!');
   if(e.always&&!e.muteMic) setTimeout(startRec,1500);
-  EYE.timer=setInterval(()=>{ const ee=eyeInit(); if(!ee.on) return; if(ee.status!=='딴짓') ee.focusedSec++; if(S.tab==='eye') render(); },1000);
+  EYE.timer=setInterval(()=>{
+    const ee=eyeInit(); if(!ee.on) return;
+    if(ee.status!=='딴짓') ee.focusedSec++;
+    // 1초마다 전체 재렌더하면 <video>가 매번 새로 생겨 스트림이 끊김 → 타이머 텍스트만 직접 갱신
+    const t1=document.getElementById('focusTimer'), t2=document.getElementById('pipTimer');
+    if(t1) t1.textContent=fmtTimer(ee.focusedSec);
+    if(t2) t2.textContent=fmtTimerShort(ee.focusedSec);
+    if(!t1&&!t2) render();   // 아직 화면에 안 그려졌으면(탭 전환 직후 등) 한 번은 전체 렌더
+  },1000);
   EYE.tick=setInterval(eyeCheck, Math.max(20,e.interval)*1000);
   setTimeout(eyeCheck, 6000);
 }
@@ -1656,11 +1694,14 @@ function startRec(){
   const e=eyeInit(); if(!e.on||e.muteMic||EYE.speaking||EYE.recOn) return;
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){ return; }
+  const myTok=++EYE.recTok;   // 이 인식 세션의 식별자
   try{
     const rec=new SR(); EYE.rec=rec;
     rec.lang='ko-KR'; rec.continuous=true; rec.interimResults=true; rec.maxAlternatives=1;
     let finalTxt='';
-    rec.onstart=()=>{ EYE.recOn=true; e.listening=true; if(S.tab==='eye') render(); };
+    rec.onstart=()=>{ EYE.recOn=true; e.listening=true; if(S.tab==='eye') render();
+      // 일부 브라우저는 연속 인식이 오래 지속되면 이벤트 없이 조용히 멎는 버그가 있어 주기적으로 새로 시작
+      setTimeout(()=>{ if(EYE.recTok===myTok&&EYE.recOn){ try{ rec.stop(); }catch(x){} } }, 45000); };
     rec.onresult=ev=>{
       let interim='';
       for(let i=ev.resultIndex;i<ev.results.length;i++){
@@ -1677,12 +1718,12 @@ function startRec(){
       if(ev.error==='not-allowed'){ e.always=false; e.msg='마이크 권한이 필요해요.'; }
       if(S.tab==='eye') render(); };
     rec.onend=()=>{ EYE.recOn=false; e.listening=false;
-      if(e.always&&e.on&&!e.muteMic&&!EYE.speaking) setTimeout(startRec,500);   // 자동 재시작 = 계속 대화
+      if(EYE.recTok===myTok && e.always&&e.on&&!e.muteMic&&!EYE.speaking) setTimeout(startRec,500);   // 자동 재시작 = 계속 대화
       if(S.tab==='eye') render(); };
     rec.start();
   }catch(x){ EYE.recOn=false; }
 }
-function stopRec(){ EYE.recOn=false; const e=eyeInit(); e.listening=false; if(EYE.rec){ try{ EYE.rec.onend=null; EYE.rec.stop(); }catch(x){} EYE.rec=null; } }
+function stopRec(){ EYE.recTok++; EYE.recOn=false; const e=eyeInit(); e.listening=false; if(EYE.rec){ try{ EYE.rec.onend=null; EYE.rec.stop(); }catch(x){} EYE.rec=null; } }
 function eyeListen(){                      // 마이크 항상 켜기/끄기 토글
   const e=eyeInit();
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -1702,7 +1743,7 @@ function eyePip(){
     ${avatarFace('pipBox',250,300)}
     <div style="position:absolute;top:7px;left:8px;display:flex;gap:5px;align-items:center;">
       <span style="padding:3px 8px;border-radius:999px;background:rgba(0,0,0,.5);color:#fff;font-size:11px;font-weight:700;">🔮 루하</span>
-      <span style="padding:3px 8px;border-radius:999px;background:rgba(0,0,0,.5);color:${st.c};font-size:11px;font-weight:800;">${mm}:${ss}</span></div>
+      <span id="pipTimer" style="padding:3px 8px;border-radius:999px;background:rgba(0,0,0,.5);color:${st.c};font-size:11px;font-weight:800;">${mm}:${ss}</span></div>
     <div style="position:absolute;top:6px;right:6px;display:flex;gap:4px;">
       <button data-act="piphide" title="숨기기" style="width:26px;height:26px;border-radius:8px;border:none;background:rgba(0,0,0,.5);color:#fff;font-size:13px;cursor:pointer;">─</button>
       <button data-act="tab" data-arg="eye" title="크게 보기" style="width:26px;height:26px;border-radius:8px;border:none;background:rgba(0,0,0,.5);color:#fff;font-size:12px;cursor:pointer;">⤢</button></div>
@@ -1761,7 +1802,7 @@ function vEye(){
         <span style="font-size:22px;">${st.ic}</span>
         <div><div style="font-size:12px;color:var(--text2);">상태</div><div style="font-size:17px;font-weight:900;color:${st.c};">${h(e.status||'확인 중')}${e.activity?` <span style="font-size:12.5px;font-weight:600;color:var(--text2);">· ${h(e.activity)}</span>`:''}</div></div>
         <div style="margin-left:auto;text-align:right;"><div style="font-size:12px;color:var(--text2);">집중 시간</div>
-          <div style="font-family:'Press Start 2P',monospace;font-size:16px;color:var(--gold);">${String(Math.floor(e.focusedSec/3600)).padStart(2,'0')}:${String(Math.floor(e.focusedSec%3600/60)).padStart(2,'0')}:${String(e.focusedSec%60).padStart(2,'0')}</div></div>
+          <div id="focusTimer" style="font-family:'Press Start 2P',monospace;font-size:16px;color:var(--gold);">${fmtTimer(e.focusedSec)}</div></div>
         <div style="text-align:right;"><div style="font-size:12px;color:var(--text2);">딴짓</div><div style="font-size:17px;font-weight:900;color:var(--danger-b);">${e.distract}<span style="font-size:12px;">회</span></div></div></div>
       ${e.msg?`<div style="border:1px solid ${st.c};border-radius:12px;padding:11px 14px;background:var(--inset);font-size:14.5px;font-weight:700;color:${st.c};margin-bottom:12px;">🧚 ${h(e.msg)}</div>`:''}
       <div style="display:grid;grid-template-columns:1.1fr 1fr;gap:10px;margin-bottom:10px;">
@@ -2161,6 +2202,7 @@ const ACTS = {
   eyedance:()=>{ const e=eyeInit(); e.dancing=true; avatarLoop(); clearTimeout(EYE.danceT); EYE.danceT=setTimeout(()=>{e.dancing=false;render();},8000); render(); }, eyemute:()=>{ const e=eyeInit(); e.muteTTS=!e.muteTTS; if(e.muteTTS)try{speechSynthesis.cancel();}catch(x){} render(); },
   finaldodeok:()=>{ S.tab='tower'; S.towerSubject='도덕'; S.dodeokMode='blank';
     (S.dodeok?Promise.resolve():loadDodeok()).then(()=>{ dodeokStart('blank'); render(); }); },
+  wrongsubj:s=>{ S.wrongSubjFilter = S.wrongSubjFilter===s?'':s; render(); },
   wrongdec:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'dec');},
   wrongremove:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'remove');},
 };

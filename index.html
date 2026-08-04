@@ -99,7 +99,8 @@ function persist(){
   _saveT = setTimeout(()=>{
     const st={ day:ymd(new Date()), theme:S.theme, sleepDone:S.sleepDone, wakeDone:S.wakeDone,
       mins:S.mins, nc2Pick:S.nc2Pick, towerUnit:S.towerUnit, deckIdx:S.deckIdx, known:S.known,
-      checklist:S.checklist, stance:S.stance, muted:S.muted, messages:(S.messages||[]).slice(-40) };
+      checklist:S.checklist, stance:S.stance, muted:S.muted, messages:(S.messages||[]).slice(-40),
+      eyeCfg: S.eye ? {mouthX:S.eye.mouthX, mouthY:S.eye.mouthY, voiceURI:S.eye.voiceURI, pitch:S.eye.pitch, rate:S.eye.rate, interval:S.eye.interval, useScreen:S.eye.useScreen, muteTTS:S.eye.muteTTS} : undefined };
     api('/api/state', {method:'POST', ...jbody({state:st})});
   }, 400);
 }
@@ -138,6 +139,7 @@ async function openApp(){
   S.checklist = saved.checklist || {acad:false,comm:false,self:false,dili:false};
   S.stance = saved.stance || 'A';
   S.muted = !!saved.muted;
+  if(saved.eyeCfg){ Object.assign(eyeInit(), saved.eyeCfg); }   // 입 위치·목소리 설정 복원
   S.messages = (saved.messages&&saved.messages.length) ? saved.messages
     : [{role:'assistant', text:'수영! 《지식의 탑》에 잘 왔어 ⚔️ 나는 너의 수호령이야.\n오늘 첫 퀘스트부터 같이 정해볼까? 아래 스펠을 눌러도 좋아.'}];
   S.gateMode = 'open';
@@ -844,7 +846,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804f · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804g · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1535,19 +1537,21 @@ function drawAvatarCanvas(cv){
   ctx.clearRect(0,0,W,H);
   ctx.save(); ctx.translate(swayX,-breathe);
   const my=(e.mouthY!=null?e.mouthY:0.66);            // 입 세로 위치(0~1)
-  const cut=dy+dh*my;                                  // 자르는 선(입 윗부분)
+  const mxr=(e.mouthX!=null?e.mouthX:0.5);             // 입 가로 위치(0~1)
+  const cut=dy+dh*my;
   const amp=EYE.speaking? (1.6+Math.abs(Math.sin(t*9))*4.6) : 0;
-  // 윗부분(눈·코까지)
-  ctx.drawImage(im, 0,0, im.width, im.height*my, dx,dy, dw, dh*my);
-  // 아랫부분(턱): 말할 때 아래로 밀고 살짝 늘림
-  ctx.drawImage(im, 0, im.height*my, im.width, im.height*(1-my),
-                dx, cut+amp, dw, dh*(1-my));
-  if(amp>0.4){                                         // 벌어진 틈 = 입안 그림자
-    const g=ctx.createLinearGradient(0,cut,0,cut+amp);
-    g.addColorStop(0,'rgba(60,20,26,.85)'); g.addColorStop(1,'rgba(120,50,60,.35)');
+  ctx.drawImage(im, dx, dy, dw, dh);                   // 전체(정지) — 절단선 없음
+  if(amp>0.4){
+    // 턱 부분만 타원으로 잘라 아래로 이동 → 입 벌어짐 (어깨·배경은 고정)
+    const mw=dw*(e.mouthW||0.17), mcx=dx+dw*mxr, jawH=dh*0.16;
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(mcx, cut+jawH*0.45, mw*1.7, jawH, 0, 0, Math.PI*2); ctx.clip();
+    ctx.drawImage(im, dx, dy+amp, dw, dh);
+    ctx.restore();
+    const g=ctx.createLinearGradient(0,cut-2,0,cut+amp+2);
+    g.addColorStop(0,'rgba(60,20,26,.9)'); g.addColorStop(1,'rgba(130,55,66,.4)');
     ctx.fillStyle=g;
-    const mw=dw*(e.mouthW||0.16), mx=dx+dw*(e.mouthX!=null?e.mouthX:0.5)-mw/2;
-    ctx.beginPath(); ctx.ellipse(mx+mw/2, cut+amp*0.5, mw/2, Math.max(1.2,amp*0.62), 0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(mcx, cut+amp*0.45, mw/2, Math.max(1.2,amp*0.6), 0,0,Math.PI*2); ctx.fill();
   }
   ctx.restore();
   if(EYE.speaking){ ctx.strokeStyle='rgba(46,230,166,.85)'; ctx.lineWidth=4; ctx.strokeRect(2,2,W-4,H-4); }
@@ -2219,10 +2223,10 @@ function bindInputs(){
       cv.onclick=ev=>{ const r=cv.getBoundingClientRect(); const e2=eyeInit();
         e2.mouthY=Math.min(.95,Math.max(.3,(ev.clientY-r.top)/r.height));
         e2.mouthX=Math.min(1,Math.max(0,(ev.clientX-r.left)/r.width));
-        toast('👄 입 위치 설정됨','good'); render(); }; } });
-  const ev2=document.getElementById('eyeVoice'); if(ev2) ev2.onchange=()=>{ eyeInit().voiceURI=ev2.value; };
-  const ep=document.getElementById('eyePitch'); if(ep) ep.oninput=()=>{ eyeInit().pitch=+ep.value; render(); };
-  const er=document.getElementById('eyeRate'); if(er) er.oninput=()=>{ eyeInit().rate=+er.value; render(); };
+        toast('👄 입 위치 설정됨','good'); persist(); render(); }; } });
+  const ev2=document.getElementById('eyeVoice'); if(ev2) ev2.onchange=()=>{ eyeInit().voiceURI=ev2.value; persist(); };
+  const ep=document.getElementById('eyePitch'); if(ep) ep.oninput=()=>{ eyeInit().pitch=+ep.value; persist(); render(); };
+  const er=document.getElementById('eyeRate'); if(er) er.oninput=()=>{ eyeInit().rate=+er.value; persist(); render(); };
   const ei=document.getElementById('eyeInput'); if(ei){ ei.oninput=()=>{ eyeInit().input=ei.value; };
     ei.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); eyeSay(); } }; }
   $.querySelectorAll('[data-model="askq"]').forEach(el=>{ el.oninput=()=>{ S.askImg.q=el.value; }; });

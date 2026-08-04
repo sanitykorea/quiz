@@ -144,6 +144,7 @@ async function openApp(){
   if(saved.day!==today) persist(); // 일일 초기화 저장
   render();
   if(S.towerSubject==='도덕' && !S.dodeok) loadDodeok().then(render);   // 도덕 노트 미리 로드(초기 탭이 수련의 탑이어도 표시)
+  loadAvatarImg();
   loadRecommend().then(loadToday).then(()=>{ if(dday()<=1) return loadWrong(); }).then(render);   // 캠프 카드(추천·리포트·D-1) 초기 로드
 }
 
@@ -425,7 +426,7 @@ function app(){
       </div>
       <nav style="max-width:1180px;margin:0 auto;padding:0 20px;display:flex;gap:4px;overflow-x:auto;">${nav}</nav>
     </header>
-    <main style="max-width:1180px;margin:0 auto;padding:26px 20px 90px;">${view}</main>
+    <main style="max-width:1180px;margin:0 auto;padding:26px 20px 90px;">${view}${eyePip()}</main>
   </div>`;
 }
 
@@ -487,7 +488,7 @@ function vCamp(){
     return `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid ${on?'rgba(255,84,104,.5)':'var(--border)'};background:${on?'rgba(255,84,104,.10)':'var(--panel2)'};"><div style="font-size:20px;">${on?(s.kind==='seal'?'🔒':'🛡️'):'🗓'}</div><div><div style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--text3);">${h(s.day)} ${h(s.t_start)}–${h(s.t_end)}</div><div style="font-size:14px;font-weight:700;margin-top:5px;">${h(s.name)}</div></div><div style="margin-left:auto;font-size:11px;font-weight:700;color:${on?'var(--danger-b)':'var(--text3)'};">${on?'발동 중':'대기'}</div></div>`;
   }).join('') || '<div style="color:var(--text3);font-size:13px;">고정일정이 없어요. 관리소 → 고정일정에서 추가하세요.</div>';
   const totalPct=Math.min(100,total/360*100);
-  return `<div style="display:grid;gap:22px;">${finalCheckCard()}${examDayCard()}${recommendCard()}${todayCard()}${planCard()}<section>
+  return `<div style="display:grid;gap:22px;">${finalCheckCard()}${recommendCard()}${todayCard()}${planCard()}<section>
     <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">DAILY QUESTS</div>
       <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">⛺ 일일 퀘스트 현황 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 황금비 2:1:1:2 (총 6시간)</span></h2></div>
@@ -501,7 +502,7 @@ function vCamp(){
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;"><h3 style="margin:0;font-size:16px;font-weight:800;">🗝 결계 · 고정일정 (자동 발동)</h3>
     <button data-act="preview" style="font-size:12px;padding:6px 13px;border-radius:999px;cursor:pointer;border:1px solid ${S.lockPreview?'rgba(255,84,104,.5)':'var(--border)'};background:${S.lockPreview?'rgba(255,84,104,.12)':'var(--panel2)'};color:${S.lockPreview?'var(--danger-b)':'var(--text2)'};">${S.lockPreview?'미리보기 끄기':'결계 미리보기'}</button></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;">${sched}</div>
-  </section></div>`;
+  </section>${examDayCard()}</div>`;
 }
 
 function dodeokNotes(){
@@ -843,7 +844,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804e · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804f · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1395,125 +1396,221 @@ const POSES=[
 ];
 function avatar(mood, talking, pose){
   const dancing = pose==='dance';
-  const M={idle:{brow:0,eye:1,mouth:'M78,112 q22,10 44,0',blush:.35},
-           happy:{brow:-2,eye:.55,mouth:'M76,108 q24,20 48,0',blush:.6},
-           stern:{brow:6,eye:.85,mouth:'M80,118 q20,-8 40,0',blush:.2},
-           wink:{brow:-3,eye:1,mouth:'M76,109 q24,17 48,0',blush:.7},
-           sleepy:{brow:2,eye:.3,mouth:'M86,116 q14,6 28,0',blush:.3}}[mood]||{brow:0,eye:1,mouth:'M78,112 q22,10 44,0',blush:.35};
   const t=Date.now()/1000;
-  const mouthOpen = talking ? 4+Math.abs(Math.sin(t*9))*9 : 0;
-  const sway = dancing ? Math.sin(t*4)*7 : Math.sin(t*0.8)*1.2;
-  const bob  = dancing ? Math.abs(Math.sin(t*8))*5 : 0;
-  // 포즈: 전체 스케일·수직 이동 + 팔 모양
-  const P={sit:{sc:1,dy:0},stand:{sc:.86,dy:6},wave:{sc:.9,dy:8},stretch:{sc:.86,dy:12},
-           cheer:{sc:.88,dy:10},think:{sc:1,dy:0},point:{sc:.9,dy:8},sleep:{sc:1,dy:6},dance:{sc:.86,dy:10}}[pose]||{sc:1,dy:0};
-  const wv=Math.sin(t*7)*16, dz=Math.sin(t*5)*14;
-  const SK='#ffe3d2', SL='#1b2f5c';
-  const arms = {
-    wave:`<g><path d="M60,182 q-16,-16 -10,-34" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round" transform="rotate(${wv},60,182)"/>
-          <circle cx="${50+wv*0.5}" cy="${146-Math.abs(wv)*0.2}" r="8" fill="${SK}"/></g>`,
-    stretch:`<path d="M64,184 q-6,-40 6,-56" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
-             <path d="M136,184 q6,-40 -6,-56" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
-             <circle cx="70" cy="126" r="8" fill="${SK}"/><circle cx="130" cy="126" r="8" fill="${SK}"/>`,
-    cheer:`<path d="M64,184 q-10,-28 0,-44" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
-           <path d="M136,184 q10,-28 0,-44" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
-           <circle cx="64" cy="${138+Math.sin(t*6)*4}" r="9" fill="${SK}"/><circle cx="136" cy="${138-Math.sin(t*6)*4}" r="9" fill="${SK}"/>`,
-    think:`<path d="M132,188 q14,-22 -8,-34" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
-           <circle cx="124" cy="150" r="8" fill="${SK}"/>`,
-    point:`<path d="M136,184 q22,-6 26,-26" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
-           <circle cx="163" cy="156" r="8" fill="${SK}"/>`,
-    dance:`<path d="M64,184 q-14,-22 ${-4+dz*0.4},-40" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
-           <path d="M136,184 q14,-22 ${4-dz*0.4},-40" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
-           <circle cx="${58+dz*0.4}" cy="144" r="8" fill="${SK}"/><circle cx="${142-dz*0.4}" cy="144" r="8" fill="${SK}"/>`,
-    sleep:'', sit:'', stand:''
-  }[pose]||'';
-  const legs = (pose==='stand'||pose==='dance'||pose==='cheer'||pose==='stretch')
-    ? `<path d="M86,208 v26 M114,208 v26" stroke="${SL}" stroke-width="15" stroke-linecap="round"/>` : '';
-  return `<svg viewBox="0 0 200 240" style="width:100%;height:100%;display:block;">
+  // 웹툰풍: 반쯤 감긴 날카로운 눈, 짙은 머리, 창백한 피부
+  const M={idle:{lid:.52,brow:0,tilt:0,mouth:'M92,168 q8,2 16,0',blush:.20},
+           happy:{lid:.34,brow:-2,tilt:-3,mouth:'M88,165 q12,8 24,0',blush:.34},
+           stern:{lid:.66,brow:5,tilt:6,mouth:'M93,170 q7,-4 14,0',blush:.10},
+           wink:{lid:.40,brow:-3,tilt:-4,mouth:'M89,166 q11,7 22,0',blush:.36},
+           sleepy:{lid:.84,brow:2,tilt:1,mouth:'M95,169 q5,2 10,0',blush:.16}}[mood]
+        || {lid:.52,brow:0,tilt:0,mouth:'M92,168 q8,2 16,0',blush:.20};
+  const open = talking ? 2.5+Math.abs(Math.sin(t*8.5))*6 : 0;
+  const sway = dancing ? Math.sin(t*3.4)*6 : Math.sin(t*0.7)*1.0;
+  const bob  = dancing ? Math.abs(Math.sin(t*6.8))*6 : 0;
+  const tilt = dancing ? Math.sin(t*3.4)*4 : 0;
+  const P={sit:{sc:1,dy:0},stand:{sc:.9,dy:-4},wave:{sc:.95,dy:-2},stretch:{sc:.92,dy:-2},
+           cheer:{sc:.93,dy:-2},think:{sc:1,dy:0},point:{sc:.95,dy:-2},sleep:{sc:1,dy:4},
+           dance:{sc:.92,dy:-2}}[pose]||{sc:1,dy:0};
+  const SK='#f6e2d5', SK2='#e0bfae', LINE='#3a2f33',
+        H1='#1d2733', H2='#0e1620', H3='#31404f', TEE='#e9e5dc', TEE2='#cfc9bd';
+  const wv=Math.sin(t*7)*20, dz=Math.sin(t*4.6)*16;
+  const arm=(d,px,py)=>`<path d="${d}" stroke="${TEE}" stroke-width="18" fill="none" stroke-linecap="round"/><path d="${d}" stroke="${TEE2}" stroke-width="18" fill="none" stroke-linecap="round" opacity=".35"/><circle cx="${px}" cy="${py}" r="9.5" fill="${SK}"/>`;
+  const arms={
+    wave:  `<g transform="rotate(${wv},64,216)">${arm('M64,216 q-12,-30 -4,-46',60,168)}</g>`,
+    stretch:`${arm('M62,216 q-14,-46 -2,-64',60,150)}${arm('M138,216 q14,-46 2,-64',140,150)}`,
+    cheer: `${arm('M62,216 q-16,-30 -2,-48',60,168)}${arm('M138,216 q16,-30 2,-48',140,168)}`,
+    think: `${arm('M140,220 q18,-26 -12,-40',128,180)}`,
+    point: `${arm('M138,216 q28,-8 34,-30',172,186)}`,
+    dance: `${arm(`M62,216 q-18,-26 ${-6+dz*0.3},-44`,`${56+dz*0.3}`,172)}${arm(`M138,216 q18,-26 ${6-dz*0.3},-44`,`${144-dz*0.3}`,172)}`,
+    sit:'',stand:'',sleep:''}[pose]||'';
+  const legs=(pose==='stand'||pose==='dance'||pose==='cheer'||pose==='stretch')
+    ? `<path d="M84,248 v20 M116,248 v20" stroke="#3b4557" stroke-width="18" stroke-linecap="round"/>`:'';
+  const lid=M.lid;
+  return `<svg viewBox="0 0 200 270" style="width:100%;height:100%;display:block;">
     <defs>
-      <linearGradient id="hair" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc2dd"/><stop offset="1" stop-color="#ff8fc0"/></linearGradient>
-      <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1b2a55"/><stop offset="1" stop-color="#3a1f52"/></linearGradient>
-      <radialGradient id="glow"><stop offset="0" stop-color="#ff8fc0" stop-opacity=".45"/><stop offset="1" stop-color="#ff8fc0" stop-opacity="0"/></radialGradient>
-      <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe8d8"/><stop offset="1" stop-color="#f6cdb5"/></linearGradient>
+      <linearGradient id="bgv" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#dfe6ea"/><stop offset="1" stop-color="#9fb0bd"/></linearGradient>
+      <linearGradient id="hg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${H3}"/><stop offset=".45" stop-color="${H1}"/><stop offset="1" stop-color="${H2}"/></linearGradient>
+      <linearGradient id="fg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf0e6"/><stop offset="1" stop-color="${SK}"/></linearGradient>
+      <radialGradient id="vg" cx=".5" cy=".42"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
     </defs>
-    <rect width="200" height="240" rx="14" fill="url(#bg2)"/>
-    <circle cx="100" cy="105" r="86" fill="url(#glow)"/>
-    <g transform="translate(${sway + 100*(1-P.sc)},${-bob + P.dy + 120*(1-P.sc)}) scale(${P.sc})">
+    <rect width="200" height="270" rx="14" fill="url(#bgv)"/>
+    <ellipse cx="100" cy="118" rx="96" ry="112" fill="url(#vg)"/>
+    <g transform="translate(${sway+100*(1-P.sc)},${-bob+P.dy+135*(1-P.sc)}) scale(${P.sc})">
       ${legs}${arms}
-      <path d="M58,198 q10,-27 26,-34 l16,8 l16,-8 q16,7 26,34 v12 h-84 z" fill="#1b2f5c"/>
-      <path d="M84,164 q16,12 32,0 l3,6 q-19,14 -38,0 z" fill="#e8b79c"/>
-      <path d="M87,146 q13,11 26,0 v17 q-13,9 -26,0 z" fill="#f0c1a6"/>
-      <path d="M55,100 q0,-52 45,-52 q45,0 45,52 q0,26 -8,42 q-11,21 -37,21 q-26,0 -37,-21 q-8,-16 -8,-42 z" fill="url(#skin)"/>
-      <path d="M64,126 q-3,19 11,31 q-15,-6 -17,-27 z" fill="#eec3ab" opacity=".5"/>
-      <ellipse cx="55" cy="104" rx="6.5" ry="10" fill="#f6cdb5"/><ellipse cx="145" cy="104" rx="6.5" ry="10" fill="#f6cdb5"/>
-      <path d="M52,96 q-2,-58 48,-58 q50,0 48,58 q-5,-22 -19,-30 q-16,14 -42,12 q-20,-2 -30,-10 q-8,10 -13,28 z" fill="url(#hair)"/>
-      <path d="M63,52 q26,-16 54,-6 q-20,18 -42,19 q-11,1 -12,-13 z" fill="#ffd6e8" opacity=".8"/>
-      <path d="M48,90 q-7,32 3,52 q5,-25 4,-44 z" fill="url(#hair)"/><path d="M152,90 q7,32 -3,52 q-5,-25 -4,-44 z" fill="url(#hair)"/>
-      <ellipse cx="72" cy="116" rx="9" ry="${4.5*M.blush}" fill="#f2879f" opacity=".42"/>
-      <ellipse cx="128" cy="116" rx="9" ry="${4.5*M.blush}" fill="#f2879f" opacity=".42"/>
-      <path d="M63,${90+M.brow} q13,-6 25,-1" stroke="#b8708f" stroke-width="2.8" fill="none" stroke-linecap="round"/>
-      <path d="M112,${89+M.brow} q13,-4 25,2" stroke="#b8708f" stroke-width="2.8" fill="none" stroke-linecap="round"/>
-      <g>
-        <path d="M65,102 q11,-8 22,-1" stroke="#5a3a2c" stroke-width="1.9" fill="none" opacity=".5"/>
-        <ellipse cx="76" cy="105" rx="10.5" ry="${8.5*M.eye}" fill="#fff"/>
-        <ellipse cx="76" cy="105" rx="6.4" ry="${6.6*M.eye}" fill="#6b4a3a"/>
-        <ellipse cx="76" cy="105" rx="3" ry="${3.1*M.eye}" fill="#2b1a12"/><circle cx="78.6" cy="102.6" r="2.1" fill="#fff"/>
-        ${mood==='wink'
-          ? `<path d="M113,105 q11,-7 22,0" stroke="#5a3a2c" stroke-width="3.2" fill="none" stroke-linecap="round"/>`
-          : `<path d="M113,102 q11,-8 22,-1" stroke="#5a3a2c" stroke-width="1.9" fill="none" opacity=".5"/>
-             <ellipse cx="124" cy="105" rx="10.5" ry="${8.5*M.eye}" fill="#fff"/>
-             <ellipse cx="124" cy="105" rx="6.4" ry="${6.6*M.eye}" fill="#6b4a3a"/>
-             <ellipse cx="124" cy="105" rx="3" ry="${3.1*M.eye}" fill="#2b1a12"/><circle cx="126.6" cy="102.6" r="2.1" fill="#fff"/>`}
+      <!-- 티셔츠 -->
+      <path d="M42,270 q6,-48 32,-60 q26,-10 52,0 q26,12 32,60 z" fill="${TEE}"/>
+      <path d="M42,270 q6,-48 32,-60 q6,26 -2,60 z" fill="${TEE2}" opacity=".5"/>
+      <path d="M74,210 q26,18 52,0 l5,9 q-30,20 -62,0 z" fill="#d9d3c7"/>
+      <path d="M74,210 q26,18 52,0" stroke="${LINE}" stroke-width="2" fill="none" opacity=".55"/>
+      <!-- 목 -->
+      <path d="M87,172 h26 v30 q-13,9 -26,0 z" fill="${SK}"/>
+      <path d="M87,172 h26 v14 q-13,10 -26,2 z" fill="${SK2}" opacity=".65"/>
+      <path d="M106,178 q3,14 -1,22" stroke="${SK2}" stroke-width="2" fill="none" opacity=".8"/>
+      <g transform="rotate(${tilt},100,118)">
+        <!-- 얼굴: 갸름한 턱 -->
+        <path d="M68,106 q0,-50 32,-50 q32,0 32,50 q0,28 -8,44 q-10,20 -24,20 q-14,0 -24,-20 q-8,-16 -8,-44 z" fill="url(#fg)"/>
+        <path d="M65,120 q2,30 12,46 q-14,-16 -12,-46 z" fill="${SK2}" opacity=".35"/>
+        <ellipse cx="65" cy="120" rx="5.5" ry="9" fill="${SK}"/><ellipse cx="135" cy="120" rx="5.5" ry="9" fill="${SK}"/>
+        <!-- 볼 -->
+        <ellipse cx="76" cy="150" rx="10" ry="${5*M.blush*2}" fill="#e78e93" opacity=".38"/>
+        <ellipse cx="124" cy="150" rx="10" ry="${5*M.blush*2}" fill="#e78e93" opacity=".38"/>
+        <!-- 눈: 반쯤 감긴 날카로운 눈 -->
+        <g>
+          <path d="M71,133 q13,-7 26,-1 q-13,${9*(1-lid)+2} -26,1 z" fill="#fff"/>
+          <ellipse cx="84" cy="${133+2*lid}" rx="6" ry="${7*(1-lid)+1.6}" fill="#241c1f"/>
+          <circle cx="86.5" cy="${131+2*lid}" r="1.7" fill="#fff" opacity=".95"/>
+          <path d="M71,133 q13,-8 26,-2" stroke="${LINE}" stroke-width="${3.6+lid*1.6}" fill="none" stroke-linecap="round"/>
+          ${mood==='wink'
+            ? `<path d="M105,134 q13,-4 25,1" stroke="${LINE}" stroke-width="3.4" fill="none" stroke-linecap="round"/>`
+            : `<path d="M103,132 q13,-6 26,1 q-13,${9*(1-lid)+2} -26,-1 z" fill="#fff"/>
+               <ellipse cx="116" cy="${133+2*lid}" rx="6" ry="${7*(1-lid)+1.6}" fill="#241c1f"/>
+               <circle cx="118.5" cy="${131+2*lid}" r="1.7" fill="#fff" opacity=".95"/>
+               <path d="M103,132 q13,-7 26,0" stroke="${LINE}" stroke-width="${3.6+lid*1.6}" fill="none" stroke-linecap="round"/>`}
+        </g>
+        <!-- 눈썹: 얇고 곧게 -->
+        <path d="M72,${119+M.brow} q13,${-2+M.tilt} 25,-1" stroke="#33282c" stroke-width="2.4" fill="none" stroke-linecap="round" opacity=".85"/>
+        <path d="M103,${118+M.brow} q13,${-1-M.tilt} 25,2" stroke="#33282c" stroke-width="2.4" fill="none" stroke-linecap="round" opacity=".85"/>
+        <!-- 코 -->
+        <path d="M101,142 q4,10 -4,13" stroke="${SK2}" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        <!-- 입 -->
+        ${open>0.5
+          ? `<path d="M${100-8-open*0.3},167 q${8+open*0.3},${open*1.4} ${16+open*0.6},0 q-${8+open*0.3},${open*0.6} -${16+open*0.6},0 z" fill="#8d4a52"/>`
+          : `<path d="${M.mouth}" stroke="#a75f66" stroke-width="2.6" fill="none" stroke-linecap="round"/>`}
+        <!-- 머리: 이마 덮는 층진 앞머리 + 옆머리 -->
+        <path d="M64,120 C60,58 78,38 100,38 C122,38 140,58 136,120 C132,96 126,80 118,70 C108,86 92,86 82,70 C74,80 68,98 64,120 Z" fill="url(#hg)"/>
+        <path d="M64,124 C58,58 76,38 100,38 C124,38 142,58 136,124
+                 C134,104 130,86 124,72 C122,96 116,112 108,124
+                 C110,100 110,80 108,60 C104,84 98,104 92,120
+                 C92,96 90,76 88,58 C78,74 68,98 64,124 Z" fill="url(#hg)"/>
+        <path d="M88,58 C90,78 92,98 92,120 C98,104 104,84 108,60 C106,88 104,108 100,124 C92,112 86,86 88,58 Z" fill="${H2}" opacity=".5"/>
+        <path d="M124,72 C130,88 134,106 136,124 C134,102 130,86 126,76 Z" fill="${H2}" opacity=".45"/>
+        <path d="M64,112 q-6,40 2,62 q4,-32 6,-50 z" fill="url(#hg)"/>
+        <path d="M136,112 q6,40 -2,62 q-4,-32 -6,-50 z" fill="url(#hg)"/>
+        <path d="M66,120 q-2,26 4,42 q0,-24 2,-38 z" fill="${H3}" opacity=".45"/>
+        <path d="M80,46 q22,-11 42,-1 q-22,-3 -42,5 z" fill="#5b6d80" opacity=".5"/>
       </g>
-      <path d="M100,108 q-4,11 3,15" stroke="#e0ab90" stroke-width="2" fill="none" stroke-linecap="round"/>
-      ${mouthOpen>0.5
-        ? `<ellipse cx="100" cy="${136+mouthOpen/3}" rx="${8+mouthOpen*0.42}" ry="${mouthOpen*0.8}" fill="#b8465e"/>
-           <ellipse cx="100" cy="${133+mouthOpen/4}" rx="${6+mouthOpen*0.28}" ry="${mouthOpen*0.28}" fill="#fff" opacity=".85"/>`
-        : `<path d="${M.mouth.replace(/(\d+),(\d+)/g,(mm,x,y)=>x+','+(+y+24))}" stroke="#c9556e" stroke-width="3" fill="none" stroke-linecap="round"/>`}
-      ${dancing?`<g stroke="#ffe066" stroke-width="2.6" stroke-linecap="round" opacity=".9">
-        <path d="M22,60 l0,-10 M17,55 l10,0"/><path d="M178,72 l0,-9 M173.5,67.5 l9,0"/></g>`:''}
+      ${dancing?`<g stroke="#ffe066" stroke-width="2.8" stroke-linecap="round" opacity=".9">
+        <path d="M24,70 v-11 M18.5,64.5 h11"/><path d="M176,86 v-10 M171,81 h10"/></g>`:''}
     </g></svg>`;
 }
+// ===== 이미지 아바타 + 캔버스 립싱크(턱 워핑) =====
+const IMG={el:null, ready:false};
+async function loadAvatarImg(){
+  try{
+    const r=await api('/api/avatar');
+    if(r.data){ const e=eyeInit(); e.avatarImg=r.data; setAvatarImg(r.data); }
+  }catch(x){}
+}
+function setAvatarImg(dataUrl){
+  const im=new Image();
+  im.onload=()=>{ IMG.el=im; IMG.ready=true; avatarLoop(); if(S.tab==='eye') render(); };
+  im.src=dataUrl;
+}
+async function uploadAvatar(file){
+  const e=eyeInit();
+  const data=await new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(file);});
+  // 너무 크면 축소(저장 용량·성능)
+  const shrunk=await new Promise(res=>{
+    const im=new Image(); im.onload=()=>{
+      const max=720, sc=Math.min(1,max/Math.max(im.width,im.height));
+      const c=document.createElement('canvas'); c.width=im.width*sc; c.height=im.height*sc;
+      c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+      res(c.toDataURL('image/jpeg',0.85));
+    }; im.onerror=()=>res(data); im.src=data;
+  });
+  e.avatarImg=shrunk; setAvatarImg(shrunk);
+  await api('/api/avatar',{method:'POST',...jbody({data:shrunk})});
+  e.msg='아바타를 등록했어요. 얼굴의 입 위치를 한 번 탭해주세요.'; render();
+}
+// 캔버스에 그리기: 입 아래 영역을 말하기 진폭만큼 늘려 립싱크
+function drawAvatarCanvas(cv){
+  if(!cv||!IMG.ready) return;
+  const e=eyeInit(), im=IMG.el, ctx=cv.getContext('2d');
+  const W=cv.width, H=cv.height;
+  const scale=Math.max(W/im.width, H/im.height);
+  const dw=im.width*scale, dh=im.height*scale, dx=(W-dw)/2, dy=(H-dh)/2;
+  const t=Date.now()/1000;
+  const breathe=Math.sin(t*1.1)*1.2 + (e.pose==='dance'?Math.abs(Math.sin(t*6.5))*5:0);
+  const swayX=(e.pose==='dance')?Math.sin(t*3.2)*6:Math.sin(t*0.7)*1.0;
+  ctx.clearRect(0,0,W,H);
+  ctx.save(); ctx.translate(swayX,-breathe);
+  const my=(e.mouthY!=null?e.mouthY:0.66);            // 입 세로 위치(0~1)
+  const cut=dy+dh*my;                                  // 자르는 선(입 윗부분)
+  const amp=EYE.speaking? (1.6+Math.abs(Math.sin(t*9))*4.6) : 0;
+  // 윗부분(눈·코까지)
+  ctx.drawImage(im, 0,0, im.width, im.height*my, dx,dy, dw, dh*my);
+  // 아랫부분(턱): 말할 때 아래로 밀고 살짝 늘림
+  ctx.drawImage(im, 0, im.height*my, im.width, im.height*(1-my),
+                dx, cut+amp, dw, dh*(1-my));
+  if(amp>0.4){                                         // 벌어진 틈 = 입안 그림자
+    const g=ctx.createLinearGradient(0,cut,0,cut+amp);
+    g.addColorStop(0,'rgba(60,20,26,.85)'); g.addColorStop(1,'rgba(120,50,60,.35)');
+    ctx.fillStyle=g;
+    const mw=dw*(e.mouthW||0.16), mx=dx+dw*(e.mouthX!=null?e.mouthX:0.5)-mw/2;
+    ctx.beginPath(); ctx.ellipse(mx+mw/2, cut+amp*0.5, mw/2, Math.max(1.2,amp*0.62), 0,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+  if(EYE.speaking){ ctx.strokeStyle='rgba(46,230,166,.85)'; ctx.lineWidth=4; ctx.strokeRect(2,2,W-4,H-4); }
+}
+function avatarFace(id, w, hgt){
+  const e=eyeInit();
+  if(e.avatarImg) return `<canvas id="${id}" width="${w}" height="${hgt}" data-face="1" style="width:100%;aspect-ratio:${w}/${hgt};display:block;cursor:crosshair;background:#0d1424;"></canvas>`;
+  return `<div id="${id}" style="width:100%;aspect-ratio:${w}/${hgt};">${avatar(avatarMood(),EYE.speaking,e.pose||'sit')}</div>`;
+}
 // ========== 🔮 수호령의 눈: 화상 스터디 버디 ==========
-const EYE={cam:null, screen:null, timer:null, tick:null, rec:null, speaking:false};
-function eyeInit(){ if(!S.eye) S.eye={on:false,startAt:0,focusedSec:0,distract:0,checks:0,status:'',msg:'',log:[],useScreen:false,interval:60,busy:false,listening:false,muteTTS:false,input:''}; return S.eye; }
-// 한국어 남성 보이스 우선 선택 (실존 인물 음성 복제 아님 · 시스템 내장 음성 사용)
+const EYE={cam:null, screen:null, timer:null, tick:null, rec:null, speaking:false, anim:null, keep:null, recOn:false};
+function eyeInit(){ if(!S.eye) S.eye={on:false,startAt:0,focusedSec:0,distract:0,checks:0,status:'',msg:'',log:[],useScreen:false,interval:60,busy:false,listening:false,muteTTS:false,input:'',pose:'sit',always:true,rate:1.0,pitch:0.85,voiceURI:''}; return S.eye; }
 function koVoices(){ try{ return speechSynthesis.getVoices().filter(v=>/ko/i.test(v.lang)); }catch(e){ return []; } }
-try{ if('speechSynthesis' in window) speechSynthesis.onvoiceschanged=()=>{ if(S.tab==='eye'&&!(S.eye&&S.eye.on)) render(); }; }catch(e){}
-// 젊은 남성 톤 우선순위 (macOS: Reed·Eddy·Rocko / Android·Windows: male 표기)
-const MALE_PREF=[/^reed/i,/^eddy/i,/^rocko/i,/male/i,/남성/,/injoon|인준|minsu|민수|현우|지훈/i];
-const FEMALE_RX=/유나|yuna|female|여성|grandma|flo|sandy|shelley/i;
+try{ if('speechSynthesis' in window) speechSynthesis.onvoiceschanged=()=>{ if(S.tab==='eye') render(); }; }catch(e){}
+// 한국어 남성 보이스 우선 (시스템 내장 음성 · 실존 인물 복제 아님). 자연스러운 신경망 음성을 먼저 고름
+const MALE_RX=/injoon|인준|minsu|민수|현우|지훈|male\b|남성|hyunwoo|jihun|eddy|reed|rocko|grandpa|junior|ralph|fred|aaron|nathan|daniel|이준|준서/i;
+const FEM_RX=/female|여성|yuna|유나|sunhi|선히|heami|서현|jiyoon|flo\b|grandma|sandy|shelley|samantha|karen|nora|서연|지연/i;
 function pickVoice(){
   const e=eyeInit(), vs=koVoices(); if(!vs.length) return null;
   if(e.voiceURI){ const f=vs.find(v=>v.voiceURI===e.voiceURI); if(f) return f; }
-  for(const rx of MALE_PREF){ const f=vs.find(v=>rx.test(v.name)&&!FEMALE_RX.test(v.name)); if(f) return f; }
-  return vs.find(v=>!FEMALE_RX.test(v.name)) || vs[0];
+  const score=v=>{ let sc=0; const n=(v.name||'')+' '+(v.voiceURI||'');
+    if(MALE_RX.test(n)) sc+=10; if(FEM_RX.test(n)) sc-=8;
+    if(/neural|natural|premium|enhanced|wavenet|siri/i.test(n)) sc+=6;   // 자연스러운 음성 우대
+    if(!v.localService) sc+=3;                                            // 클라우드 음성이 대체로 더 자연스러움
+    return sc; };
+  return vs.slice().sort((a,b)=>score(b)-score(a))[0];
 }
 function speak(text){
   const e=eyeInit(); if(e.muteTTS||!text||!('speechSynthesis' in window)) return;
-  try{ speechSynthesis.cancel();
-    const u=new SpeechSynthesisUtterance(String(text).replace(/[*_`#]/g,''));
-    u.lang='ko-KR'; u.rate=e.rate||1.06; u.pitch=e.pitch!=null?e.pitch:0.92;   // 젊은 남성 톤
-    const v=pickVoice(); if(v) u.voice=v;
-    EYE.speaking=true; avatarLoop();
-    u.onend=()=>{ EYE.speaking=false; };
-    speechSynthesis.speak(u);
+  const clean=String(text).replace(/[*_`#>]/g,'').replace(/\s+/g,' ').trim();
+  if(!clean) return;
+  try{
+    stopRec();                                    // 말할 땐 마이크 정지(에코 방지)
+    speechSynthesis.cancel();
+    if(EYE.keep) clearInterval(EYE.keep);
+    EYE.keep=setInterval(()=>{ try{ if(speechSynthesis.speaking) speechSynthesis.resume(); else { clearInterval(EYE.keep); EYE.keep=null; } }catch(x){} },7000);
+    // 문장 단위로 끊어 읽으면 더 자연스럽고 중간에 끊기지 않음
+    const parts=clean.match(/[^.!?…\n]+[.!?…]?/g)||[clean];
+    parts.forEach((p,i)=>{
+      const u=new SpeechSynthesisUtterance(p.trim());
+      u.lang='ko-KR'; u.rate=e.rate||1.0; u.pitch=(e.pitch!=null?e.pitch:0.85); u.volume=1;
+      const v=pickVoice(); if(v) u.voice=v;
+      if(i===0){ u.onstart=()=>{ EYE.speaking=true; avatarLoop(); }; }
+      if(i===parts.length-1){ u.onend=()=>{ EYE.speaking=false;
+        if(EYE.keep){clearInterval(EYE.keep);EYE.keep=null;}
+        const ee=eyeInit(); if(ee.always&&ee.on&&!ee.muteMic) setTimeout(startRec,400); }; }
+      speechSynthesis.speak(u);
+    });
   }catch(err){}
 }
 // 말하거나 춤출 때만 아바타를 부분 갱신(입력창 포커스 유지)
 function avatarLoop(){
   if(EYE.anim) return;
   EYE.anim=setInterval(()=>{
-    const e=eyeInit(), box=document.getElementById('avatarBox');
-    const active=EYE.speaking||e.dancing||(e.pose&&e.pose!=='sit'&&e.pose!=='stand'&&e.pose!=='sleep');
-    if(!box||!active){ clearInterval(EYE.anim); EYE.anim=null; if(box) box.innerHTML=avatar(avatarMood(),false,(eyeInit().pose||'sit')); return; }
-    box.innerHTML=avatar(avatarMood(), EYE.speaking, e.pose||'sit');
-  },110);
+    const e=eyeInit(), box=document.getElementById('avatarBox')||document.getElementById('pipBox');
+    if(!e.on||(!box&&!document.getElementById('pipBox'))){ clearInterval(EYE.anim); EYE.anim=null; return; }
+    const a1=document.getElementById('avatarBox'), p1=document.getElementById('pipBox');
+    if(e.avatarImg&&IMG.ready){ if(a1&&a1.tagName==='CANVAS') drawAvatarCanvas(a1); if(p1&&p1.tagName==='CANVAS') drawAvatarCanvas(p1); }
+    else { const html=avatar(avatarMood(), EYE.speaking, e.pose||'sit'); if(a1) a1.innerHTML=html; if(p1) p1.innerHTML=html; }
+  },100);
 }
 function setPose(p, say){
-  const e=eyeInit(); e.pose=p; e.dancing=(p==='dance');
-  clearTimeout(EYE.poseT);
-  if(p!=='sit'&&p!=='stand'&&p!=='sleep') EYE.poseT=setTimeout(()=>{ e.pose='sit'; e.dancing=false; render(); }, 9000);
+  const e=eyeInit(); e.pose=p; e.dancing=(p==='dance');   // 지시한 포즈는 바꿀 때까지 유지
   avatarLoop(); if(say) toast('🔮 '+say,'good'); render();
 }
 function eyePose(){
@@ -1546,11 +1643,12 @@ async function eyeStart(){
       EYE.screen.getVideoTracks()[0].onended=()=>{ EYE.screen=null; };
     }catch(err){ EYE.screen=null; }
   }
-  e.on=true; e.startAt=Date.now(); e.focusedSec=0; e.distract=0; e.checks=0; e.status='시작'; e.msg='같이 공부하자! 화이팅 ⚔️'; e.log=[];
+  e.on=true; e.pipHidden=false; e.startAt=Date.now(); e.focusedSec=0; e.distract=0; e.checks=0; e.status='시작'; e.msg='같이 공부하자! 화이팅 ⚔️'; e.log=[];
   render();
   setTimeout(()=>{ const v=document.getElementById('eyeCam'); if(v&&EYE.cam){v.srcObject=EYE.cam;v.play().catch(()=>{});}
                    const s=document.getElementById('eyeScr'); if(s&&EYE.screen){s.srcObject=EYE.screen;s.play().catch(()=>{});} },80);
-  speak('같이 공부하자!');
+  speak('안녕 수영아, 오늘도 같이 공부하자!');
+  if(e.always&&!e.muteMic) setTimeout(startRec,1500);
   EYE.timer=setInterval(()=>{ const ee=eyeInit(); if(!ee.on) return; if(ee.status!=='딴짓') ee.focusedSec++; if(S.tab==='eye') render(); },1000);
   EYE.tick=setInterval(eyeCheck, Math.max(20,e.interval)*1000);
   setTimeout(eyeCheck, 6000);
@@ -1594,19 +1692,66 @@ async function eyeSay(text){
   const reply=r.text||(r.error==='no-ai'?'수호령이 아직 연결되지 않았어.':'잠깐 연결이 흔들렸어. 다시 말해줄래?');
   e.log.push({role:'assistant',text:reply}); speak(reply); render();
 }
-function eyeListen(){
+function startRec(){
+  const e=eyeInit(); if(!e.on||e.muteMic||EYE.speaking||EYE.recOn) return;
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ return; }
+  try{
+    const rec=new SR(); EYE.rec=rec;
+    rec.lang='ko-KR'; rec.continuous=true; rec.interimResults=true; rec.maxAlternatives=1;
+    let finalTxt='';
+    rec.onstart=()=>{ EYE.recOn=true; e.listening=true; if(S.tab==='eye') render(); };
+    rec.onresult=ev=>{
+      let interim='';
+      for(let i=ev.resultIndex;i<ev.results.length;i++){
+        const r=ev.results[i];
+        if(r.isFinal) finalTxt+=r[0].transcript; else interim+=r[0].transcript;
+      }
+      e.heard=(finalTxt+interim).trim();
+      if(finalTxt.trim().length>=2){
+        const say=finalTxt.trim(); finalTxt=''; e.heard='';
+        stopRec(); eyeSay(say);                 // 말이 끝나면 자동 전송 → 답변 후 다시 듣기
+      } else if(S.tab==='eye') render();
+    };
+    rec.onerror=ev=>{ EYE.recOn=false; e.listening=false;
+      if(ev.error==='not-allowed'){ e.always=false; e.msg='마이크 권한이 필요해요.'; }
+      if(S.tab==='eye') render(); };
+    rec.onend=()=>{ EYE.recOn=false; e.listening=false;
+      if(e.always&&e.on&&!e.muteMic&&!EYE.speaking) setTimeout(startRec,500);   // 자동 재시작 = 계속 대화
+      if(S.tab==='eye') render(); };
+    rec.start();
+  }catch(x){ EYE.recOn=false; }
+}
+function stopRec(){ EYE.recOn=false; const e=eyeInit(); e.listening=false; if(EYE.rec){ try{ EYE.rec.onend=null; EYE.rec.stop(); }catch(x){} EYE.rec=null; } }
+function eyeListen(){                      // 마이크 항상 켜기/끄기 토글
   const e=eyeInit();
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){ e.msg='이 브라우저는 음성 인식을 지원하지 않아요. 아래 입력창을 써주세요.'; render(); return; }
-  if(e.listening){ try{EYE.rec.stop();}catch(x){} e.listening=false; render(); return; }
-  const rec=new SR(); EYE.rec=rec; rec.lang='ko-KR'; rec.interimResults=false; rec.maxAlternatives=1;
-  rec.onresult=ev=>{ const t=ev.results[0][0].transcript; e.listening=false; render(); eyeSay(t); };
-  rec.onerror=()=>{ e.listening=false; render(); };
-  rec.onend=()=>{ e.listening=false; render(); };
-  try{ rec.start(); e.listening=true; render(); }catch(x){}
+  e.muteMic=!e.muteMic;
+  if(e.muteMic) stopRec(); else { e.always=true; startRec(); }
+  render();
 }
 async function loadFocusHist(){ const r=await api('/api/focus/sessions'); S.focusHist=r; render(); }
 function fmtSec(s){ const m=Math.floor(s/60); return `${Math.floor(m/60)?Math.floor(m/60)+'시간 ':''}${m%60}분`; }
+function eyePip(){
+  const e=eyeInit();
+  if(!e.on || S.tab==='eye' || e.pipHidden) return '';
+  const st=e.status==='딴짓'?{c:'var(--danger-b)'}:{c:'var(--accent-b)'};
+  const mm=String(Math.floor(e.focusedSec/60)).padStart(2,'0'), ss=String(e.focusedSec%60).padStart(2,'0');
+  return `<div style="position:fixed;right:14px;bottom:14px;z-index:200;width:min(232px,44vw);border-radius:16px;overflow:hidden;border:1px solid ${st.c};background:var(--panel);box-shadow:0 14px 40px rgba(0,0,0,.5);">
+    ${avatarFace('pipBox',250,300)}
+    <div style="position:absolute;top:7px;left:8px;display:flex;gap:5px;align-items:center;">
+      <span style="padding:3px 8px;border-radius:999px;background:rgba(0,0,0,.5);color:#fff;font-size:11px;font-weight:700;">🔮 루하</span>
+      <span style="padding:3px 8px;border-radius:999px;background:rgba(0,0,0,.5);color:${st.c};font-size:11px;font-weight:800;">${mm}:${ss}</span></div>
+    <div style="position:absolute;top:6px;right:6px;display:flex;gap:4px;">
+      <button data-act="piphide" title="숨기기" style="width:26px;height:26px;border-radius:8px;border:none;background:rgba(0,0,0,.5);color:#fff;font-size:13px;cursor:pointer;">─</button>
+      <button data-act="tab" data-arg="eye" title="크게 보기" style="width:26px;height:26px;border-radius:8px;border:none;background:rgba(0,0,0,.5);color:#fff;font-size:12px;cursor:pointer;">⤢</button></div>
+    ${e.msg?`<div style="position:absolute;left:8px;right:8px;bottom:38px;padding:7px 10px;border-radius:10px;background:rgba(0,0,0,.62);color:#fff;font-size:11.5px;line-height:1.45;max-height:52px;overflow:hidden;">${h(e.msg)}</div>`:''}
+    <div style="display:flex;gap:4px;padding:6px;background:var(--panel2);">
+      <button data-act="eyelisten" style="flex:1;padding:7px;border-radius:8px;border:1px solid ${e.muteMic?'var(--border)':'var(--pinkbd)'};background:${e.muteMic?'var(--panel)':'var(--tintP)'};color:${e.muteMic?'var(--text3)':'var(--pink)'};font-size:11.5px;font-weight:700;cursor:pointer;">${e.muteMic?'🎙 꺼짐':(e.listening?'🎙 듣는 중':'🎙 대기')}</button>
+      <button data-act="eyestop" style="padding:7px 9px;border-radius:8px;border:1px solid var(--danger-b);background:rgba(255,84,104,.12);color:var(--danger-b);font-size:11.5px;font-weight:700;cursor:pointer;">종료</button></div>
+  </div>`;
+}
 function vEye(){
   const e=eyeInit();
   const st=e.status==='집중'?{c:'var(--accent-b)',bg:'rgba(20,117,92,.16)',ic:'✅'}:e.status==='딴짓'?{c:'var(--danger-b)',bg:'rgba(255,84,104,.14)',ic:'👀'}:{c:'var(--text2)',bg:'var(--panel2)',ic:'🔮'};
@@ -1630,8 +1775,25 @@ function vEye(){
         <span style="font-size:12.5px;color:var(--text3);">🎙 목소리</span>
         <select id="eyeVoice" style="padding:8px 11px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:13px;max-width:230px;">
           ${koVoices().map(v=>`<option value="${h(v.voiceURI)}" ${e.voiceURI===v.voiceURI?'selected':''}>${h(v.name)}</option>`).join('')||'<option>기기 기본</option>'}</select>
-        <button data-act="eyetest" style="padding:8px 13px;border-radius:9px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-size:12.5px;font-weight:700;cursor:pointer;">미리 듣기</button>
-        <span style="font-size:11.5px;color:var(--text3);">낮은 톤으로 자동 설정돼요</span></div>
+        <button data-act="eyetest" style="padding:8px 13px;border-radius:9px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-size:12.5px;font-weight:700;cursor:pointer;">미리 듣기</button></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px;font-size:12.5px;color:var(--text3);">
+        <label style="display:flex;gap:7px;align-items:center;">톤 <input id="eyePitch" type="range" min="0.6" max="1.2" step="0.05" value="${e.pitch}" style="width:110px;"> <b style="color:var(--text2);">${e.pitch}</b></label>
+        <label style="display:flex;gap:7px;align-items:center;">속도 <input id="eyeRate" type="range" min="0.8" max="1.3" step="0.05" value="${e.rate}" style="width:110px;"> <b style="color:var(--text2);">${e.rate}</b></label>
+        <span>낮은 톤일수록 남성적이에요</span></div>
+      <div style="font-size:11.5px;color:var(--text3);margin-bottom:12px;line-height:1.6;">💡 더 자연스러운 목소리를 원하면 기기에 한국어 음성을 추가하세요 —
+        <b>iPhone/iPad</b>: 설정 → 손쉬운 사용 → 음성 콘텐츠 → 음성 → 한국어에서 고음질 음성 다운로드 ·
+        <b>Mac</b>: 시스템 설정 → 손쉬운 사용 → 말하기 → 시스템 음성 → 사용자화 ·
+        <b>Android</b>: 설정 → 접근성 → TTS → Google 음성 데이터 설치</div>
+      <div style="border:1px dashed var(--pinkbd);border-radius:12px;padding:13px;background:var(--tintP);margin-bottom:12px;">
+        <div style="font-size:13px;font-weight:800;color:var(--pink);margin-bottom:5px;">🎨 통화 상대 얼굴 설정</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:9px;">원하는 캐릭터 그림을 올리면 그 얼굴로 통화해요. 올린 뒤 <b>입 위치를 탭</b>하면 말할 때 입이 움직여요(립싱크).</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input id="avatarFile" type="file" accept="image/*" style="padding:8px 10px;border-radius:8px;border:1px solid var(--pinkbd);background:var(--inset);color:var(--text);font-size:12.5px;flex:1;min-width:170px;">
+          ${e.avatarImg?`<button data-act="avatarclear" style="padding:8px 12px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12.5px;cursor:pointer;">기본 캐릭터로</button>`:''}</div>
+        ${e.avatarImg?`<div style="margin-top:9px;display:flex;gap:10px;align-items:center;">
+          <div style="width:96px;border-radius:9px;overflow:hidden;border:1px solid var(--border);">${avatarFace('avatarPrev',160,192)}</div>
+          <div style="font-size:11.5px;color:var(--text3);line-height:1.6;">미리보기를 <b>탭해서 입 위치</b>를 지정하세요.<br>현재: ${Math.round((e.mouthY!=null?e.mouthY:0.66)*100)}% 지점</div></div>`:''}
+      </div>
       <button data-act="eyestart" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--gold-d);background:linear-gradient(180deg,rgba(255,224,102,.22),rgba(255,180,60,.12));color:var(--gold);font-weight:800;font-size:16px;cursor:pointer;">🔮 수호령 소환 · 함께 공부 시작</button>
       ${e.msg?`<div style="margin-top:10px;font-size:13px;color:var(--pink);">${h(e.msg)}</div>`:''}</div>`
     :`<div style="border:1px solid ${st.c};border-radius:16px;padding:16px;background:${st.bg};margin-bottom:14px;">
@@ -1644,7 +1806,7 @@ function vEye(){
       ${e.msg?`<div style="border:1px solid ${st.c};border-radius:12px;padding:11px 14px;background:var(--inset);font-size:14.5px;font-weight:700;color:${st.c};margin-bottom:12px;">🧚 ${h(e.msg)}</div>`:''}
       <div style="display:grid;grid-template-columns:1.1fr 1fr;gap:10px;margin-bottom:10px;">
         <div style="position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--pinkbd);box-shadow:0 0 22px rgba(255,140,190,.18);">
-          <div id="avatarBox" style="width:100%;aspect-ratio:5/6;">${avatar(avatarMood(),false,e.pose||'sit')}</div>
+          ${avatarFace('avatarBox',500,600)}
           <div style="position:absolute;left:9px;bottom:8px;padding:3px 9px;border-radius:999px;background:rgba(0,0,0,.45);color:#fff;font-size:11.5px;font-weight:700;">🔮 루하 ${({stand:'· 일어선 중',wave:'· 인사 중 👋',stretch:'· 기지개 🙆',cheer:'· 응원 중 💪',dance:'· 춤추는 중 🎵',think:'· 생각 중',point:'· 가리키는 중',sleep:'· zzz'})[e.pose]||''}</div>
         </div>
         <div style="position:relative;">
@@ -1656,7 +1818,7 @@ function vEye(){
         ${[['sit','🪑 앉아'],['stand','🧍 일어서'],['wave','👋 인사'],['stretch','🙆 기지개'],['cheer','💪 응원'],['dance','🎵 춤']].map(([p,lb])=>`<button data-act="eyepose" data-arg="${p}" style="padding:5px 10px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${(e.pose||'sit')===p?'var(--pink)':'var(--border)'};background:${(e.pose||'sit')===p?'var(--tintP)':'var(--panel2)'};color:${(e.pose||'sit')===p?'var(--pink)':'var(--text2)'};">${lb}</button>`).join('')}
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button data-act="eyelisten" style="flex:1;min-width:120px;padding:11px;border-radius:11px;border:1px solid ${e.listening?'var(--danger-b)':'var(--pinkbd)'};background:${e.listening?'rgba(255,84,104,.16)':'var(--tintP)'};color:${e.listening?'var(--danger-b)':'var(--pink)'};font-weight:800;font-size:14px;cursor:pointer;${e.listening?'animation:bossPulse 1.2s infinite;':''}">${e.listening?'🎙 듣는 중... (탭해서 중지)':'🎙 말 걸기'}</button>
+        <button data-act="eyelisten" style="flex:1;min-width:150px;padding:11px;border-radius:11px;border:1px solid ${e.muteMic?'var(--border)':'var(--pinkbd)'};background:${e.muteMic?'var(--panel2)':'var(--tintP)'};color:${e.muteMic?'var(--text3)':'var(--pink)'};font-weight:800;font-size:14px;cursor:pointer;${e.listening?'animation:bossPulse 1.4s infinite;':''}">${e.muteMic?'🎙 마이크 꺼짐 (탭해서 켜기)':(e.listening?('🎙 듣는 중'+(e.heard?' · "'+h(e.heard.slice(0,18))+'"':'... 그냥 말하면 돼요')):'🎙 마이크 켜짐 · 대기')}</button>
         <button data-act="eyemute" style="padding:11px 14px;border-radius:11px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-size:14px;cursor:pointer;">${e.muteTTS?'🔇 음성 꺼짐':'🔊 음성 켜짐'}</button>
         <button data-act="eyecheck" style="padding:11px 14px;border-radius:11px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:14px;font-weight:700;cursor:pointer;">지금 확인</button>
         <button data-act="eyestop" style="padding:11px 16px;border-radius:11px;border:1px solid var(--danger-b);background:rgba(255,84,104,.12);color:var(--danger-b);font-weight:800;font-size:14px;cursor:pointer;">종료·기록 저장</button></div>
@@ -2032,6 +2194,8 @@ const ACTS = {
   eyescreen:()=>{ eyeInit().useScreen=!eyeInit().useScreen; render(); },
   eyeint:v=>{ eyeInit().interval=+v; render(); },
   eyelisten:()=>eyeListen(), eyesay:()=>eyeSay(),
+  piphide:()=>{ eyeInit().pipHidden=true; render(); },
+  avatarclear:async()=>{ const e=eyeInit(); e.avatarImg=''; IMG.ready=false; IMG.el=null; await api('/api/avatar',{method:'POST',...jbody({data:''})}); render(); },
   eyepose:p=>setPose(p, ({sit:'앉았어~',stand:'일어섰어!',wave:'안녕! 👋',stretch:'으으- 시원해',cheer:'수영아 화이팅! 💪',dance:'신난다! 🎵'})[p]),
   eyetest:()=>speak('안녕 수영아, 나는 루하야. 오늘도 같이 공부하자!'),
   eyedance:()=>{ const e=eyeInit(); e.dancing=true; avatarLoop(); clearTimeout(EYE.danceT); EYE.danceT=setTimeout(()=>{e.dancing=false;render();},8000); render(); }, eyemute:()=>{ const e=eyeInit(); e.muteTTS=!e.muteTTS; if(e.muteTTS)try{speechSynthesis.cancel();}catch(x){} render(); },
@@ -2049,7 +2213,16 @@ function bindInputs(){
   $.querySelectorAll('[data-exam]').forEach(el=>{ el.onchange=()=>{ S.examSel[el.getAttribute('data-exam')]=el.value; }; });
   $.querySelectorAll('[data-examin]').forEach(el=>{ el.oninput=()=>{ S.examInputs[el.getAttribute('data-examin')]=el.value; }; });
   const af=document.getElementById('ask_file'); if(af) af.onchange=()=>{ _askFile=af.files[0]||null; };
+  const avf=document.getElementById('avatarFile'); if(avf) avf.onchange=()=>{ if(avf.files[0]) uploadAvatar(avf.files[0]); };
+  ['avatarBox','pipBox','avatarPrev'].forEach(id=>{ const cv=document.getElementById(id);
+    if(cv&&cv.tagName==='CANVAS'){ drawAvatarCanvas(cv);
+      cv.onclick=ev=>{ const r=cv.getBoundingClientRect(); const e2=eyeInit();
+        e2.mouthY=Math.min(.95,Math.max(.3,(ev.clientY-r.top)/r.height));
+        e2.mouthX=Math.min(1,Math.max(0,(ev.clientX-r.left)/r.width));
+        toast('👄 입 위치 설정됨','good'); render(); }; } });
   const ev2=document.getElementById('eyeVoice'); if(ev2) ev2.onchange=()=>{ eyeInit().voiceURI=ev2.value; };
+  const ep=document.getElementById('eyePitch'); if(ep) ep.oninput=()=>{ eyeInit().pitch=+ep.value; render(); };
+  const er=document.getElementById('eyeRate'); if(er) er.oninput=()=>{ eyeInit().rate=+er.value; render(); };
   const ei=document.getElementById('eyeInput'); if(ei){ ei.oninput=()=>{ eyeInit().input=ei.value; };
     ei.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); eyeSay(); } }; }
   $.querySelectorAll('[data-model="askq"]').forEach(el=>{ el.oninput=()=>{ S.askImg.q=el.value; }; });

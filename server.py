@@ -707,6 +707,9 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._today(q.get("date", ""))
+        if p == "/api/avatar":
+            c = db(); r = c.execute("SELECT v FROM meta WHERE k='avatar_img'").fetchone(); c.close()
+            return self._json({"data": r["v"] if r else ""})
         if p == "/api/focus/sessions":
             if self._guard():
                 return
@@ -1462,6 +1465,14 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._wrong_grade(b)
+        if p == "/api/avatar":
+            if self._guard():
+                return
+            d = b.get("data", "")
+            if d and len(d) > 3_500_000:
+                return self._json({"error": "too_large"}, 400)
+            c = db(); c.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('avatar_img',?)", (d,)); c.commit(); c.close()
+            return self._json({"ok": True})
         if p == "/api/focus/check":
             if self._guard():
                 return

@@ -847,7 +847,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804i · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804j · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1972,6 +1972,16 @@ const EXAM6=[['국어',25,4],['수학',20,5],['사회',25,4],['과학',25,4],['�
 const LASTYEAR={국어:88,수학:75,사회:96,과학:72,한국사:92,도덕:72};   // 전년도 실적(데이터 없는 과목 기본값)
 const BANDS=[[100,100,2,484],[98,99.99,3,476],[96,97.99,4,468],[94,95.99,5,460],[91,93.99,6,452],[88,90.99,7,444],[84,87.99,8,436],[0,83.99,9,428]];
 const GYOGWA=[['사회융합',478.0],['미디어콘텐츠융합',485.0],['경영',484.0],['인문융합콘텐츠',476.0],['자유전공',476.0],['미래융합',476.0],['소프트웨어융합',475.0]];
+// 2025학년도 수시 최종 입결(열린인재·교과성적) — avg/min은 각 전형 자체 총점(스케일 다름), G=등급
+const ADMIT={
+  '사회융합':      {star:'🎯 주력', open:{avg:857.67,min:831.17,avgG:4.29,minG:5.37}, gyo:{avg:482.3,min:478.0,avgG:2.34,minG:2.88}},
+  '자유전공':      {star:'🛡 백업', gyo:{avg:479.81,min:476.0,avgG:2.64,minG:3.13}},
+  '인문융합콘텐츠': {open:{avg:826.98,min:798.2,avgG:4.31,minG:6.15}, gyo:{avg:479.36,min:476.0,avgG:2.66,minG:3.0}},
+  '경영':          {open:{avg:863.46,min:828.49,avgG:3.99,minG:4.74}, gyo:{avg:487.5,min:484.0,avgG:1.86,minG:2.13}},
+  '미디어콘텐츠융합': {open:{avg:879.06,min:854.87,avgG:3.89,minG:5.06}, gyo:{avg:488.23,min:485.0,avgG:1.87,minG:2.13}},
+  '소프트웨어융합':  {open:{avg:799.75,min:763.26,avgG:4.56,minG:5.79}, gyo:{avg:480.64,min:475.0,avgG:2.54,minG:3.13}},
+  '미래융합':      {open:{avg:795.49,min:725.77,avgG:5.3,minG:7.0}, gyo:{avg:477.0,min:476.0,avgG:2.88,minG:3.0}},
+};
 function convert(avg){ const b=BANDS.find(x=>avg>=x[0]&&avg<=x[1])||BANDS[BANDS.length-1]; return {grade:b[2], score:b[3]}; }
 function predict(){
   const acc=(S.diag||[]).reduce((m,s)=>(m[s.subject]=s.acc/100,m),{});
@@ -2009,6 +2019,28 @@ function predictCard(){
       <div style="flex:1;height:7px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;"><div style="height:100%;width:${x.acc}%;background:${x.acc>=90?'var(--accent-b)':x.acc>=80?'var(--gold)':'var(--danger-b)'};"></div></div>
       <span style="width:112px;text-align:right;color:var(--text2);">${x.acc}% · 오답 ${x.wrong} <span style="color:var(--text3);font-size:11px;">(${x.src})</span></span></div>`).join('')}</div>
     <div style="margin-top:10px;font-size:11.5px;color:var(--text3);">※ 푼 기출의 과목별 정답률로 추정해요. 안 푼 과목은 전년도 성적 기준. 많이 풀수록 정확해져요.</div>
+    ${admissionTable(p)}
+  </div>`;
+}
+function admissionTable(p){
+  const order=['사회융합','자유전공','인문융합콘텐츠','경영','미디어콘텐츠융합','소프트웨어융합','미래융합'];
+  const line=(label,txt,ok)=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;font-size:12.5px;">
+      <span style="width:30px;flex:0 0 auto;font-size:11px;color:var(--text3);">${label}</span>
+      <span style="flex:1;color:var(--text2);">${txt}</span>
+      <span style="font-weight:800;font-size:12px;color:${ok?'var(--accent-b)':'var(--danger-b)'};">${ok?'✅ 도달':'❌ 미달'}</span></div>`;
+  const rows=order.map(name=>{
+    const d=ADMIT[name]; if(!d) return '';
+    const tag=d.star?`<span style="font-size:11px;font-weight:800;color:${d.star.includes('주력')?'var(--gold)':'var(--blue)'};margin-left:5px;">${d.star}</span>`:'';
+    const openRow = d.open ? line('학종', `평균 ${d.open.avgG}등급 · 최저 ${d.open.minG}등급`, p.grade<=d.open.minG) : '';
+    const gyoRow = d.gyo ? line('교과', `평균 ${d.gyo.avg}점 · 최저 ${d.gyo.min}점`, p.score>=d.gyo.min) : '';
+    return `<div style="border:1px solid ${d.star?'var(--gold-d)':'var(--border)'};border-radius:10px;padding:9px 12px;background:${d.star?'rgba(255,224,102,.06)':'var(--panel)'};">
+      <div style="font-weight:800;font-size:13.5px;">${h(name)}${tag}</div>
+      <div style="border-top:1px dashed var(--border);margin-top:4px;">${openRow}${gyoRow}</div></div>`;
+  }).join('');
+  return `<div style="margin-top:14px;">
+    <div style="font-size:12.5px;font-weight:800;color:var(--text2);margin-bottom:8px;">📋 계열별 컷라인 일람 <span style="font-weight:600;color:var(--text3);">· 2025 입결 vs 내 예상(${p.grade}등급·${p.score}점)</span></div>
+    <div style="display:grid;gap:7px;">${rows}</div>
+    <div style="margin-top:8px;font-size:11px;color:var(--text3);">학종(열린인재)은 등급 낮을수록 유리 · 교과성적은 500점 만점 환산 기준. 학종은 서류·면접 결과에 따라 실제와 달라질 수 있어요.</div>
   </div>`;
 }
 // ========== 성적 추이 그래프 ==========

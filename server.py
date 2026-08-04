@@ -207,6 +207,8 @@ def init_db():
     CREATE TABLE IF NOT EXISTS study_log(date TEXT PRIMARY KEY, math REAL DEFAULT 0, sci REAL DEFAULT 0, kor REAL DEFAULT 0, nc2 REAL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS pdf_files(name TEXT PRIMARY KEY, data TEXT);
     CREATE TABLE IF NOT EXISTS exam_results(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, year TEXT, exam_round TEXT, level TEXT, json TEXT, avg REAL, ts INTEGER);
+    CREATE TABLE IF NOT EXISTS focus_log(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, start_ts INTEGER, end_ts INTEGER,
+        focused_sec INTEGER, distract_cnt INTEGER, checks INTEGER, transcript TEXT);
     """)
     if "answer_text" not in [r["name"] for r in c.execute("PRAGMA table_info(questions)")]:
         c.execute("ALTER TABLE questions ADD COLUMN answer_text TEXT")
@@ -568,8 +570,9 @@ def ai_vision(prompt, images_png, max_tokens=2000, as_json=True):
         return None
     model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
     parts = [{"text": prompt}]
-    for png in images_png:
-        parts.append({"inline_data": {"mime_type": "image/png", "data": base64.b64encode(png).decode()}})
+    for img in images_png:
+        mime = "image/jpeg" if img[:2] == b"\xff\xd8" else "image/png"   # JPEG(웹캠 캡처)도 지원
+        parts.append({"inline_data": {"mime_type": mime, "data": base64.b64encode(img).decode()}})
     body = json.dumps({
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": dict({"maxOutputTokens": int(max_tokens) + 3500, "thinkingConfig": {"thinkingBudget": 512}},
@@ -704,6 +707,13 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._today(q.get("date", ""))
+        if p == "/api/focus/sessions":
+            if self._guard():
+                return
+            c = db(); rows = [dict(x) for x in c.execute(
+                "SELECT id,date,start_ts,end_ts,focused_sec,distract_cnt,checks FROM focus_log ORDER BY end_ts DESC LIMIT 30")]
+            tot = c.execute("SELECT SUM(focused_sec) s, SUM(distract_cnt) d FROM focus_log").fetchone(); c.close()
+            return self._json({"sessions": rows, "total_sec": tot["s"] or 0, "total_distract": tot["d"] or 0})
         if p == "/api/recommend":
             if self._guard():
                 return
@@ -1079,6 +1089,82 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._json({"error": "no-ai"}, 503)
         return self._json({"analysis": out.strip(), "count": len(rows)})
 
+    # ---- 수호령의 눈: 화상 스터디 버디 ----
+    STUDENT = ("학생 이름은 '수영'. 2026-08-11(화) 고졸 검정고시 재응시. 영어는 면제(100점 확정), "
+               "응시 6과목은 국어·수학·사회·과학·한국사·도덕. 취약 과목은 과학·도덕·수학. "
+               "목표는 평균 94점 이상(성공회대 열린인재 지원선), 만점이면 교과전형도 가능. 반말로 친근하게 대한다.")
+
+    def _decode_img(self, s):
+        if not s:
+            return None
+        if "," in s:
+            s = s.split(",", 1)[1]
+        try:
+            return base64.b64decode(s)
+        except Exception:
+            return None
+
+    def _focus_check(self, b):
+        """웹캠·화면 프레임 → 공부 중인지 판정 + 잔소리 멘트."""
+        if not gemini_key():
+            return self._json({"error": "no-ai"}, 503)
+        imgs = [x for x in (self._decode_img(b.get("cam")), self._decode_img(b.get("screen"))) if x]
+        if not imgs:
+            return self._json({"error": "bad_input"}, 400)
+        what = "첫 번째 이미지는 웹캠(학생 모습)" + (", 두 번째는 학생의 화면" if len(imgs) > 1 else "") + "입니다."
+        mins = int(b.get("focused_min", 0) or 0)
+        prompt = (f"{self.STUDENT}\n{what}\n"
+                  "학생이 지금 '공부 중'인지 판단하세요. 공부 중 = 책·문제집·노트·태블릿을 보거나 필기하거나 "
+                  "학습 사이트/문서를 보고 있음. 딴짓 = 자리 비움, 엎드려 잠, 휴대폰으로 SNS·영상 시청, "
+                  "게임·쇼핑·유튜브 등 학습과 무관한 화면.\n"
+                  f"지금까지 집중한 시간은 {mins}분입니다.\n"
+                  '반드시 JSON만 출력: {"studying":true/false,"activity":"보이는 상황 한국어 12자 이내",'
+                  '"message":"학생에게 할 말 한 문장(반말, 25자 이내)"}\n'
+                  "공부 중이면 message는 짧은 격려, 딴짓이면 따끔하지만 다정한 잔소리로 쓰세요.")
+        try:
+            txt = ai_vision(prompt, imgs, 300)
+        except Exception as e:
+            return self._json({"error": "ai_failed", "detail": str(e)}, 502)
+        try:
+            d = json.loads(txt or "{}")
+        except Exception:
+            return self._json({"error": "ai_parse", "raw": (txt or "")[:200]}, 502)
+        return self._json({"studying": bool(d.get("studying")), "activity": str(d.get("activity", ""))[:40],
+                           "message": str(d.get("message", ""))[:120]})
+
+    def _focus_talk(self, b):
+        """스터디 버디와 대화 — 학생 정보·현재 학습 상황 기반."""
+        msg = (b.get("text") or "").strip()
+        if not msg:
+            return self._json({"error": "bad_input"}, 400)
+        c = db()
+        acc = {}
+        for r in c.execute("""SELECT a.subject s, COUNT(*) n, SUM(a.correct) ok FROM attempts a
+                JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz' GROUP BY a.subject"""):
+            acc[r["s"]] = f'{round((r["ok"] or 0)/r["n"]*100)}%({r["n"]}문항)'
+        c.close()
+        import datetime as _dt
+        dday = (_dt.date(2026, 8, 11) - _dt.date.today()).days
+        ctx = (f"{self.STUDENT}\n시험까지 D-{dday}. 과목별 정답률: "
+               + (", ".join(f"{k} {v}" for k, v in acc.items()) if acc else "아직 기록 없음")
+               + f"\n지금 이번 세션에서 {int(b.get('focused_min',0) or 0)}분째 공부 중이고, "
+                 f"현재 화면 상태는 '{b.get('activity','')}'입니다.")
+        sysmsg = ("너는 학생 '수영'과 함께 공부하는 스터디 메이트 '수호령'이야. 화상으로 같이 공부하는 친구처럼 "
+                  "반말로 짧고 자연스럽게 말해. 음성으로 읽히니 3문장 이내, 마크다운·이모지 남발 금지. "
+                  "공부 내용 질문엔 정확히 답하고, 잡담엔 가볍게 받아주되 다시 공부로 유도해.\n\n" + ctx)
+        hist = b.get("history") or []
+        msgs = [{"role": ("assistant" if m.get("role") == "assistant" else "user"),
+                 "content": str(m.get("text", ""))[:500]} for m in hist[-8:]]
+        msgs.append({"role": "user", "content": msg})
+        try:
+            out = ai_complete(sysmsg, msgs, 400)
+        except Exception as e:
+            return self._json({"error": "ai_failed", "detail": str(e)}, 502)
+        if out is None:
+            return self._json({"error": "no-ai"}, 503)
+        return self._json({"text": out.strip()})
+
     def _recommend(self):
         """오늘의 추천 학습: 취약 과목 · 반복오답 · 미풀이 회차를 조합해 할 일 제시."""
         c = db()
@@ -1376,6 +1462,26 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._wrong_grade(b)
+        if p == "/api/focus/check":
+            if self._guard():
+                return
+            return self._focus_check(b)
+        if p == "/api/focus/talk":
+            if self._guard():
+                return
+            return self._focus_talk(b)
+        if p == "/api/focus/session":
+            if self._guard():
+                return
+            import time as _t
+            c = db()
+            c.execute("""INSERT INTO focus_log(date,start_ts,end_ts,focused_sec,distract_cnt,checks,transcript)
+                         VALUES(?,?,?,?,?,?,?)""",
+                      (b.get("date", ""), int(b.get("start", 0) or 0), int(_t.time()),
+                       int(b.get("focused", 0) or 0), int(b.get("distract", 0) or 0),
+                       int(b.get("checks", 0) or 0), json.dumps(b.get("transcript", []), ensure_ascii=False)))
+            c.commit(); c.close()
+            return self._json({"ok": True})
         if p == "/api/askimage":
             if self._guard():
                 return

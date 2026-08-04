@@ -77,7 +77,7 @@ const S = {
   towerSubject:'도덕', dodeok:null, towerConcept:{},
   dodeokMode:'read', dq:null, dodeokExam:null,
   recommend:null, mock:null, askImg:{busy:false,text:'',q:''}, similar:null,
-  today:null, checkExam:{}, cq:null,
+  today:null, checkExam:{}, cq:null, eye:null, focusHist:null,
   adminTab:'questions', adminMsg:'', muted:false,
 };
 const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 4점/문항
@@ -169,7 +169,7 @@ async function submitPin(){
     else { S.entry=''; S.gateError='봉인 해제 실패. 문양을 다시 확인해.'; render(); }
   }
 }
-async function relock(){ await api('/api/relock',{method:'POST'}); S.gateMode='locked'; S.entry=''; S.setupFirst=''; S.gateError=''; render(); }
+async function relock(){ try{ if(S.eye&&S.eye.on) eyeStop(true); }catch(e){} await api('/api/relock',{method:'POST'}); S.gateMode='locked'; S.entry=''; S.setupFirst=''; S.gateError=''; render(); }
 
 // ---------- study logic ----------
 function examDate(){ const p=EXAM_DATE.split('-').map(Number); return new Date(p[0],p[1]-1,p[2]); }
@@ -389,10 +389,10 @@ function gate(){
 
 function app(){
   const rbtn=on=>`display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:5px 9px;border-radius:8px;cursor:pointer;border:1px solid ${on?'rgba(46,230,166,.5)':'var(--border)'};background:${on?'rgba(20,117,92,.18)':'transparent'};color:${on?'var(--text3)':'var(--text)'};text-decoration:${on?'line-through':'none'};`;
-  const tabs=[['camp','⛺','베이스캠프'],['tower','⚔️','수련의 탑'],['guild','📜','전직소'],['summon','🧚','수호령 소환'],['bank','📚','문제은행'],['exam','🎯','실전 채점'],['wrong','📕','오답노트']];
+  const tabs=[['camp','⛺','베이스캠프'],['tower','⚔️','수련의 탑'],['guild','📜','전직소'],['summon','🧚','수호령 소환'],['eye','🔮','수호령의 눈'],['bank','📚','문제은행'],['exam','🎯','실전 채점'],['wrong','📕','오답노트']];
   if(S.isAdmin) tabs.push(['admin','🛠','관리소']);
   const nav=tabs.map(([id,ic,lb])=>`<button data-act="tab" data-arg="${id}" style="position:relative;background:none;border:none;padding:14px 16px 13px;cursor:pointer;white-space:nowrap;color:${id===S.tab?'var(--gold)':'var(--text2)'};font-size:15px;font-weight:700;transition:color .15s;"><span style="margin-right:6px;">${ic}</span>${lb}<div style="position:absolute;left:12px;right:12px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--accent-b);box-shadow:0 0 12px var(--accent-b);opacity:${id===S.tab?1:0};transition:opacity .2s;"></div></button>`).join('');
-  const view = {camp:vCamp,tower:vTower,guild:vGuild,summon:vSummon,bank:vBank,exam:vExam,wrong:vWrong,admin:vAdmin}[S.tab]();
+  const view = {camp:vCamp,tower:vTower,guild:vGuild,summon:vSummon,eye:vEye,bank:vBank,exam:vExam,wrong:vWrong,admin:vAdmin}[S.tab]();
   return `<div>
     <header style="position:sticky;top:0;z-index:30;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);background:var(--header);border-bottom:1px solid var(--border);">
       <div style="max-width:1180px;margin:0 auto;padding:11px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
@@ -843,7 +843,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804d · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804e · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1255,6 +1255,10 @@ const SFX={
   wrongtag:()=>tone(560,0.05,'sine',0.09),
   chkexam:()=>tone(880,0.04,'triangle',0.09),
   cqstart:()=>seq([[523,0],[784,0.07]]),
+  eyestart:()=>seq([[392,0],[523,0.07],[659,0.14],[784,0.21]]),
+  eyestop:()=>seq([[659,0],[392,0.1]]),
+  eyelisten:()=>tone(880,0.06,'sine',0.1),
+  eyesay:()=>seq([[660,0],[990,0.05]]),
   cqpick:()=>tone(700,0.05,'triangle',0.1),
   cqnext:()=>tone(440,0.05,'triangle',0.09),
   similar:()=>tone(560,0.06,'triangle',0.1),
@@ -1376,6 +1380,307 @@ function examDayCard(){
         <div style="margin-top:8px;font-size:11.5px;color:var(--text3);">※ 영어는 과목합격(면제) — 해당 교시 대기실 이용. 쉬는 시간엔 다음 과목 암기 노트만!</div></div>
     </div></div>`;
 }
+// ========== 아바타: 오리지널 캐릭터 '루하' (SVG · 표정/립싱크/댄스) ==========
+// 포즈: sit(기본)·stand·wave·stretch·cheer·think·point·sleep
+const POSES=[
+  [/일어나|일어서|스탠드|서봐|서줘|stand/i,'stand','일어섰어!'],
+  [/앉아|앉줘|앉아봐|sit/i,'sit','앉았어~'],
+  [/손\s*흔들|인사|하이|안녕.*해|wave/i,'wave','안녕! 👋'],
+  [/기지개|스트레칭|stretch/i,'stretch','으으- 시원하다'],
+  [/응원|화이팅|파이팅|힘내|cheer/i,'cheer','수영아 화이팅! 💪'],
+  [/생각|고민|think/i,'think','음… 생각 중'],
+  [/가리켜|저기|포인트|point/i,'point','저기 봐!'],
+  [/자는|잠|졸려|sleep/i,'sleep','zzz…'],
+  [/춤|댄스|dance|춰줘/i,'dance','신난다! 🎵'],
+];
+function avatar(mood, talking, pose){
+  const dancing = pose==='dance';
+  const M={idle:{brow:0,eye:1,mouth:'M78,112 q22,10 44,0',blush:.35},
+           happy:{brow:-2,eye:.55,mouth:'M76,108 q24,20 48,0',blush:.6},
+           stern:{brow:6,eye:.85,mouth:'M80,118 q20,-8 40,0',blush:.2},
+           wink:{brow:-3,eye:1,mouth:'M76,109 q24,17 48,0',blush:.7},
+           sleepy:{brow:2,eye:.3,mouth:'M86,116 q14,6 28,0',blush:.3}}[mood]||{brow:0,eye:1,mouth:'M78,112 q22,10 44,0',blush:.35};
+  const t=Date.now()/1000;
+  const mouthOpen = talking ? 4+Math.abs(Math.sin(t*9))*9 : 0;
+  const sway = dancing ? Math.sin(t*4)*7 : Math.sin(t*0.8)*1.2;
+  const bob  = dancing ? Math.abs(Math.sin(t*8))*5 : 0;
+  // 포즈: 전체 스케일·수직 이동 + 팔 모양
+  const P={sit:{sc:1,dy:0},stand:{sc:.86,dy:6},wave:{sc:.9,dy:8},stretch:{sc:.86,dy:12},
+           cheer:{sc:.88,dy:10},think:{sc:1,dy:0},point:{sc:.9,dy:8},sleep:{sc:1,dy:6},dance:{sc:.86,dy:10}}[pose]||{sc:1,dy:0};
+  const wv=Math.sin(t*7)*16, dz=Math.sin(t*5)*14;
+  const SK='#ffe3d2', SL='#1b2f5c';
+  const arms = {
+    wave:`<g><path d="M60,182 q-16,-16 -10,-34" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round" transform="rotate(${wv},60,182)"/>
+          <circle cx="${50+wv*0.5}" cy="${146-Math.abs(wv)*0.2}" r="8" fill="${SK}"/></g>`,
+    stretch:`<path d="M64,184 q-6,-40 6,-56" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
+             <path d="M136,184 q6,-40 -6,-56" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
+             <circle cx="70" cy="126" r="8" fill="${SK}"/><circle cx="130" cy="126" r="8" fill="${SK}"/>`,
+    cheer:`<path d="M64,184 q-10,-28 0,-44" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
+           <path d="M136,184 q10,-28 0,-44" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
+           <circle cx="64" cy="${138+Math.sin(t*6)*4}" r="9" fill="${SK}"/><circle cx="136" cy="${138-Math.sin(t*6)*4}" r="9" fill="${SK}"/>`,
+    think:`<path d="M132,188 q14,-22 -8,-34" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
+           <circle cx="124" cy="150" r="8" fill="${SK}"/>`,
+    point:`<path d="M136,184 q22,-6 26,-26" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
+           <circle cx="163" cy="156" r="8" fill="${SK}"/>`,
+    dance:`<path d="M64,184 q-14,-22 ${-4+dz*0.4},-40" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
+           <path d="M136,184 q14,-22 ${4-dz*0.4},-40" stroke="${SL}" stroke-width="13" fill="none" stroke-linecap="round"/>
+           <circle cx="${58+dz*0.4}" cy="144" r="8" fill="${SK}"/><circle cx="${142-dz*0.4}" cy="144" r="8" fill="${SK}"/>`,
+    sleep:'', sit:'', stand:''
+  }[pose]||'';
+  const legs = (pose==='stand'||pose==='dance'||pose==='cheer'||pose==='stretch')
+    ? `<path d="M86,208 v26 M114,208 v26" stroke="${SL}" stroke-width="15" stroke-linecap="round"/>` : '';
+  return `<svg viewBox="0 0 200 240" style="width:100%;height:100%;display:block;">
+    <defs>
+      <linearGradient id="hair" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc2dd"/><stop offset="1" stop-color="#ff8fc0"/></linearGradient>
+      <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1b2a55"/><stop offset="1" stop-color="#3a1f52"/></linearGradient>
+      <radialGradient id="glow"><stop offset="0" stop-color="#ff8fc0" stop-opacity=".45"/><stop offset="1" stop-color="#ff8fc0" stop-opacity="0"/></radialGradient>
+      <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe8d8"/><stop offset="1" stop-color="#f6cdb5"/></linearGradient>
+    </defs>
+    <rect width="200" height="240" rx="14" fill="url(#bg2)"/>
+    <circle cx="100" cy="105" r="86" fill="url(#glow)"/>
+    <g transform="translate(${sway + 100*(1-P.sc)},${-bob + P.dy + 120*(1-P.sc)}) scale(${P.sc})">
+      ${legs}${arms}
+      <path d="M58,198 q10,-27 26,-34 l16,8 l16,-8 q16,7 26,34 v12 h-84 z" fill="#1b2f5c"/>
+      <path d="M84,164 q16,12 32,0 l3,6 q-19,14 -38,0 z" fill="#e8b79c"/>
+      <path d="M87,146 q13,11 26,0 v17 q-13,9 -26,0 z" fill="#f0c1a6"/>
+      <path d="M55,100 q0,-52 45,-52 q45,0 45,52 q0,26 -8,42 q-11,21 -37,21 q-26,0 -37,-21 q-8,-16 -8,-42 z" fill="url(#skin)"/>
+      <path d="M64,126 q-3,19 11,31 q-15,-6 -17,-27 z" fill="#eec3ab" opacity=".5"/>
+      <ellipse cx="55" cy="104" rx="6.5" ry="10" fill="#f6cdb5"/><ellipse cx="145" cy="104" rx="6.5" ry="10" fill="#f6cdb5"/>
+      <path d="M52,96 q-2,-58 48,-58 q50,0 48,58 q-5,-22 -19,-30 q-16,14 -42,12 q-20,-2 -30,-10 q-8,10 -13,28 z" fill="url(#hair)"/>
+      <path d="M63,52 q26,-16 54,-6 q-20,18 -42,19 q-11,1 -12,-13 z" fill="#ffd6e8" opacity=".8"/>
+      <path d="M48,90 q-7,32 3,52 q5,-25 4,-44 z" fill="url(#hair)"/><path d="M152,90 q7,32 -3,52 q-5,-25 -4,-44 z" fill="url(#hair)"/>
+      <ellipse cx="72" cy="116" rx="9" ry="${4.5*M.blush}" fill="#f2879f" opacity=".42"/>
+      <ellipse cx="128" cy="116" rx="9" ry="${4.5*M.blush}" fill="#f2879f" opacity=".42"/>
+      <path d="M63,${90+M.brow} q13,-6 25,-1" stroke="#b8708f" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+      <path d="M112,${89+M.brow} q13,-4 25,2" stroke="#b8708f" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+      <g>
+        <path d="M65,102 q11,-8 22,-1" stroke="#5a3a2c" stroke-width="1.9" fill="none" opacity=".5"/>
+        <ellipse cx="76" cy="105" rx="10.5" ry="${8.5*M.eye}" fill="#fff"/>
+        <ellipse cx="76" cy="105" rx="6.4" ry="${6.6*M.eye}" fill="#6b4a3a"/>
+        <ellipse cx="76" cy="105" rx="3" ry="${3.1*M.eye}" fill="#2b1a12"/><circle cx="78.6" cy="102.6" r="2.1" fill="#fff"/>
+        ${mood==='wink'
+          ? `<path d="M113,105 q11,-7 22,0" stroke="#5a3a2c" stroke-width="3.2" fill="none" stroke-linecap="round"/>`
+          : `<path d="M113,102 q11,-8 22,-1" stroke="#5a3a2c" stroke-width="1.9" fill="none" opacity=".5"/>
+             <ellipse cx="124" cy="105" rx="10.5" ry="${8.5*M.eye}" fill="#fff"/>
+             <ellipse cx="124" cy="105" rx="6.4" ry="${6.6*M.eye}" fill="#6b4a3a"/>
+             <ellipse cx="124" cy="105" rx="3" ry="${3.1*M.eye}" fill="#2b1a12"/><circle cx="126.6" cy="102.6" r="2.1" fill="#fff"/>`}
+      </g>
+      <path d="M100,108 q-4,11 3,15" stroke="#e0ab90" stroke-width="2" fill="none" stroke-linecap="round"/>
+      ${mouthOpen>0.5
+        ? `<ellipse cx="100" cy="${136+mouthOpen/3}" rx="${8+mouthOpen*0.42}" ry="${mouthOpen*0.8}" fill="#b8465e"/>
+           <ellipse cx="100" cy="${133+mouthOpen/4}" rx="${6+mouthOpen*0.28}" ry="${mouthOpen*0.28}" fill="#fff" opacity=".85"/>`
+        : `<path d="${M.mouth.replace(/(\d+),(\d+)/g,(mm,x,y)=>x+','+(+y+24))}" stroke="#c9556e" stroke-width="3" fill="none" stroke-linecap="round"/>`}
+      ${dancing?`<g stroke="#ffe066" stroke-width="2.6" stroke-linecap="round" opacity=".9">
+        <path d="M22,60 l0,-10 M17,55 l10,0"/><path d="M178,72 l0,-9 M173.5,67.5 l9,0"/></g>`:''}
+    </g></svg>`;
+}
+// ========== 🔮 수호령의 눈: 화상 스터디 버디 ==========
+const EYE={cam:null, screen:null, timer:null, tick:null, rec:null, speaking:false};
+function eyeInit(){ if(!S.eye) S.eye={on:false,startAt:0,focusedSec:0,distract:0,checks:0,status:'',msg:'',log:[],useScreen:false,interval:60,busy:false,listening:false,muteTTS:false,input:''}; return S.eye; }
+// 한국어 남성 보이스 우선 선택 (실존 인물 음성 복제 아님 · 시스템 내장 음성 사용)
+function koVoices(){ try{ return speechSynthesis.getVoices().filter(v=>/ko/i.test(v.lang)); }catch(e){ return []; } }
+try{ if('speechSynthesis' in window) speechSynthesis.onvoiceschanged=()=>{ if(S.tab==='eye'&&!(S.eye&&S.eye.on)) render(); }; }catch(e){}
+// 젊은 남성 톤 우선순위 (macOS: Reed·Eddy·Rocko / Android·Windows: male 표기)
+const MALE_PREF=[/^reed/i,/^eddy/i,/^rocko/i,/male/i,/남성/,/injoon|인준|minsu|민수|현우|지훈/i];
+const FEMALE_RX=/유나|yuna|female|여성|grandma|flo|sandy|shelley/i;
+function pickVoice(){
+  const e=eyeInit(), vs=koVoices(); if(!vs.length) return null;
+  if(e.voiceURI){ const f=vs.find(v=>v.voiceURI===e.voiceURI); if(f) return f; }
+  for(const rx of MALE_PREF){ const f=vs.find(v=>rx.test(v.name)&&!FEMALE_RX.test(v.name)); if(f) return f; }
+  return vs.find(v=>!FEMALE_RX.test(v.name)) || vs[0];
+}
+function speak(text){
+  const e=eyeInit(); if(e.muteTTS||!text||!('speechSynthesis' in window)) return;
+  try{ speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(String(text).replace(/[*_`#]/g,''));
+    u.lang='ko-KR'; u.rate=e.rate||1.06; u.pitch=e.pitch!=null?e.pitch:0.92;   // 젊은 남성 톤
+    const v=pickVoice(); if(v) u.voice=v;
+    EYE.speaking=true; avatarLoop();
+    u.onend=()=>{ EYE.speaking=false; };
+    speechSynthesis.speak(u);
+  }catch(err){}
+}
+// 말하거나 춤출 때만 아바타를 부분 갱신(입력창 포커스 유지)
+function avatarLoop(){
+  if(EYE.anim) return;
+  EYE.anim=setInterval(()=>{
+    const e=eyeInit(), box=document.getElementById('avatarBox');
+    const active=EYE.speaking||e.dancing||(e.pose&&e.pose!=='sit'&&e.pose!=='stand'&&e.pose!=='sleep');
+    if(!box||!active){ clearInterval(EYE.anim); EYE.anim=null; if(box) box.innerHTML=avatar(avatarMood(),false,(eyeInit().pose||'sit')); return; }
+    box.innerHTML=avatar(avatarMood(), EYE.speaking, e.pose||'sit');
+  },110);
+}
+function setPose(p, say){
+  const e=eyeInit(); e.pose=p; e.dancing=(p==='dance');
+  clearTimeout(EYE.poseT);
+  if(p!=='sit'&&p!=='stand'&&p!=='sleep') EYE.poseT=setTimeout(()=>{ e.pose='sit'; e.dancing=false; render(); }, 9000);
+  avatarLoop(); if(say) toast('🔮 '+say,'good'); render();
+}
+function eyePose(){
+  const e=eyeInit();
+  if(e.pose) return e.pose;
+  if(e.dancing) return 'dance';
+  if(e.status==='딴짓') return 'point';
+  return 'sit';
+}
+function setPose(p,ms){ const e=eyeInit(); e.pose=p; avatarLoop(); clearTimeout(EYE.poseT);
+  EYE.poseT=setTimeout(()=>{ e.pose=null; e.dancing=false; render(); }, ms||8000); render(); }
+function avatarMood(){
+  const e=eyeInit();
+  if(e.dancing) return 'happy';
+  if(e.status==='딴짓') return 'stern';
+  if(e.status==='집중') return (e.checks%4===0?'wink':'happy');
+  return 'idle';
+}
+function grabFrame(video, w){
+  if(!video||!video.videoWidth) return null;
+  const c=document.createElement('canvas'); const r=w/video.videoWidth;
+  c.width=w; c.height=Math.round(video.videoHeight*r);
+  c.getContext('2d').drawImage(video,0,0,c.width,c.height);
+  return c.toDataURL('image/jpeg',0.62);
+}
+async function eyeStart(){
+  const e=eyeInit();
+  try{ EYE.cam=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480},audio:false}); }
+  catch(err){ e.msg='카메라 권한이 필요해요. 브라우저 주소창의 카메라 아이콘에서 허용해주세요.'; render(); return; }
+  if(e.useScreen){
+    try{ EYE.screen=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
+      EYE.screen.getVideoTracks()[0].onended=()=>{ EYE.screen=null; };
+    }catch(err){ EYE.screen=null; }
+  }
+  e.on=true; e.startAt=Date.now(); e.focusedSec=0; e.distract=0; e.checks=0; e.status='시작'; e.msg='같이 공부하자! 화이팅 ⚔️'; e.log=[];
+  render();
+  setTimeout(()=>{ const v=document.getElementById('eyeCam'); if(v&&EYE.cam){v.srcObject=EYE.cam;v.play().catch(()=>{});}
+                   const s=document.getElementById('eyeScr'); if(s&&EYE.screen){s.srcObject=EYE.screen;s.play().catch(()=>{});} },80);
+  speak('같이 공부하자!');
+  EYE.timer=setInterval(()=>{ const ee=eyeInit(); if(!ee.on) return; if(ee.status!=='딴짓') ee.focusedSec++; if(S.tab==='eye') render(); },1000);
+  EYE.tick=setInterval(eyeCheck, Math.max(20,e.interval)*1000);
+  setTimeout(eyeCheck, 6000);
+}
+function eyeStop(save){
+  const e=eyeInit();
+  [EYE.cam,EYE.screen].forEach(s=>s&&s.getTracks().forEach(t=>t.stop()));
+  EYE.cam=EYE.screen=null;
+  clearInterval(EYE.timer); clearInterval(EYE.tick); EYE.timer=EYE.tick=null;
+  if(EYE.rec){ try{EYE.rec.stop();}catch(x){} EYE.rec=null; }
+  try{ speechSynthesis.cancel(); }catch(x){}
+  if(save && e.checks) api('/api/focus/session',{method:'POST',...jbody({date:ymd(new Date()), start:Math.round(e.startAt/1000), focused:e.focusedSec, distract:e.distract, checks:e.checks, transcript:e.log.slice(-40)})}).then(loadFocusHist);
+  e.on=false; e.listening=false; render();
+}
+async function eyeCheck(){
+  const e=eyeInit(); if(!e.on||e.busy||EYE.speaking) return;
+  const cam=grabFrame(document.getElementById('eyeCam'),480);
+  const scr=e.useScreen?grabFrame(document.getElementById('eyeScr'),560):null;
+  if(!cam) return;
+  e.busy=true;
+  const r=await api('/api/focus/check',{method:'POST',...jbody({cam, screen:scr, focused_min:Math.round(e.focusedSec/60)})});
+  e.busy=false;
+  if(r.error){ if(r.error==='no-ai'){ e.msg='🧚 수호령 미연결(GEMINI_API_KEY 필요)'; eyeStop(false); } render(); return; }
+  e.checks++;
+  e.status = r.studying?'집중':'딴짓';
+  e.activity = r.activity||'';
+  e.msg = r.message||'';
+  if(!r.studying){ e.distract++; toast('👁 '+(r.message||'집중!'),'bad'); speak(r.message||'집중하자'); }
+  else if(e.checks%3===1){ speak(r.message); }
+  e.log.push({role:'assistant',text:`[${e.status}] ${e.msg}`});
+  render();
+}
+async function eyeSay(text){
+  const e=eyeInit(); const msg=(text||e.input||'').trim(); if(!msg) return;
+  e.log.push({role:'user',text:msg}); e.input=''; e.busy=true;
+  const hit=POSES.find(([re])=>re.test(msg));
+  if(hit){ setPose(hit[1], hit[2]); }
+  render();
+  const r=await api('/api/focus/talk',{method:'POST',...jbody({text:msg, focused_min:Math.round(e.focusedSec/60), activity:e.activity||'', history:e.log.slice(-8)})});
+  e.busy=false;
+  const reply=r.text||(r.error==='no-ai'?'수호령이 아직 연결되지 않았어.':'잠깐 연결이 흔들렸어. 다시 말해줄래?');
+  e.log.push({role:'assistant',text:reply}); speak(reply); render();
+}
+function eyeListen(){
+  const e=eyeInit();
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){ e.msg='이 브라우저는 음성 인식을 지원하지 않아요. 아래 입력창을 써주세요.'; render(); return; }
+  if(e.listening){ try{EYE.rec.stop();}catch(x){} e.listening=false; render(); return; }
+  const rec=new SR(); EYE.rec=rec; rec.lang='ko-KR'; rec.interimResults=false; rec.maxAlternatives=1;
+  rec.onresult=ev=>{ const t=ev.results[0][0].transcript; e.listening=false; render(); eyeSay(t); };
+  rec.onerror=()=>{ e.listening=false; render(); };
+  rec.onend=()=>{ e.listening=false; render(); };
+  try{ rec.start(); e.listening=true; render(); }catch(x){}
+}
+async function loadFocusHist(){ const r=await api('/api/focus/sessions'); S.focusHist=r; render(); }
+function fmtSec(s){ const m=Math.floor(s/60); return `${Math.floor(m/60)?Math.floor(m/60)+'시간 ':''}${m%60}분`; }
+function vEye(){
+  const e=eyeInit();
+  const st=e.status==='집중'?{c:'var(--accent-b)',bg:'rgba(20,117,92,.16)',ic:'✅'}:e.status==='딴짓'?{c:'var(--danger-b)',bg:'rgba(255,84,104,.14)',ic:'👀'}:{c:'var(--text2)',bg:'var(--panel2)',ic:'🔮'};
+  const hist=S.focusHist;
+  const logs=(e.log||[]).slice(-8).map(m=>`<div style="max-width:88%;align-self:${m.role==='user'?'flex-end':'flex-start'};background:${m.role==='user'?'var(--bg2)':'linear-gradient(180deg,rgba(20,117,92,.26),rgba(20,117,92,.12))'};border:1px solid ${m.role==='user'?'var(--border)':'rgba(46,230,166,.35)'};border-radius:14px;padding:9px 13px;font-size:13.5px;line-height:1.6;color:var(--text);">${h(m.text)}</div>`).join('');
+  return `<div style="max-width:900px;margin:0 auto;">
+    <div style="margin-bottom:16px;"><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">GUARDIAN'S EYE · 화상 스터디</div>
+      <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">🔮 수호령의 눈 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 같이 공부하고, 딴짓하면 잔소리해요</span></h2></div>
+
+    ${!e.on?`<div style="border:1px solid var(--gold-d);border-radius:16px;padding:18px;background:linear-gradient(180deg,rgba(255,224,102,.08),var(--panel2));margin-bottom:16px;">
+      <div style="font-size:13.5px;line-height:1.85;color:var(--text);margin-bottom:14px;">
+        웹캠(+선택: 화면)을 <b>${e.interval}초마다 한 장씩</b> 수호령에게 보내 공부 중인지 확인해요.<br>
+        딴짓이면 <b>음성으로 잔소리</b>하고, 말을 걸면 대답해줘요. 집중 시간은 기록으로 남아요.<br>
+        <span style="color:var(--text3);font-size:12.5px;">🔒 영상은 저장하지 않아요. 판정 순간의 한 장면만 AI(Gemini)에 전송되고, 결과 텍스트만 기록돼요. 언제든 종료할 수 있어요.</span></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+        <button data-act="eyescreen" style="padding:8px 14px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:1px solid ${e.useScreen?'var(--accent-b)':'var(--border)'};background:${e.useScreen?'rgba(20,117,92,.18)':'var(--panel2)'};color:${e.useScreen?'var(--accent-b)':'var(--text2)'};">${e.useScreen?'✅':'⬜'} 화면도 공유 (딴짓 감지 정확↑)</button>
+        <span style="font-size:12.5px;color:var(--text3);">확인 주기</span>
+        ${[30,60,120].map(v=>`<button data-act="eyeint" data-arg="${v}" style="padding:6px 11px;border-radius:9px;font-size:12.5px;font-weight:700;cursor:pointer;border:1px solid ${e.interval===v?'var(--gold-d)':'var(--border)'};background:${e.interval===v?'rgba(255,224,102,.14)':'var(--panel2)'};color:${e.interval===v?'var(--gold)':'var(--text2)'};">${v}초</button>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+        <span style="font-size:12.5px;color:var(--text3);">🎙 목소리</span>
+        <select id="eyeVoice" style="padding:8px 11px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:13px;max-width:230px;">
+          ${koVoices().map(v=>`<option value="${h(v.voiceURI)}" ${e.voiceURI===v.voiceURI?'selected':''}>${h(v.name)}</option>`).join('')||'<option>기기 기본</option>'}</select>
+        <button data-act="eyetest" style="padding:8px 13px;border-radius:9px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-size:12.5px;font-weight:700;cursor:pointer;">미리 듣기</button>
+        <span style="font-size:11.5px;color:var(--text3);">낮은 톤으로 자동 설정돼요</span></div>
+      <button data-act="eyestart" style="width:100%;padding:14px;border-radius:12px;border:1px solid var(--gold-d);background:linear-gradient(180deg,rgba(255,224,102,.22),rgba(255,180,60,.12));color:var(--gold);font-weight:800;font-size:16px;cursor:pointer;">🔮 수호령 소환 · 함께 공부 시작</button>
+      ${e.msg?`<div style="margin-top:10px;font-size:13px;color:var(--pink);">${h(e.msg)}</div>`:''}</div>`
+    :`<div style="border:1px solid ${st.c};border-radius:16px;padding:16px;background:${st.bg};margin-bottom:14px;">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+        <span style="font-size:22px;">${st.ic}</span>
+        <div><div style="font-size:12px;color:var(--text2);">상태</div><div style="font-size:17px;font-weight:900;color:${st.c};">${h(e.status||'확인 중')}${e.activity?` <span style="font-size:12.5px;font-weight:600;color:var(--text2);">· ${h(e.activity)}</span>`:''}</div></div>
+        <div style="margin-left:auto;text-align:right;"><div style="font-size:12px;color:var(--text2);">집중 시간</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:16px;color:var(--gold);">${String(Math.floor(e.focusedSec/3600)).padStart(2,'0')}:${String(Math.floor(e.focusedSec%3600/60)).padStart(2,'0')}:${String(e.focusedSec%60).padStart(2,'0')}</div></div>
+        <div style="text-align:right;"><div style="font-size:12px;color:var(--text2);">딴짓</div><div style="font-size:17px;font-weight:900;color:var(--danger-b);">${e.distract}<span style="font-size:12px;">회</span></div></div></div>
+      ${e.msg?`<div style="border:1px solid ${st.c};border-radius:12px;padding:11px 14px;background:var(--inset);font-size:14.5px;font-weight:700;color:${st.c};margin-bottom:12px;">🧚 ${h(e.msg)}</div>`:''}
+      <div style="display:grid;grid-template-columns:1.1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div style="position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--pinkbd);box-shadow:0 0 22px rgba(255,140,190,.18);">
+          <div id="avatarBox" style="width:100%;aspect-ratio:5/6;">${avatar(avatarMood(),false,e.pose||'sit')}</div>
+          <div style="position:absolute;left:9px;bottom:8px;padding:3px 9px;border-radius:999px;background:rgba(0,0,0,.45);color:#fff;font-size:11.5px;font-weight:700;">🔮 루하 ${({stand:'· 일어선 중',wave:'· 인사 중 👋',stretch:'· 기지개 🙆',cheer:'· 응원 중 💪',dance:'· 춤추는 중 🎵',think:'· 생각 중',point:'· 가리키는 중',sleep:'· zzz'})[e.pose]||''}</div>
+        </div>
+        <div style="position:relative;">
+          <video id="eyeCam" muted playsinline style="width:100%;height:100%;border-radius:14px;background:#000;transform:scaleX(-1);object-fit:cover;aspect-ratio:5/6;"></video>
+          <div style="position:absolute;left:9px;bottom:8px;padding:3px 9px;border-radius:999px;background:rgba(0,0,0,.45);color:#fff;font-size:11.5px;font-weight:700;">나</div></div></div>
+      ${e.useScreen?`<video id="eyeScr" muted playsinline style="width:100%;border-radius:12px;background:#000;max-height:26vh;object-fit:contain;margin-bottom:10px;"></video>`:''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px;">
+        <span style="font-size:12px;color:var(--text3);align-self:center;">포즈</span>
+        ${[['sit','🪑 앉아'],['stand','🧍 일어서'],['wave','👋 인사'],['stretch','🙆 기지개'],['cheer','💪 응원'],['dance','🎵 춤']].map(([p,lb])=>`<button data-act="eyepose" data-arg="${p}" style="padding:5px 10px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${(e.pose||'sit')===p?'var(--pink)':'var(--border)'};background:${(e.pose||'sit')===p?'var(--tintP)':'var(--panel2)'};color:${(e.pose||'sit')===p?'var(--pink)':'var(--text2)'};">${lb}</button>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button data-act="eyelisten" style="flex:1;min-width:120px;padding:11px;border-radius:11px;border:1px solid ${e.listening?'var(--danger-b)':'var(--pinkbd)'};background:${e.listening?'rgba(255,84,104,.16)':'var(--tintP)'};color:${e.listening?'var(--danger-b)':'var(--pink)'};font-weight:800;font-size:14px;cursor:pointer;${e.listening?'animation:bossPulse 1.2s infinite;':''}">${e.listening?'🎙 듣는 중... (탭해서 중지)':'🎙 말 걸기'}</button>
+        <button data-act="eyemute" style="padding:11px 14px;border-radius:11px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-size:14px;cursor:pointer;">${e.muteTTS?'🔇 음성 꺼짐':'🔊 음성 켜짐'}</button>
+        <button data-act="eyecheck" style="padding:11px 14px;border-radius:11px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:14px;font-weight:700;cursor:pointer;">지금 확인</button>
+        <button data-act="eyestop" style="padding:11px 16px;border-radius:11px;border:1px solid var(--danger-b);background:rgba(255,84,104,.12);color:var(--danger-b);font-weight:800;font-size:14px;cursor:pointer;">종료·기록 저장</button></div>
+      <div style="display:flex;gap:8px;margin-top:9px;">
+        <input data-model="eyeinput" value="${h(e.input||'')}" id="eyeInput" placeholder="타이핑으로 말 걸기..." style="flex:1;padding:11px 13px;border-radius:11px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:14px;">
+        <button data-act="eyesay" style="padding:11px 18px;border-radius:11px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:700;cursor:pointer;">보내기</button></div>
+      ${logs?`<div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;max-height:32vh;overflow:auto;">${logs}</div>`:''}
+      ${e.busy?`<div style="margin-top:8px;font-size:12.5px;color:var(--pink);"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 생각 중...</div>`:''}
+    </div>`}
+
+    ${hist&&hist.sessions&&hist.sessions.length?`<div style="border:1px solid var(--bluebd);border-radius:16px;padding:16px;background:var(--tintB);">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--blue);letter-spacing:1px;">FOCUS LOG · 집중 기록</div>
+        <span style="font-size:12.5px;color:var(--text2);">누적 <b style="color:var(--gold);">${fmtSec(hist.total_sec)}</b> · 딴짓 ${hist.total_distract}회</span></div>
+      <div style="display:grid;gap:6px;">${hist.sessions.slice(0,8).map(s=>`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:9px 12px;border-radius:10px;background:var(--panel);border:1px solid var(--border);font-size:13px;">
+        <span style="color:var(--text3);font-size:12px;">${h(s.date)}</span>
+        <b>${fmtSec(s.focused_sec)}</b>
+        <span style="color:var(--text2);">확인 ${s.checks}회</span>
+        <span style="margin-left:auto;color:${s.distract_cnt?'var(--danger-b)':'var(--accent-b)'};font-weight:700;">${s.distract_cnt?`딴짓 ${s.distract_cnt}회`:'완벽 집중 ✨'}</span></div>`).join('')}</div></div>`:''}
+  </div>`;
+}
+
 // ========== 오답 원인별 맞춤 처방 ==========
 const RX={
   concept:{ico:'📘',name:'개념 몰라서',color:'var(--blue)',
@@ -1677,6 +1982,7 @@ const ACTS = {
     if(id==='wrong'){await loadWrong(); await loadDiag(false);}
     if(id==='admin'){await adminReload();}
     if(id==='exam'){ if(!S.qFacets.subject.length)await loadFacets(); await loadExamRecords(); if(!S.diag)await loadDiag(false); render(); }
+    if(id==='eye'){ await loadFocusHist(); }
     if(id==='camp'){ await loadRecommend(); await loadToday(); if(!S.diag)await loadDiag(false); if(dday()<=1&&!S.wrongData)await loadWrong(); render(); }
     if(id==='tower'&&S.towerSubject==='도덕'&&!S.dodeok){ await loadDodeok(); render(); } },
   timer:sub=>toggleTimer(sub), add:arg=>{const[s,d]=arg.split(':');addMins(s,+d);}, nc2:pickNc2, preview:()=>{S.lockPreview=!S.lockPreview;render();},
@@ -1724,6 +2030,13 @@ const ACTS = {
   chkexam:i=>{ S.checkExam={...S.checkExam,[i]:!S.checkExam[i]}; render(); },
   cqstart:s=>cqStart(s), cqclose:()=>{ S.cq=null; render(); },
   cqpick:n=>cqPick(+n), cqnext:()=>cqNext(),
+  eyestart:()=>eyeStart(), eyestop:()=>eyeStop(true), eyecheck:()=>eyeCheck(),
+  eyescreen:()=>{ eyeInit().useScreen=!eyeInit().useScreen; render(); },
+  eyeint:v=>{ eyeInit().interval=+v; render(); },
+  eyelisten:()=>eyeListen(), eyesay:()=>eyeSay(),
+  eyepose:p=>setPose(p, ({sit:'앉았어~',stand:'일어섰어!',wave:'안녕! 👋',stretch:'으으- 시원해',cheer:'수영아 화이팅! 💪',dance:'신난다! 🎵'})[p]),
+  eyetest:()=>speak('안녕 수영아, 나는 루하야. 오늘도 같이 공부하자!'),
+  eyedance:()=>{ const e=eyeInit(); e.dancing=true; avatarLoop(); clearTimeout(EYE.danceT); EYE.danceT=setTimeout(()=>{e.dancing=false;render();},8000); render(); }, eyemute:()=>{ const e=eyeInit(); e.muteTTS=!e.muteTTS; if(e.muteTTS)try{speechSynthesis.cancel();}catch(x){} render(); },
   finaldodeok:()=>{ S.tab='tower'; S.towerSubject='도덕'; S.dodeokMode='blank';
     (S.dodeok?Promise.resolve():loadDodeok()).then(()=>{ dodeokStart('blank'); render(); }); },
   wrongdec:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'dec');},
@@ -1738,6 +2051,9 @@ function bindInputs(){
   $.querySelectorAll('[data-exam]').forEach(el=>{ el.onchange=()=>{ S.examSel[el.getAttribute('data-exam')]=el.value; }; });
   $.querySelectorAll('[data-examin]').forEach(el=>{ el.oninput=()=>{ S.examInputs[el.getAttribute('data-examin')]=el.value; }; });
   const af=document.getElementById('ask_file'); if(af) af.onchange=()=>{ _askFile=af.files[0]||null; };
+  const ev2=document.getElementById('eyeVoice'); if(ev2) ev2.onchange=()=>{ eyeInit().voiceURI=ev2.value; };
+  const ei=document.getElementById('eyeInput'); if(ei){ ei.oninput=()=>{ eyeInit().input=ei.value; };
+    ei.onkeydown=ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); eyeSay(); } }; }
   $.querySelectorAll('[data-model="askq"]').forEach(el=>{ el.oninput=()=>{ S.askImg.q=el.value; }; });
   const ci=document.getElementById('chatInput'); if(ci) ci.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); send(); } };
 }

@@ -846,7 +846,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804g · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804h · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1397,102 +1397,58 @@ const POSES=[
   [/춤|댄스|dance|춰줘/i,'dance','신난다! 🎵'],
 ];
 function avatar(mood, talking, pose){
-  const dancing = pose==='dance';
-  const t=Date.now()/1000;
-  // 웹툰풍: 반쯤 감긴 날카로운 눈, 짙은 머리, 창백한 피부
-  const M={idle:{lid:.52,brow:0,tilt:0,mouth:'M92,168 q8,2 16,0',blush:.20},
-           happy:{lid:.34,brow:-2,tilt:-3,mouth:'M88,165 q12,8 24,0',blush:.34},
-           stern:{lid:.66,brow:5,tilt:6,mouth:'M93,170 q7,-4 14,0',blush:.10},
-           wink:{lid:.40,brow:-3,tilt:-4,mouth:'M89,166 q11,7 22,0',blush:.36},
-           sleepy:{lid:.84,brow:2,tilt:1,mouth:'M95,169 q5,2 10,0',blush:.16}}[mood]
-        || {lid:.52,brow:0,tilt:0,mouth:'M92,168 q8,2 16,0',blush:.20};
-  const open = talking ? 2.5+Math.abs(Math.sin(t*8.5))*6 : 0;
-  const sway = dancing ? Math.sin(t*3.4)*6 : Math.sin(t*0.7)*1.0;
-  const bob  = dancing ? Math.abs(Math.sin(t*6.8))*6 : 0;
-  const tilt = dancing ? Math.sin(t*3.4)*4 : 0;
-  const P={sit:{sc:1,dy:0},stand:{sc:.9,dy:-4},wave:{sc:.95,dy:-2},stretch:{sc:.92,dy:-2},
-           cheer:{sc:.93,dy:-2},think:{sc:1,dy:0},point:{sc:.95,dy:-2},sleep:{sc:1,dy:4},
-           dance:{sc:.92,dy:-2}}[pose]||{sc:1,dy:0};
-  const SK='#f6e2d5', SK2='#e0bfae', LINE='#3a2f33',
-        H1='#1d2733', H2='#0e1620', H3='#31404f', TEE='#e9e5dc', TEE2='#cfc9bd';
-  const wv=Math.sin(t*7)*20, dz=Math.sin(t*4.6)*16;
-  const arm=(d,px,py)=>`<path d="${d}" stroke="${TEE}" stroke-width="18" fill="none" stroke-linecap="round"/><path d="${d}" stroke="${TEE2}" stroke-width="18" fill="none" stroke-linecap="round" opacity=".35"/><circle cx="${px}" cy="${py}" r="9.5" fill="${SK}"/>`;
+  const t=Date.now()/1000, dancing=pose==='dance';
+  const M={idle:{eye:1,mouth:12},happy:{eye:1,mouth:20},stern:{eye:.85,mouth:-1},
+           wink:{eye:1,mouth:18,wink:1},sleepy:{eye:.3,mouth:6}}[mood]||{eye:1,mouth:12};
+  const open = pose==='sleep' ? 4 : (talking ? 7+Math.abs(Math.sin(t*8.5))*15 : M.mouth);
+  const eyeS = pose==='sleep' ? .12 : M.eye;
+  const sway = dancing ? Math.sin(t*3.6)*8 : Math.sin(t*0.8)*1.6;
+  const bob  = dancing ? Math.abs(Math.sin(t*7.2))*8 : Math.sin(t*1.15)*1.6;
+  const wv=Math.sin(t*7)*26, dz=Math.sin(t*4.8)*20;
+  const Y2='#F2A900';
+  const dy = pose==='sit' ? 14 : 0, legs = pose!=='sit';
+  const hand=(x,y)=>`<circle cx="${x}" cy="${y}" r="7" fill="#FFD34D" stroke="${Y2}" stroke-width="2.5"/>`;
+  const A=d=>`<path d="${d}" stroke="${Y2}" stroke-width="7" fill="none" stroke-linecap="round"/>`;
+  const defL=A('M46,148 Q30,166 34,184')+hand(34,186), defR=A('M154,148 Q170,166 166,184')+hand(166,186);
   const arms={
-    wave:  `<g transform="rotate(${wv},64,216)">${arm('M64,216 q-12,-30 -4,-46',60,168)}</g>`,
-    stretch:`${arm('M62,216 q-14,-46 -2,-64',60,150)}${arm('M138,216 q14,-46 2,-64',140,150)}`,
-    cheer: `${arm('M62,216 q-16,-30 -2,-48',60,168)}${arm('M138,216 q16,-30 2,-48',140,168)}`,
-    think: `${arm('M140,220 q18,-26 -12,-40',128,180)}`,
-    point: `${arm('M138,216 q28,-8 34,-30',172,186)}`,
-    dance: `${arm(`M62,216 q-18,-26 ${-6+dz*0.3},-44`,`${56+dz*0.3}`,172)}${arm(`M138,216 q18,-26 ${6-dz*0.3},-44`,`${144-dz*0.3}`,172)}`,
-    sit:'',stand:'',sleep:''}[pose]||'';
-  const legs=(pose==='stand'||pose==='dance'||pose==='cheer'||pose==='stretch')
-    ? `<path d="M84,248 v20 M116,248 v20" stroke="#3b4557" stroke-width="18" stroke-linecap="round"/>`:'';
-  const lid=M.lid;
-  return `<svg viewBox="0 0 200 270" style="width:100%;height:100%;display:block;">
+    wave:`<g transform="rotate(${wv*0.6},46,148)">${A('M46,148 Q24,118 30,90')}${hand(30,88)}</g>`+defR,
+    cheer:A('M46,148 Q28,114 36,86')+hand(36,84)+A('M154,148 Q172,114 164,86')+hand(164,84),
+    stretch:A('M46,148 Q40,106 44,72')+hand(44,70)+A('M154,148 Q160,106 156,72')+hand(156,70),
+    think:defL+A('M154,148 Q152,184 122,180')+hand(120,178),
+    point:defL+A('M154,148 Q178,144 190,134')+hand(190,134),
+    dance:A(`M46,148 Q${26+dz*0.3},124 ${34+dz*0.4},98`)+hand(34+dz*0.4,96)+A(`M154,148 Q${174-dz*0.3},124 ${166-dz*0.4},98`)+hand(166-dz*0.4,96),
+  }[pose]||(defL+defR);
+  let mouth;
+  if(open>=5) mouth=`<path d="M76,166 Q100,172 124,166 Q120,${166+open} 100,${168+open} Q80,${166+open} 76,166 Z" fill="#5a2d16"/>
+      <ellipse cx="100" cy="${166+open*0.72}" rx="${9+open*0.28}" ry="${Math.max(2.5,open*0.3)}" fill="#ff6f6f"/>`;
+  else if(open<0) mouth=`<path d="M86,170 L114,170" stroke="#5a2d16" stroke-width="5" stroke-linecap="round"/>`;
+  else mouth=`<path d="M82,166 Q100,180 118,166" stroke="#5a2d16" stroke-width="5.5" fill="none" stroke-linecap="round"/>`;
+  const brows = mood==='stern' ? `<path d="M66,132 L90,138 M134,132 L110,138" stroke="#5a2d16" stroke-width="4.5" stroke-linecap="round"/>` : '';
+  const rEye = M.wink ? `<path d="M112,146 q10,-7 20,0" stroke="#1c1c1c" stroke-width="4.5" fill="none" stroke-linecap="round"/>`
+                      : `<ellipse cx="122" cy="146" rx="6.5" ry="${6.5*eyeS+0.8}" fill="#1c1c1c"/>`;
+  const blush=(mood==='happy'||M.wink)?`<ellipse cx="62" cy="158" rx="8" ry="4.5" fill="#F79A3E" opacity=".55"/><ellipse cx="138" cy="158" rx="8" ry="4.5" fill="#F79A3E" opacity=".55"/>`:'';
+  return `<svg viewBox="0 0 200 240" style="width:100%;height:100%;display:block;">
     <defs>
-      <linearGradient id="bgv" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#dfe6ea"/><stop offset="1" stop-color="#9fb0bd"/></linearGradient>
-      <linearGradient id="hg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${H3}"/><stop offset=".45" stop-color="${H1}"/><stop offset="1" stop-color="${H2}"/></linearGradient>
-      <linearGradient id="fg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf0e6"/><stop offset="1" stop-color="${SK}"/></linearGradient>
-      <radialGradient id="vg" cx=".5" cy=".42"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+      <linearGradient id="bgv" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#16204a"/><stop offset="1" stop-color="#3a1b4d"/></linearGradient>
+      <radialGradient id="gl"><stop offset="0" stop-color="#FFC93C" stop-opacity=".32"/><stop offset="1" stop-color="#FFC93C" stop-opacity="0"/></radialGradient>
+      <linearGradient id="mg" x1="0" y1="0" x2=".4" y2="1"><stop offset="0" stop-color="#FFD34D"/><stop offset="1" stop-color="#F5A800"/></linearGradient>
     </defs>
-    <rect width="200" height="270" rx="14" fill="url(#bgv)"/>
-    <ellipse cx="100" cy="118" rx="96" ry="112" fill="url(#vg)"/>
-    <g transform="translate(${sway+100*(1-P.sc)},${-bob+P.dy+135*(1-P.sc)}) scale(${P.sc})">
-      ${legs}${arms}
-      <!-- 티셔츠 -->
-      <path d="M42,270 q6,-48 32,-60 q26,-10 52,0 q26,12 32,60 z" fill="${TEE}"/>
-      <path d="M42,270 q6,-48 32,-60 q6,26 -2,60 z" fill="${TEE2}" opacity=".5"/>
-      <path d="M74,210 q26,18 52,0 l5,9 q-30,20 -62,0 z" fill="#d9d3c7"/>
-      <path d="M74,210 q26,18 52,0" stroke="${LINE}" stroke-width="2" fill="none" opacity=".55"/>
-      <!-- 목 -->
-      <path d="M87,172 h26 v30 q-13,9 -26,0 z" fill="${SK}"/>
-      <path d="M87,172 h26 v14 q-13,10 -26,2 z" fill="${SK2}" opacity=".65"/>
-      <path d="M106,178 q3,14 -1,22" stroke="${SK2}" stroke-width="2" fill="none" opacity=".8"/>
-      <g transform="rotate(${tilt},100,118)">
-        <!-- 얼굴: 갸름한 턱 -->
-        <path d="M68,106 q0,-50 32,-50 q32,0 32,50 q0,28 -8,44 q-10,20 -24,20 q-14,0 -24,-20 q-8,-16 -8,-44 z" fill="url(#fg)"/>
-        <path d="M65,120 q2,30 12,46 q-14,-16 -12,-46 z" fill="${SK2}" opacity=".35"/>
-        <ellipse cx="65" cy="120" rx="5.5" ry="9" fill="${SK}"/><ellipse cx="135" cy="120" rx="5.5" ry="9" fill="${SK}"/>
-        <!-- 볼 -->
-        <ellipse cx="76" cy="150" rx="10" ry="${5*M.blush*2}" fill="#e78e93" opacity=".38"/>
-        <ellipse cx="124" cy="150" rx="10" ry="${5*M.blush*2}" fill="#e78e93" opacity=".38"/>
-        <!-- 눈: 반쯤 감긴 날카로운 눈 -->
-        <g>
-          <path d="M71,133 q13,-7 26,-1 q-13,${9*(1-lid)+2} -26,1 z" fill="#fff"/>
-          <ellipse cx="84" cy="${133+2*lid}" rx="6" ry="${7*(1-lid)+1.6}" fill="#241c1f"/>
-          <circle cx="86.5" cy="${131+2*lid}" r="1.7" fill="#fff" opacity=".95"/>
-          <path d="M71,133 q13,-8 26,-2" stroke="${LINE}" stroke-width="${3.6+lid*1.6}" fill="none" stroke-linecap="round"/>
-          ${mood==='wink'
-            ? `<path d="M105,134 q13,-4 25,1" stroke="${LINE}" stroke-width="3.4" fill="none" stroke-linecap="round"/>`
-            : `<path d="M103,132 q13,-6 26,1 q-13,${9*(1-lid)+2} -26,-1 z" fill="#fff"/>
-               <ellipse cx="116" cy="${133+2*lid}" rx="6" ry="${7*(1-lid)+1.6}" fill="#241c1f"/>
-               <circle cx="118.5" cy="${131+2*lid}" r="1.7" fill="#fff" opacity=".95"/>
-               <path d="M103,132 q13,-7 26,0" stroke="${LINE}" stroke-width="${3.6+lid*1.6}" fill="none" stroke-linecap="round"/>`}
-        </g>
-        <!-- 눈썹: 얇고 곧게 -->
-        <path d="M72,${119+M.brow} q13,${-2+M.tilt} 25,-1" stroke="#33282c" stroke-width="2.4" fill="none" stroke-linecap="round" opacity=".85"/>
-        <path d="M103,${118+M.brow} q13,${-1-M.tilt} 25,2" stroke="#33282c" stroke-width="2.4" fill="none" stroke-linecap="round" opacity=".85"/>
-        <!-- 코 -->
-        <path d="M101,142 q4,10 -4,13" stroke="${SK2}" stroke-width="2.2" fill="none" stroke-linecap="round"/>
-        <!-- 입 -->
-        ${open>0.5
-          ? `<path d="M${100-8-open*0.3},167 q${8+open*0.3},${open*1.4} ${16+open*0.6},0 q-${8+open*0.3},${open*0.6} -${16+open*0.6},0 z" fill="#8d4a52"/>`
-          : `<path d="${M.mouth}" stroke="#a75f66" stroke-width="2.6" fill="none" stroke-linecap="round"/>`}
-        <!-- 머리: 이마 덮는 층진 앞머리 + 옆머리 -->
-        <path d="M64,120 C60,58 78,38 100,38 C122,38 140,58 136,120 C132,96 126,80 118,70 C108,86 92,86 82,70 C74,80 68,98 64,120 Z" fill="url(#hg)"/>
-        <path d="M64,124 C58,58 76,38 100,38 C124,38 142,58 136,124
-                 C134,104 130,86 124,72 C122,96 116,112 108,124
-                 C110,100 110,80 108,60 C104,84 98,104 92,120
-                 C92,96 90,76 88,58 C78,74 68,98 64,124 Z" fill="url(#hg)"/>
-        <path d="M88,58 C90,78 92,98 92,120 C98,104 104,84 108,60 C106,88 104,108 100,124 C92,112 86,86 88,58 Z" fill="${H2}" opacity=".5"/>
-        <path d="M124,72 C130,88 134,106 136,124 C134,102 130,86 126,76 Z" fill="${H2}" opacity=".45"/>
-        <path d="M64,112 q-6,40 2,62 q4,-32 6,-50 z" fill="url(#hg)"/>
-        <path d="M136,112 q6,40 -2,62 q-4,-32 -6,-50 z" fill="url(#hg)"/>
-        <path d="M66,120 q-2,26 4,42 q0,-24 2,-38 z" fill="${H3}" opacity=".45"/>
-        <path d="M80,46 q22,-11 42,-1 q-22,-3 -42,5 z" fill="#5b6d80" opacity=".5"/>
-      </g>
-      ${dancing?`<g stroke="#ffe066" stroke-width="2.8" stroke-linecap="round" opacity=".9">
-        <path d="M24,70 v-11 M18.5,64.5 h11"/><path d="M176,86 v-10 M171,81 h10"/></g>`:''}
+    <rect width="200" height="240" rx="14" fill="url(#bgv)"/>
+    <circle cx="100" cy="120" r="92" fill="url(#gl)"/>
+    <g transform="translate(${sway},${-bob+dy})">
+      <ellipse cx="100" cy="${228-dy}" rx="${legs?50:56}" ry="7" fill="#000" opacity=".18"/>
+      ${legs?`<path d="M86,188 v24 M114,188 v24" stroke="${Y2}" stroke-width="8" stroke-linecap="round"/>
+      <ellipse cx="76" cy="219" rx="13" ry="6.5" fill="${Y2}"/><ellipse cx="124" cy="219" rx="13" ry="6.5" fill="${Y2}"/>`:''}
+      ${arms}
+      <path d="M100,68 A62,62 0 1 0 162,130 L162,68 Z" fill="url(#mg)"/>
+      <path d="M66,92 L92,120 L144,62" stroke="#fff" stroke-width="16" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      ${brows}
+      <ellipse cx="78" cy="146" rx="6.5" ry="${6.5*eyeS+0.8}" fill="#1c1c1c"/>
+      ${rEye}
+      ${blush}
+      ${mouth}
+      ${pose==='sleep'?`<text x="146" y="70" font-size="20">💤</text>`:''}
+      ${dancing?`<g stroke="#ffe066" stroke-width="2.8" stroke-linecap="round" opacity=".9"><path d="M22,64 v-11 M16.5,58.5 h11"/><path d="M178,84 v-10 M173,79 h10"/></g>`:''}
     </g></svg>`;
 }
 // ===== 이미지 아바타 + 캔버스 립싱크(턱 워핑) =====
@@ -1563,7 +1519,7 @@ function avatarFace(id, w, hgt){
 }
 // ========== 🔮 수호령의 눈: 화상 스터디 버디 ==========
 const EYE={cam:null, screen:null, timer:null, tick:null, rec:null, speaking:false, anim:null, keep:null, recOn:false};
-function eyeInit(){ if(!S.eye) S.eye={on:false,startAt:0,focusedSec:0,distract:0,checks:0,status:'',msg:'',log:[],useScreen:false,interval:60,busy:false,listening:false,muteTTS:false,input:'',pose:'sit',always:true,rate:1.0,pitch:0.85,voiceURI:''}; return S.eye; }
+function eyeInit(){ if(!S.eye) S.eye={on:false,startAt:0,focusedSec:0,distract:0,checks:0,status:'',msg:'',log:[],useScreen:false,interval:60,busy:false,listening:false,muteTTS:false,input:'',pose:'stand',always:true,rate:1.0,pitch:0.85,voiceURI:''}; return S.eye; }
 function koVoices(){ try{ return speechSynthesis.getVoices().filter(v=>/ko/i.test(v.lang)); }catch(e){ return []; } }
 try{ if('speechSynthesis' in window) speechSynthesis.onvoiceschanged=()=>{ if(S.tab==='eye') render(); }; }catch(e){}
 // 한국어 남성 보이스 우선 (시스템 내장 음성 · 실존 인물 복제 아님). 자연스러운 신경망 음성을 먼저 고름

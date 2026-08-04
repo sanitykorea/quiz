@@ -398,8 +398,91 @@ def _qbox(pg, starts, qnum, pbreaks=None):
             cand.append(y)
     return fitz.Rect(x0, y0, x1, min(cand) if cand else H - 36)
 
+def _spill_bound(doc, pno, col, W):
+    """다음 페이지 같은 칼럼에서 첫 경계(문항/지문헤더) y좌표. 없으면 None(페이지 끝까지 이어짐)."""
+    if pno + 1 >= len(doc):
+        return None
+    pg2 = doc[pno + 1]
+    best = None
+    for b in pg2.get_text("dict")["blocks"]:
+        for l in b.get("lines", []):
+            txt = "".join(s["text"] for s in l["spans"]).strip()
+            if not txt:
+                continue
+            c2 = 0 if l["bbox"][0] < W / 2 else 1
+            if c2 != col:
+                continue
+            if _QH.match(txt) or _PH.match(txt):
+                y = l["bbox"][1]
+                if best is None or y < best:
+                    best = y
+    return best
+
+def _qbox2(doc, starts, pbreaks, qnum):
+    """문항 크롭 영역. 칼럼 끝(다음 경계 없음)이면 다음 페이지 상단 이어지는 부분도 함께 반환
+    (2단 레이아웃에서 문항 내용이 페이지 경계를 넘어가면 그림/표가 잘려나가는 문제 방지)."""
+    import fitz
+    pno, col, y0 = starts[qnum]
+    pg = doc[pno]; W, H = pg.rect.width, pg.rect.height
+    x0, x1 = (20, W / 2 + 4) if col == 0 else (W / 2 - 4, W - 18)
+    cand = [starts[m][2] for m in starts if starts[m][0] == pno and starts[m][1] == col and starts[m][2] > y0]
+    for p, c, y in (pbreaks or []):
+        if p == pno and c == col and y > y0:
+            cand.append(y)
+    if cand:
+        return fitz.Rect(x0, y0, x1, min(cand)), None, None
+    rect1 = fitz.Rect(x0, y0, x1, H - 36)
+    has_choice = False   # 현재 페이지에 이미 선지(①~⑤)가 나왔으면 문항이 완결된 것 → 스필 볼 필요 없음
+    for b in pg.get_text("dict")["blocks"]:
+        for l in b.get("lines", []):
+            txt = "".join(s["text"] for s in l["spans"])
+            c2 = 0 if l["bbox"][0] < W / 2 else 1
+            if c2 == col and y0 < l["bbox"][1] < H - 36 and re.search(r'[①②③④⑤]', txt):
+                has_choice = True; break
+        if has_choice:
+            break
+    if has_choice or pno + 1 >= len(doc):
+        return rect1, None, None
+    pg2 = doc[pno + 1]
+    foot2 = pg2.rect.height - 62               # 다음 페이지도 푸터(로고) 영역은 제외
+    y_end2 = _spill_bound(doc, pno, col, W)
+    if y_end2 is None or y_end2 > foot2:
+        y_end2 = foot2
+    if y_end2 <= 60:
+        return rect1, None, None
+    has_text = False                            # 실제 이어지는 텍스트가 있을 때만 스필로 취급(오탐 방지)
+    for b in pg2.get_text("dict")["blocks"]:
+        for l in b.get("lines", []):
+            txt = "".join(s["text"] for s in l["spans"]).strip()
+            if not txt:
+                continue
+            c2 = 0 if l["bbox"][0] < W / 2 else 1
+            if c2 == col and 55 < l["bbox"][1] < y_end2:
+                has_text = True; break
+        if has_text:
+            break
+    if not has_text:
+        return rect1, None, None
+    return rect1, fitz.Rect(x0, 55, x1, y_end2), pno + 1
+
+def _scan_fig(pg, rect):
+    foot = pg.rect.height - 62      # 하단 푸터(평가원 로고·교시 표기) 제외
+    head = 55                       # 상단 헤더 제외
+    def ok(r):
+        return r.intersects(rect) and r.y0 > head and r.y1 < foot
+    for b in pg.get_text("dict")["blocks"]:
+        if b.get("type") == 1:
+            r = fitz.Rect(b["bbox"])
+            if r.width > 28 and r.height > 22 and ok(r):
+                return True
+    for d in pg.get_drawings():
+        r = d["rect"]
+        if r.width > 60 and r.height > 40 and ok(r):
+            return True
+    return False
+
 def qfigs(path):
-    """그림(래스터 이미지/큰 벡터 드로잉)이 포함된 문항 번호 집합."""
+    """그림(래스터 이미지/큰 벡터 드로잉)이 포함된 문항 번호 집합. 페이지 경계를 넘어가는 내용도 검사."""
     if path in _qfigs_cache:
         return _qfigs_cache[path]
     import fitz
@@ -407,22 +490,10 @@ def qfigs(path):
     doc = fitz.open(path)
     figs = set()
     for num in starts:
-        pg = doc[starts[num][0]]; rect = _qbox(pg, starts, num, pbreaks)
-        foot = pg.rect.height - 62      # 하단 푸터(평가원 로고·교시 표기) 제외
-        head = 55                       # 상단 헤더 제외
-        def ok(r):
-            return r.intersects(rect) and r.y0 > head and r.y1 < foot
-        found = False
-        for b in pg.get_text("dict")["blocks"]:
-            if b.get("type") == 1:
-                r = fitz.Rect(b["bbox"])
-                if r.width > 28 and r.height > 22 and ok(r):
-                    found = True; break
-        if not found:
-            for d in pg.get_drawings():
-                r = d["rect"]
-                if r.width > 60 and r.height > 40 and ok(r):
-                    found = True; break
+        rect1, rect2, pno2 = _qbox2(doc, starts, pbreaks, num)
+        found = _scan_fig(doc[starts[num][0]], rect1)
+        if not found and rect2 is not None:
+            found = _scan_fig(doc[pno2], rect2)
         if found:
             figs.add(num)
     doc.close()
@@ -463,6 +534,17 @@ def materialize_pdfs(c):
                 pass
 
 
+def _stitch_vert(pix1, pix2, gap=10):
+    """두 픽스맵을 세로로 이어붙인 하나의 픽스맵으로 합성(페이지 경계 넘어가는 문항용)."""
+    import fitz
+    W = max(pix1.width, pix2.width); H = pix1.height + gap + pix2.height
+    d = fitz.open(); page = d.new_page(width=W, height=H)
+    page.insert_image(fitz.Rect(0, 0, pix1.width, pix1.height), pixmap=pix1)
+    page.insert_image(fitz.Rect(0, pix1.height + gap, pix2.width, pix1.height + gap + pix2.height), pixmap=pix2)
+    out = page.get_pixmap()
+    d.close()
+    return out
+
 def render_qimage(row, qnum):
     path = pdf_path(row)
     if not os.path.exists(path):
@@ -476,10 +558,16 @@ def render_qimage(row, qnum):
         return None
     import fitz
     doc = fitz.open(path)
-    pg = doc[starts[qnum][0]]
-    rect = _qbox(pg, starts, qnum, _pbreaks_cache.get(path))
-    rect = fitz.Rect(rect.x0, rect.y0 - 6, rect.x1, rect.y1 - 6)
-    pg.get_pixmap(matrix=fitz.Matrix(2.2, 2.2), clip=rect).save(out)   # 2.6→2.2: 렌더·다운로드 속도↑, 모바일에도 충분
+    pbreaks = _pbreaks_cache.get(path)
+    rect1, rect2, pno2 = _qbox2(doc, starts, pbreaks, qnum)
+    rect1 = fitz.Rect(rect1.x0, rect1.y0 - 6, rect1.x1, rect1.y1 - 6)
+    M = fitz.Matrix(2.2, 2.2)   # 2.6→2.2: 렌더·다운로드 속도↑, 모바일에도 충분
+    pix1 = doc[starts[qnum][0]].get_pixmap(matrix=M, clip=rect1)
+    if rect2 is not None:       # 문항 내용이 다음 페이지로 이어짐 → 이어붙여서 그림·표가 잘리지 않게
+        pix2 = doc[pno2].get_pixmap(matrix=M, clip=rect2)
+        _stitch_vert(pix1, pix2).save(out)
+    else:
+        pix1.save(out)
     doc.close()
     return out
 

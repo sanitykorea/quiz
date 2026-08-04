@@ -1523,8 +1523,6 @@ function eyePose(){
   if(e.status==='딴짓') return 'point';
   return 'sit';
 }
-function setPose(p,ms){ const e=eyeInit(); e.pose=p; avatarLoop(); clearTimeout(EYE.poseT);
-  EYE.poseT=setTimeout(()=>{ e.pose=null; e.dancing=false; render(); }, ms||8000); render(); }
 function avatarMood(){
   const e=eyeInit();
   if(e.dancing) return 'happy';

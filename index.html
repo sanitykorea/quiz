@@ -1381,7 +1381,25 @@ function quiz(){
       <div style="font-size:13px;color:var(--text2);">${h(subj)} · 문항당 ${pts}점</div>
       <div style="font-size:30px;font-weight:900;color:var(--accent-b);margin:2px 0;">${got*pts}<span style="font-size:15px;">점</span> <span style="font-size:15px;color:var(--text2);">/ ${its.length*pts}</span></div>
       <div style="font-size:14px;color:var(--text2);">맞음 ${got} · 틀림 ${marked-got} · 총 ${its.length}문항</div></div>` : '';
-  return `<div id="quizCard">
+  // 즉시 채점 모드에서 회차를 다 풀면 결과 요약 + 다음 행동 제시 (기존엔 아무 일도 안 일어났음)
+  const allDone = !batch && marked>=its.length && its.length>0;
+  const wrongNums = its.filter(x=>S.quizMarks[x.qnum] && !S.quizMarks[x.qnum].correct).map(x=>x.qnum);
+  const perfect = allDone && !wrongNums.length;
+  const curId = S.qCurrent && S.qCurrent.id;
+  const nextRound = S.qList.find(x=>!x.solved && x.id!==curId && x.subject===subj)
+                 || S.qList.find(x=>!x.solved && x.id!==curId);
+  const doneCard = allDone ? `<div style="margin-bottom:16px;border-radius:16px;padding:20px;text-align:center;border:1px solid ${perfect?'rgba(46,230,166,.6)':'var(--gold-d)'};background:linear-gradient(180deg,${perfect?'rgba(20,117,92,.2)':'rgba(255,224,102,.1)'},var(--panel2));animation:popIn .4s cubic-bezier(.34,1.56,.64,1);">
+      <div style="font-size:40px;line-height:1;margin-bottom:6px;">${perfect?'🏆':'📊'}</div>
+      <div style="font-size:19px;font-weight:900;color:${perfect?'var(--accent-b)':'var(--gold)'};">${perfect?'만점! 이 회차 완전 정복 ⚔️':'회차 완주!'}</div>
+      <div style="font-size:30px;font-weight:900;color:${perfect?'var(--accent-b)':'var(--text)'};margin:8px 0 2px;">${got*pts}<span style="font-size:15px;">점</span> <span style="font-size:15px;color:var(--text2);">/ ${its.length*pts}</span></div>
+      <div style="font-size:13.5px;color:var(--text2);">맞음 ${got} · 틀림 ${wrongNums.length} · ${h(subj)} 문항당 ${pts}점</div>
+      ${wrongNums.length?`<div style="margin-top:12px;font-size:12.5px;color:var(--text2);">틀린 문항 — 눌러서 바로 확인
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:7px;">${wrongNums.map(n=>`<button data-act="qjump" data-arg="${n}" style="padding:5px 11px;border-radius:8px;border:1px solid rgba(255,84,104,.5);background:rgba(255,84,104,.12);color:var(--danger-b);font-size:12.5px;font-weight:700;cursor:pointer;">${n}번</button>`).join('')}</div></div>`:''}
+      <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap;margin-top:15px;">
+        ${wrongNums.length?`<button data-act="goreviewwrong" style="padding:10px 18px;border-radius:11px;border:1px solid var(--danger-b);background:rgba(255,84,104,.14);color:var(--danger-b);font-weight:800;font-size:13.5px;cursor:pointer;">📕 오답노트에서 복습</button>`:''}
+        ${nextRound?`<button data-act="gosolve" data-arg="${nextRound.id}" style="padding:10px 18px;border-radius:11px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:13.5px;cursor:pointer;">▶ 다음 회차 (${h(nextRound.subject)} ${h(nextRound.year)})</button>`:''}
+      </div></div>` : '';
+  return `<div id="quizCard">${doneCard}
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
       <div style="display:flex;align-items:center;gap:8px;"><span style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--gold);">${it.qnum}번 · ${idx+1}/${its.length}</span>${S.streak>=2?`<span style="font-family:'Press Start 2P',monospace;font-size:10px;color:#fff;background:linear-gradient(180deg,#ff8a3d,#e0384b);padding:4px 8px;border-radius:8px;box-shadow:0 0 12px rgba(255,120,60,.6);animation:popIn .3s ease;">🔥 ${S.streak} 연속</span>`:''}</div>
       <div style="font-size:12.5px;color:var(--text2);">맞음 <b style="color:var(--accent-b);">${got}</b> / 채점 ${marked} · 총 ${its.length}</div>
@@ -2940,6 +2958,8 @@ const ACTS = {
   banksearch:()=>{},
   sheet:()=>loadSheet(), sheetclose:()=>{ S.sheet=null; render(); },
   sheetprint:()=>window.print(),
+  qjump:n=>{ const i=S.quizItems.findIndex(x=>x.qnum===+n); if(i>=0){ S.quizIdx=i; persist(); render(); scrollTop(); } },
+  goreviewwrong:async()=>{ S.tab='wrong'; await loadWrong(); await loadDiag(false); render(); scrollTo({top:0}); },
   flash:()=>flashStart(), flashreveal:()=>flashReveal(),
   flashyes:()=>flashMark(true), flashno:()=>flashMark(false),
   flashretry:()=>flashRetryUnsure(), flashclose:()=>{ S.flash=null; render(); },

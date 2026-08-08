@@ -1441,6 +1441,35 @@ class H(http.server.BaseHTTPRequestHandler):
                            "total_attempts": len(rows), "total_correct": sum(r["correct"] for r in rows),
                            "recovered": recovered, "ever_wrong": ever_wrong})
 
+    def _result_letter(self, b):
+        """실전 채점 결과를 받아 그 자리에서 수호령이 반응 편지를 씀(AI). 실패 시 프론트가 고정 편지로 대체."""
+        avg = b.get("avg")
+        if not isinstance(avg, (int, float)):
+            return self._json({"error": "bad_input"}, 400)
+        passed = bool(b.get("pass"))
+        detail = b.get("detail") or {}
+        wrong_lines = [f"{subj} {d.get('wrong')}문항 오답(총 {d.get('total')}문항 중)"
+                       for subj, d in detail.items() if isinstance(d, dict) and d.get("wrong")]
+        prompt = (
+            "너는 RPG '동반 수호령'이야. 검정고시(고졸) 시험을 막 마치고 실전 채점을 끝낸 수험생 '수영'에게 "
+            "결과를 보자마자 바로 편지를 써주는 상황이야. 반말로, 따뜻하지만 솔직하게. 판타지 톤은 아주 가볍게만 섞어.\n"
+            f"오늘 결과: 평균 {avg}점(영어 100점 포함 7과목 평균), 합격선(60점) {'통과' if passed else '미달'}.\n"
+            + ("과목별 오답: " + ", ".join(wrong_lines) if wrong_lines else "전 과목 만점이야!") + "\n"
+            "수영의 배경: 재응시생. 목표는 평균 98점 이상(성공회대 사회융합학부 교과 지원 가능선), "
+            "마지노선은 94점(열린인재 학종 지원 가능선). 원래 과학·도덕·수학이 취약 과목이었어.\n"
+            "이 결과를 있는 그대로 받아들이게 하되, 오늘 시험장에서 끝까지 버텨낸 것 자체를 먼저 인정해주고, "
+            "이 점수가 앞으로(교과/열린인재 지원)에 어떤 의미인지 솔직하지만 다정하게 말해줘. "
+            "6~10문장 정도, 편지 형식으로('수영에게'로 시작해서 줄바꿈, '— 수호령'으로 끝)."
+        )
+        try:
+            txt = ai_complete("당신은 검정고시 학생의 동반자 '수호령'입니다. 반말로 진심을 담아 편지를 씁니다.",
+                              [{"role": "user", "content": prompt}], 900)
+        except Exception:
+            txt = None
+        if txt:
+            return self._json({"letter": txt.strip(), "ai": True})
+        return self._json({"letter": None, "ai": False})
+
     def _full_report(self):
         """모든 로그(정답률·반복오답·오답원인·실전성적 추이·학습시간·화상스터디 집중기록)를 종합한 AI 리포트."""
         c = db()
@@ -1650,6 +1679,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 return
             c = db(); c.execute("INSERT OR REPLACE INTO app_state(id,json) VALUES(1,?)", (json.dumps(b.get("state", {}), ensure_ascii=False),)); c.commit(); c.close()
             return self._json({"ok": True})
+        if p == "/api/resultletter":
+            if self._guard():
+                return
+            return self._result_letter(b)
         if p == "/api/ai":
             if self._guard():
                 return

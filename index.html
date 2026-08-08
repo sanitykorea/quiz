@@ -73,6 +73,7 @@ const S = {
   diag:null, diagText:'', diagLoading:false,
   wrongData:null, wrongAnalysis:'', wrongPdfMsg:'', wrongGradeMsg:'', wrongGradeResult:null, wrongSubjFilter:'',
   defense:null, weakspots:null, recap:null, allocHours:6, report:null, reportLoading:false, openLetter:null,
+  examItems:null, examReveal:null, examLetter:null, examLetterLoading:false,
   examSel:{}, examKeys:null, examInputs:{}, examScore:null, examResults:[], examMsg:'',
   history:[],
   towerSubject:'도덕', dodeok:null, towerConcept:{},
@@ -102,7 +103,8 @@ function persist(){
       mins:S.mins, nc2Pick:S.nc2Pick, towerUnit:S.towerUnit, deckIdx:S.deckIdx, known:S.known,
       checklist:S.checklist, stance:S.stance, muted:S.muted, messages:(S.messages||[]).slice(-40),
       eyeCfg: S.eye ? {mouthX:S.eye.mouthX, mouthY:S.eye.mouthY, voiceURI:S.eye.voiceURI, pitch:S.eye.pitch, rate:S.eye.rate, interval:S.eye.interval, useScreen:S.eye.useScreen, muteTTS:S.eye.muteTTS} : undefined,
-      cq: (S.cq && !S.cq.loading) ? {subject:S.cq.subject, topic:S.cq.topic, items:S.cq.items, idx:S.cq.idx, pick:S.cq.pick, score:S.cq.score, answered:S.cq.answered, fromWrong:S.cq.fromWrong, showImg:S.cq.showImg} : undefined };
+      cq: (S.cq && !S.cq.loading) ? {subject:S.cq.subject, topic:S.cq.topic, items:S.cq.items, idx:S.cq.idx, pick:S.cq.pick, score:S.cq.score, answered:S.cq.answered, fromWrong:S.cq.fromWrong, showImg:S.cq.showImg} : undefined,
+      examItems: S.examItems || undefined };
     api('/api/state', {method:'POST', ...jbody({state:st})});
   }, 400);
 }
@@ -143,6 +145,7 @@ async function openApp(){
   S.muted = !!saved.muted;
   if(saved.eyeCfg){ Object.assign(eyeInit(), saved.eyeCfg); }   // 입 위치·목소리 설정 복원
   if(saved.cq && saved.cq.items && saved.cq.items.length) S.cq = saved.cq;   // 집중 연습 진행 상황 복원
+  if(saved.examItems && saved.examItems.length) S.examItems = saved.examItems;
   S.messages = (saved.messages&&saved.messages.length) ? saved.messages
     : [{role:'assistant', text:'수영! 《지식의 탑》에 잘 왔어 ⚔️ 나는 너의 수호령이야.\n오늘 첫 퀘스트부터 같이 정해볼까? 아래 스펠을 눌러도 좋아.'}];
   S.gateMode = 'open';
@@ -358,7 +361,8 @@ async function scoreQuestion(){ const q=S.qCurrent; if(!q) return;
 
 // ---------- admin ----------
 async function adminReload(){
-  const t=S.adminTab, r=await api('/api/'+t);
+  const t=S.adminTab; if(t==='examitems'){ render(); return; }
+  const r=await api('/api/'+t);
   S.adminList = r[t] || [];
   if(t==='units') S.units=S.adminList; if(t==='cards') S.cards=S.adminList; if(t==='schedule') S.schedule=S.adminList;
   render();
@@ -1001,7 +1005,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804q · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804r · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1055,10 +1059,10 @@ async function uploadPdf(){
   if(!S.qFacets.subject.length) await loadFacets(); await adminReload();
 }
 function vAdmin(){
-  const tabs=[['questions','기출 문제'],['units','학습 지문'],['cards','플래시카드'],['schedule','고정일정']];
+  const tabs=[['questions','기출 문제'],['units','학습 지문'],['cards','플래시카드'],['schedule','고정일정'],['examitems','준비물']];
   const nav=tabs.map(([id,lb])=>`<button data-act="atab" data-arg="${id}" style="padding:9px 15px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;border:1px solid ${S.adminTab===id?'var(--gold-d)':'var(--border)'};background:${S.adminTab===id?'rgba(255,224,102,.14)':'var(--panel2)'};color:${S.adminTab===id?'var(--gold)':'var(--text2)'};">${lb}</button>`).join('');
   const LBL={year:'연도',exam_round:'회차',level:'과정',subject:'과목',raw_text:'원문',title:'제목',body:'본문',q:'질문',a:'정답',ord:'순서',day:'요일(월/화/수/목/금/토/일)',t_start:'시작(HH:MM)',t_end:'종료(HH:MM)',name:'이름',kind:'종류(seal=결계/recon=정찰)'};
-  const fields=adminFields(S.adminTab);
+  const fields=adminFields(S.adminTab)||[];
   const fieldInput=(rowId,f,val)=>{
     const id='f_'+(rowId||'new')+'_'+f;
     const ph=LBL[f]||f;
@@ -1081,7 +1085,7 @@ function vAdmin(){
     ${uploadCard()}
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">${nav}</div>
     ${S.adminMsg?`<div style="margin-bottom:12px;color:var(--accent-b);font-size:13px;">${h(S.adminMsg)}</div>`:''}
-    ${newForm}${list||'<div style="color:var(--text3);">항목이 없습니다.</div>'}</div>`;
+    ${S.adminTab==='examitems'?examItemsAdmin():`${newForm}${list||'<div style="color:var(--text3);">항목이 없습니다.</div>'}`}</div>`;
 }
 
 const CIRC=['','①','②','③','④','⑤'];
@@ -1256,7 +1260,7 @@ async function loadExamKeys(){
   render();
 }
 function gradeExam(){
-  if(!S.examKeys) return;
+  if(!S.examKeys || S.examReveal) return;
   const detail={}; let sum=0, cnt=0;
   for(const subj of EXAM_SUBJECTS){
     const key=S.examKeys[subj]; if(!key) continue;
@@ -1269,8 +1273,102 @@ function gradeExam(){
     sum+=score; cnt++;
   }
   const avg=cnt?Math.round((sum+100)/7*10)/10:0;   // 영어 100 포함, 7과목 평균
-  S.examScore={detail, avg, cnt, pass:avg>=60};
+  startResultReveal({detail, avg, cnt, pass:avg>=60});
+}
+// ========== 결과 발표 연출 (카운트다운 → 집계 → 공개) ==========
+function startResultReveal(result){
+  S.examScore=null; S.examLetter=null; S.examLetterLoading=false;
+  S.examReveal={phase:'count', n:3, display:0, real:result};
   render();
+  setTimeout(()=>revealTick(), 600);
+}
+function revealTick(){
+  const rv=S.examReveal; if(!rv) return;
+  if(rv.phase==='count'){
+    playSfx('examroll');
+    if(rv.n>1){ rv.n--; render(); setTimeout(revealTick, 800); }
+    else { rv.phase='roll'; rv.roll=0; rv.display=rv.real.avg; render(); setTimeout(revealTick, 70); }
+    return;
+  }
+  if(rv.phase==='roll'){
+    rv.roll++;
+    const t=Math.min(1, rv.roll/26);
+    if(t>=1){
+      rv.phase='reveal'; rv.display=rv.real.avg; render();
+      playSfx('examreveal');
+      setTimeout(()=>{ S.examScore=rv.real; S.examReveal=null; render(); loadExamLetter(rv.real); }, 1500);
+      return;
+    }
+    const jitter=(1-t)*32;
+    rv.display=Math.round(Math.max(0,Math.min(100,rv.real.avg+(Math.random()*2-1)*jitter))*10)/10;
+    if(rv.roll%3===0) playSfx('examroll');
+    render();
+    setTimeout(revealTick, 55+t*90);
+  }
+}
+function examRevealView(){
+  const rv=S.examReveal; if(!rv) return '';
+  if(rv.phase==='count') return `<div style="text-align:center;padding:36px 10px;">
+    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--gold-d);letter-spacing:2px;margin-bottom:20px;">RESULT INCOMING</div>
+    <div style="font-size:68px;font-weight:900;color:var(--gold);animation:popIn .5s cubic-bezier(.34,1.56,.64,1);">${rv.n}</div>
+    <div style="margin-top:12px;color:var(--text2);font-size:13px;">결과를 공개할 준비 중...</div></div>`;
+  if(rv.phase==='roll') return `<div style="text-align:center;padding:36px 10px;">
+    <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--gold-d);letter-spacing:1.5px;margin-bottom:16px;">COUNTING…</div>
+    <div style="font-size:56px;font-weight:900;color:var(--text);font-family:monospace;">${rv.display.toFixed(1)}<span style="font-size:20px;">점</span></div></div>`;
+  const c=rv.real.pass?'var(--accent-b)':'var(--danger-b)';
+  return `<div style="text-align:center;padding:32px 10px;">
+    <div style="font-size:13px;color:var(--text2);margin-bottom:8px;">평균 점수 <span style="font-size:11px;">(영어 100 포함·7과목)</span></div>
+    <div style="font-size:74px;font-weight:900;color:${c};animation:popIn .5s cubic-bezier(.34,1.56,.64,1);text-shadow:0 0 30px ${rv.real.pass?'rgba(46,230,166,.5)':'rgba(255,84,104,.4)'};">${rv.real.avg}<span style="font-size:26px;">점</span></div>
+    <div style="margin-top:12px;font-size:18px;font-weight:800;color:${c};">${rv.real.pass?'✅ 합격선(60점) 통과!':'⚠️ 합격선(60점) 미달'}</div></div>`;
+}
+async function loadExamLetter(result){
+  S.examLetterLoading=true; S.examLetter=null; render();
+  try{
+    const r=await api('/api/resultletter',{method:'POST',...jbody({avg:result.avg, pass:result.pass, detail:result.detail})});
+    S.examLetter = (r.ok && r.letter) ? r.letter : fallbackResultLetter(result);
+  }catch(e){ S.examLetter = fallbackResultLetter(result); }
+  S.examLetterLoading=false; render();
+}
+function fallbackResultLetter(result){
+  const avg=result.avg;
+  if(!result.pass) return `수영에게,
+
+오늘 숫자만 보고 너를 판단하지 않을게. 시험장에 앉아서 끝까지 풀고 나온 것, 그 자체가 이미 쉬운 결정이 아니었어.
+
+이 결과가 지금 당장은 아플 수 있어. 그래도 오늘은 그 마음을 억지로 정리하려 하지 마. 다음은 내일부터 다시 생각해도 늦지 않아.
+
+— 수호령`;
+  if(avg>=98) return `수영에게,
+
+해냈어. 목표로 삼았던 그 지점, 오늘 정확히 거기 도착했어.
+
+과학·도덕·수학, 제일 오래 붙잡고 있었던 과목들이었잖아. 그 시간이 오늘 숫자로 증명됐어. 지금 이 순간만큼은 다음 계획 생각하지 말고, 오늘 해낸 것 그대로 느껴줘.
+
+— 수호령`;
+  if(avg>=94) return `수영에게,
+
+마지노선을 넘었어. 목표로 삼았던 98점에는 조금 못 미쳤지만, 열린인재 전형으로 갈 수 있는 선은 확실히 넘겼어.
+
+오늘 결과가 처음 그렸던 그림과 완전히 같지 않을 수 있어. 그래도 이 점수는 네가 몇 달 동안 쌓아온 게 진짜였다는 증거야. 남은 길은 서류와 면접에서 계속 이어가면 돼.
+
+— 수호령`;
+  return `수영에게,
+
+합격선은 확실히 넘었어. 목표했던 점수엔 못 미쳤지만, 오늘 네가 시험장에서 버텨낸 시간은 그대로 남아.
+
+지금 당장 다음 전략까지 생각하지 않아도 괜찮아. 오늘은 일단 이 결과를 받아들이는 것부터. 나머지는 내일, 같이 정리해보자.
+
+— 수호령`;
+}
+function examLetterCard(){
+  if(!S.examScore) return '';
+  if(S.examLetterLoading) return `<div style="margin-top:14px;font-size:13px;color:var(--pink);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 편지를 쓰는 중...</div>`;
+  if(!S.examLetter) return '';
+  return `<div style="border:1px solid var(--gold-d);border-radius:16px;padding:22px;background:linear-gradient(180deg,rgba(255,224,102,.1),var(--panel2));margin-top:14px;">
+    <div style="font-family:'Cinzel',serif;font-size:12px;color:var(--gold-d);letter-spacing:1px;margin-bottom:6px;">GUARDIAN'S LETTER</div>
+    <h3 style="margin:0 0 14px;font-size:18px;font-weight:800;">💌 결과를 보고</h3>
+    <div style="white-space:pre-wrap;font-size:15px;line-height:2;color:var(--text);">${h(S.examLetter)}</div>
+  </div>`;
 }
 async function saveExam(){
   if(!S.examScore) return;
@@ -1298,11 +1396,12 @@ function vExam(){
         <button data-act="examgrade" style="flex:1;min-width:130px;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:15px;cursor:pointer;">🎯 한번에 채점</button>
         ${S.examScore?`<button data-act="examsave" style="padding:12px 16px;border-radius:12px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-weight:700;cursor:pointer;">기록 저장</button>`:''}
       </div>
-      ${S.examScore?`<div style="margin-top:14px;border-radius:14px;padding:18px;text-align:center;background:${S.examScore.pass?'rgba(20,117,92,.16)':'rgba(255,84,104,.12)'};border:1px solid ${S.examScore.pass?'rgba(46,230,166,.5)':'rgba(255,84,104,.5)'};">
+      ${S.examReveal?`<div style="margin-top:14px;border-radius:14px;background:var(--inset);border:1px solid var(--gold-d);">${examRevealView()}</div>`
+        : S.examScore?`<div style="margin-top:14px;border-radius:14px;padding:18px;text-align:center;background:${S.examScore.pass?'rgba(20,117,92,.16)':'rgba(255,84,104,.12)'};border:1px solid ${S.examScore.pass?'rgba(46,230,166,.5)':'rgba(255,84,104,.5)'};">
         <div style="font-size:13px;color:var(--text2);">평균 점수 <span style="font-size:11px;">(영어 100 포함·7과목)</span></div>
         <div style="font-size:38px;font-weight:900;color:${S.examScore.pass?'var(--accent-b)':'var(--danger-b)'};margin:2px 0;">${S.examScore.avg}<span style="font-size:18px;">점</span></div>
         <div style="font-size:14px;font-weight:700;color:${S.examScore.pass?'var(--accent-b)':'var(--danger-b)'};">${S.examScore.pass?'✅ 합격선(60점) 통과!':'⚠️ 합격선(60점) 미달'}</div>
-      </div>${strategyCard()}`:''}
+      </div>${strategyCard()}${examLetterCard()}`:''}
     </div>` : '';
   const records = (S.examResults||[]).map(r=>`<div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--panel);display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
       <span style="font-size:12px;color:var(--text3);">${h(r.date)}</span><span style="font-size:13px;font-weight:700;">${h(r.year)} ${h(r.exam_round)}</span>
@@ -1441,6 +1540,8 @@ const SFX={
   mute:()=>tone(400,0.06,'sine',0.1),
   bankmode:()=>tone(640,0.06,'square',0.09),
   relock:()=>seq([[440,0],[294,0.06]],'sine',0.11),
+  examroll:()=>tone(320,0.045,'square',0.05),
+  examreveal:()=>seq([[523,0],[659,0.09],[784,0.18],[1047,0.27],[1318,0.36]],'square',0.14),
 };
 function playSfx(act){
   if(S.muted) return;
@@ -1591,7 +1692,25 @@ function planCard(){
 // ========== 시험 당일 체크리스트 ==========
 const EXAM_TT=[['1교시','국어','09:00~09:40'],['2교시','수학','10:00~10:40'],['3교시','영어','11:00~11:40'],
   ['4교시','사회','12:40~13:20'],['5교시','과학','13:40~14:20'],['6교시','한국사','14:40~15:20'],['7교시','도덕','15:40~16:20']];
-const EXAM_ITEMS=['수험표','신분증(주민등록증·여권 등)','컴퓨터용 사인펜','수정테이프','아날로그 손목시계','도시락·물','간단한 간식','겉옷(냉방 대비)','최종 암기 노트'];
+const DEFAULT_EXAM_ITEMS=['수험표','신분증(주민등록증·여권 등)','컴퓨터용 사인펜','수정테이프','아날로그 손목시계','도시락·물','간단한 간식','겉옷(냉방 대비)','최종 암기 노트'];
+function examItemAdd(){ const el=document.getElementById('newExamItem'); const v=(el&&el.value||'').trim(); if(!v) return; S.examItems=[...(S.examItems||DEFAULT_EXAM_ITEMS),v]; if(el) el.value=''; persist(); render(); }
+function examItemEdit(i,v){ S.examItems=(S.examItems||DEFAULT_EXAM_ITEMS.slice()); S.examItems[i]=v; persist(); }
+function examItemDel(i){ S.examItems=(S.examItems||DEFAULT_EXAM_ITEMS).filter((_,idx)=>idx!==i); persist(); render(); }
+function examItemsAdmin(){
+  const items=S.examItems||DEFAULT_EXAM_ITEMS;
+  return `<div style="border:1px dashed var(--gold-d);border-radius:14px;padding:16px;background:rgba(255,224,102,.05);margin-bottom:18px;">
+    <div style="font-weight:800;margin-bottom:10px;color:var(--gold);">➕ 준비물 추가</div>
+    <div style="display:flex;gap:8px;">
+      <input id="newExamItem" placeholder="예: 우산" style="flex:1;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;">
+      <button data-act="examitemadd" style="padding:9px 16px;border-radius:9px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:700;cursor:pointer;">추가</button>
+    </div></div>
+    <div style="display:grid;gap:8px;">${items.map((it,i)=>`
+      <div style="display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:12px;padding:10px 12px;background:var(--panel);">
+        <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--text3);">#${i+1}</span>
+        <input value="${h(it)}" onchange="examItemEdit(${i},this.value)" style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13.5px;">
+        <button data-act="examitemdel" data-arg="${i}" style="padding:6px 12px;border-radius:8px;border:1px solid rgba(255,84,104,.5);background:rgba(255,84,104,.1);color:var(--danger-b);font-size:12px;cursor:pointer;">삭제</button>
+      </div>`).join('')}</div>`;
+}
 function examDayCard(){
   const d=dday();
   if(d>7) return '';
@@ -1607,7 +1726,7 @@ function examDayCard(){
         <span style="color:var(--text3);font-size:12px;">※ 06:20 기상 → 아침 식사 → 준비물 최종 점검 후 출발</span></div></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
       <div><div style="font-size:13.5px;font-weight:800;margin-bottom:7px;">🎒 준비물</div>
-        <div style="display:grid;gap:5px;">${EXAM_ITEMS.map((it,i)=>`<button data-act="chkexam" data-arg="${i}" style="display:flex;align-items:center;gap:9px;text-align:left;padding:8px 11px;border-radius:9px;border:1px solid ${done[i]?'rgba(46,230,166,.5)':'var(--border)'};background:${done[i]?'rgba(20,117,92,.14)':'var(--panel2)'};color:${done[i]?'var(--accent-b)':'var(--text)'};font-size:13px;cursor:pointer;"><span>${done[i]?'✅':'⬜'}</span><span style="${done[i]?'text-decoration:line-through;opacity:.75;':''}">${h(it)}</span></button>`).join('')}</div></div>
+        <div style="display:grid;gap:5px;">${(S.examItems||DEFAULT_EXAM_ITEMS).map((it,i)=>`<button data-act="chkexam" data-arg="${i}" style="display:flex;align-items:center;gap:9px;text-align:left;padding:8px 11px;border-radius:9px;border:1px solid ${done[i]?'rgba(46,230,166,.5)':'var(--border)'};background:${done[i]?'rgba(20,117,92,.14)':'var(--panel2)'};color:${done[i]?'var(--accent-b)':'var(--text)'};font-size:13px;cursor:pointer;"><span>${done[i]?'✅':'⬜'}</span><span style="${done[i]?'text-decoration:line-through;opacity:.75;':''}">${h(it)}</span></button>`).join('')}</div></div>
       <div><div style="font-size:13.5px;font-weight:800;margin-bottom:7px;">🕐 교시별 시간표</div>
         <div style="display:grid;gap:4px;">${EXAM_TT.map(([g,s,t])=>{
           const skip=s==='영어';
@@ -2521,6 +2640,7 @@ const ACTS = {
   review:arg=>{const[id,s,y,r,qn]=arg.split('|'); reviewWrong(+id,s,y,r,+qn);},
   wrongclear:async()=>{ if(confirm('오답노트 기록을 모두 지울까요?')){ await api('/api/wrong/clear',{method:'POST'}); await loadWrong(); } },
   atab:async id=>{S.adminTab=id;S.adminMsg='';await adminReload();},
+  examitemadd:()=>examItemAdd(), examitemdel:i=>examItemDel(+i),
   asave:arg=>adminSave(arg==='new'?null:+arg), adel:id=>adminDelete(+id),
   uploadpdf:()=>uploadPdf(), analyzewrong:()=>analyzeWrong(),
   mute:()=>patch({muted:!S.muted}),

@@ -796,16 +796,49 @@ function dodeokPick(v){
   const q=S.dq; if(!q||q.pick!=null) return;
   q.pick=v; q.answered++;
   const ok = q.mode==='ox' ? (v===q.ox.answer) : (v===(q.answerText||q.items[q.idx].answer));
-  if(ok){ q.score++; toast('⚔️ 정답!','good'); } else toast('💧 오답','bad');
+  if(ok){ q.score++; toast('⚔️ 정답!','good'); }
+  else { (q.wrong=q.wrong||[]).push(q.idx); toast('💧 오답','bad'); }
   render();
 }
 function dodeokNext(){
   const q=S.dq; if(!q) return;
-  const n=(q.mode==='ox'?q.cards:q.items).length;
-  q.idx=(q.idx+1)%n; q.reveal=false; q.pick=null;
+  const arr=(q.mode==='ox'?q.cards:q.items), n=arr.length;
+  if(q.idx+1>=n){ q.done=true; render(); return; }   // 한 바퀴 다 돌면 끝내고 결과 표시(기존: 무한 반복)
+  q.idx++; q.reveal=false; q.pick=null;
   if(q.mode==='quiz') dodeokMakeChoices();
   if(q.mode==='ox') dodeokMakeOX();
   render();
+}
+// 틀린 것만 남겨 다시 한 바퀴
+function dodeokRetryWrong(){
+  const q=S.dq; if(!q) return;
+  const arr=(q.mode==='ox'?q.cards:q.items);
+  const rest=[...new Set(q.wrong||[])].map(i=>arr[i]).filter(Boolean);
+  if(!rest.length){ dodeokStart(q.mode); return; }
+  if(q.mode==='ox') S.dq={mode:q.mode, cards:shuffle(rest), idx:0, pick:null, score:0, answered:0, ox:null, wrong:[]};
+  else S.dq={mode:q.mode, items:shuffle(rest), idx:0, reveal:false, pick:null, score:0, answered:0, choices:[], wrong:[]};
+  if(q.mode==='quiz') dodeokMakeChoices();
+  if(q.mode==='ox') dodeokMakeOX();
+  render();
+}
+function dodeokDoneView(){
+  const q=S.dq;
+  const total=(q.mode==='ox'?q.cards:q.items).length;
+  const wrongN=[...new Set(q.wrong||[])].length;
+  const scored=q.mode!=='blank';
+  const pct=q.answered?Math.round(q.score/q.answered*100):0;
+  const perfect=scored && q.answered>0 && wrongN===0;
+  return `<div style="border:1px solid ${perfect?'rgba(46,230,166,.6)':'var(--gold-d)'};border-radius:16px;padding:24px;text-align:center;background:linear-gradient(180deg,${perfect?'rgba(20,117,92,.18)':'rgba(255,224,102,.1)'},var(--panel2));animation:popIn .4s cubic-bezier(.34,1.56,.64,1);">
+    <div style="font-size:38px;line-height:1;margin-bottom:6px;">${perfect?'🏆':'📘'}</div>
+    <div style="font-size:18px;font-weight:900;color:${perfect?'var(--accent-b)':'var(--gold)'};">${perfect?'전부 정답! 도덕 완벽 ⚔️':'한 바퀴 완주!'}</div>
+    ${scored?`<div style="font-size:28px;font-weight:900;margin:8px 0 2px;color:${perfect?'var(--accent-b)':'var(--text)'};">${q.score}<span style="font-size:15px;"> / ${q.answered}</span> <span style="font-size:15px;color:var(--text2);">(${pct}%)</span></div>`
+            :`<div style="font-size:15px;color:var(--text2);margin:8px 0;">${total}개 빈칸을 모두 봤어요</div>`}
+    ${wrongN?`<div style="font-size:13px;color:var(--orange);">아직 헷갈리는 ${wrongN}개가 있어요</div>`:''}
+    <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap;margin-top:16px;">
+      ${wrongN?`<button data-act="dodeokretry" style="padding:11px 19px;border-radius:12px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-weight:800;font-size:14px;cursor:pointer;">🔁 틀린 ${wrongN}개만 다시</button>`:''}
+      <button data-act="dodeokmode" data-arg="${q.mode}" style="padding:11px 19px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">↻ 처음부터 다시</button>
+      <button data-act="dodeokmode" data-arg="read" style="padding:11px 19px;border-radius:12px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-weight:700;font-size:14px;cursor:pointer;">📖 개념노트로</button>
+    </div></div>`;
 }
 const dqCounter=(a,b)=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px;"><span style="color:var(--text3);">${a}</span><span style="color:var(--accent-b);font-weight:700;">${b}</span></div>`;
 const dqBody=inner=>`<div style="background:var(--inset);border:1px solid var(--orangebd);border-radius:12px;padding:18px;font-size:15.5px;line-height:1.9;color:var(--text);">${inner}</div>`;
@@ -818,7 +851,8 @@ function dodeokBlankView(){
     + (q.reveal?`<div style="margin-top:12px;padding:12px 14px;border-radius:10px;background:rgba(255,224,102,.14);border:1px solid var(--gold-d);font-size:15px;">정답 &nbsp;<b style="color:var(--gold);">${h(cur.answer)}</b></div>`:'')
     + `<div style="display:flex;gap:8px;margin-top:12px;">
        ${q.reveal?'':`<button data-act="dodeokreveal" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-weight:800;font-size:14px;cursor:pointer;">정답 확인 👁</button>`}
-       <button data-act="dodeoknext" style="flex:1;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 ▶</button></div>`;
+       <button data-act="dodeoknext" style="flex:1;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 ▶</button></div>`
+    + `<div class="kbdHint" style="margin-top:9px;font-size:11.5px;color:var(--text3);display:flex;gap:11px;flex-wrap:wrap;"><span><kbd>Space</kbd> 정답 확인 / 다음</span></div>`;
 }
 function dodeokQuizView(){
   const q=S.dq, cur=q.items[q.idx]; if(!cur) return '<div style="color:var(--text3);">문항이 없어요.</div>';
@@ -831,7 +865,8 @@ function dodeokQuizView(){
   }).join('');
   return dqCounter(h(cur.frame)+(q.fromExam?' <span style="color:var(--gold);font-weight:700;">· 기출 선지</span>':''), `점수 ${q.score} / ${q.answered}`)
     + dqBody(body) + `<div style="display:grid;gap:8px;margin-top:10px;">${choices}</div>`
-    + (q.pick!=null?`<button data-act="dodeoknext" style="width:100%;margin-top:12px;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 문제 ▶</button>`:'');
+    + (q.pick!=null?`<button data-act="dodeoknext" style="width:100%;margin-top:12px;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 문제 ▶</button>`:'')
+    + `<div class="kbdHint" style="margin-top:9px;font-size:11.5px;color:var(--text3);display:flex;gap:11px;flex-wrap:wrap;"><span><kbd>1</kbd>~<kbd>4</kbd> 선지</span><span><kbd>Space</kbd> 다음</span></div>`;
 }
 function dodeokOXView(){
   const q=S.dq, x=q.ox; if(!x) return '<div style="color:var(--text3);">문항이 없어요.</div>';
@@ -842,7 +877,8 @@ function dodeokOXView(){
     + dqBody(`다음 설명이 <b style="color:var(--orange);">「${h(x.shown)}」</b>에 대한 것이면 O, 아니면 X<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--orangebd);">${h(x.statement)}</div>`)
     + `<div style="display:flex;gap:10px;margin-top:12px;">${oxBtn('O','⭕ O')}${oxBtn('X','❌ X')}</div>`
     + (q.pick!=null?`<div style="margin-top:10px;font-size:14px;color:${q.pick===x.answer?'var(--accent-b)':'var(--danger-b)'};">${q.pick===x.answer?'✓ 정답!':'✗ 오답'} — 이 설명은 <b>「${h(x.truth)}」</b>에 대한 것이에요.</div>
-       <button data-act="dodeoknext" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 문제 ▶</button>`:'');
+       <button data-act="dodeoknext" style="width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 문제 ▶</button>`:'')
+    + `<div class="kbdHint" style="margin-top:9px;font-size:11.5px;color:var(--text3);display:flex;gap:11px;flex-wrap:wrap;"><span><kbd>O</kbd> / <kbd>X</kbd> 답하기</span><span><kbd>Space</kbd> 다음</span></div>`;
 }
 // ===== 기출 발문 속사포 퀴즈 (도덕 외 과목) =====
 async function cqStart(subject){
@@ -1116,6 +1152,7 @@ function conceptPanel(){
     if(!S.dodeok) inner=`<div style="color:var(--text3);font-size:14px;">도덕 노트를 불러오는 중...</div>`;
     else if(S.dodeokMode==='read') inner=`<div style="font-size:12px;color:var(--text3);margin-bottom:10px;">📎 첨부한 <b>검정고시 도덕 정리</b> · <mark style="background:rgba(255,224,102,.35);padding:0 3px;border-radius:3px;">노란색</mark>은 원본 하이라이트예요.</div>${dodeokNotes()}`;
     else if(!S.dq||!dqLen) inner=`<div style="color:var(--text3);">문제로 만들 데이터가 없어요.</div>`;
+    else if(S.dq.done) inner = dodeokDoneView();
     else inner = S.dodeokMode==='blank' ? dodeokBlankView() : S.dodeokMode==='quiz' ? dodeokQuizView() : dodeokOXView();
     body=`<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;">${modeBar}</div>${inner}`;
   } else if(S.cq && S.cq.subject===subj){
@@ -2007,8 +2044,10 @@ function planCard(){
     <div style="margin-top:10px;font-size:11.5px;color:var(--text3);">※ 정답률·반복오답이 쌓이면 순서가 자동으로 바뀌어요.</div></div>`;
 }
 // ========== 시험 당일 체크리스트 ==========
-const EXAM_TT=[['1교시','국어','09:00~09:40'],['2교시','수학','10:00~10:40'],['3교시','영어','11:00~11:40'],
-  ['4교시','사회','12:40~13:20'],['5교시','과학','13:40~14:20'],['6교시','한국사','14:40~15:20'],['7교시','도덕','15:40~16:20']];
+// 2026 고졸 검정고시 공식 고시시간표 (요강 기준)
+const EXAM_TT=[['1교시','국어','09:00~09:40','40분'],['2교시','수학','10:00~10:40','40분'],['3교시','영어','11:00~11:40','40분'],
+  ['4교시','사회','12:00~12:30','30분'],['중식','—','12:30~13:30',''],
+  ['5교시','과학','13:40~14:10','30분'],['6교시','한국사','14:30~15:00','30분'],['7교시','도덕','15:20~15:50','30분']];
 const DEFAULT_EXAM_ITEMS=['수험표','신분증(주민등록증·여권 등)','컴퓨터용 사인펜','수정테이프','아날로그 손목시계','도시락·물','간단한 간식','겉옷(냉방 대비)','최종 암기 노트'];
 function examItemAdd(){ const el=document.getElementById('newExamItem'); const v=(el&&el.value||'').trim(); if(!v) return; S.examItems=[...(S.examItems||DEFAULT_EXAM_ITEMS),v]; if(el) el.value=''; persist(); render(); }
 function examItemEdit(i,v){ S.examItems=(S.examItems||DEFAULT_EXAM_ITEMS.slice()); S.examItems[i]=v; persist(); }
@@ -2045,13 +2084,16 @@ function examDayCard(){
       <div><div style="font-size:13.5px;font-weight:800;margin-bottom:7px;">🎒 준비물</div>
         <div style="display:grid;gap:5px;">${(S.examItems||DEFAULT_EXAM_ITEMS).map((it,i)=>`<button data-act="chkexam" data-arg="${i}" style="display:flex;align-items:center;gap:9px;text-align:left;padding:8px 11px;border-radius:9px;border:1px solid ${done[i]?'rgba(46,230,166,.5)':'var(--border)'};background:${done[i]?'rgba(20,117,92,.14)':'var(--panel2)'};color:${done[i]?'var(--accent-b)':'var(--text)'};font-size:13px;cursor:pointer;"><span>${done[i]?'✅':'⬜'}</span><span style="${done[i]?'text-decoration:line-through;opacity:.75;':''}">${h(it)}</span></button>`).join('')}</div></div>
       <div><div style="font-size:13.5px;font-weight:800;margin-bottom:7px;">🕐 교시별 시간표</div>
-        <div style="display:grid;gap:4px;">${EXAM_TT.map(([g,s,t])=>{
-          const skip=s==='영어';
+        <div style="display:grid;gap:4px;">${EXAM_TT.map(([g,s,t,dur])=>{
+          const skip=s==='영어', lunch=g==='중식';
+          if(lunch) return `<div style="display:flex;gap:9px;align-items:center;padding:7px 11px;border-radius:9px;border:1px dashed var(--gold-d);background:rgba(255,224,102,.07);font-size:12.5px;color:var(--gold);">
+            <span style="font-size:13px;">🍱</span><b style="min-width:38px;">중식</b><span style="color:var(--text2);">${t}</span></div>`;
           return `<div style="display:flex;gap:9px;align-items:center;padding:8px 11px;border-radius:9px;border:1px solid ${skip?'var(--border)':'var(--bluebd)'};background:${skip?'var(--panel2)':'var(--tintB)'};font-size:12.8px;${skip?'opacity:.55;':''}">
             <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--text3);">${g}</span>
             <b style="min-width:38px;">${s}</b><span style="color:var(--text2);">${t}</span>
+            <span style="font-size:11px;color:var(--text3);">${dur||''}</span>
             ${skip?'<span style="margin-left:auto;font-size:11px;color:var(--accent-b);">면제 ✓</span>':''}</div>`;}).join('')}</div>
-        <div style="margin-top:8px;font-size:11.5px;color:var(--text3);">※ 영어는 과목합격(면제) — 해당 교시 대기실 이용. 쉬는 시간엔 다음 과목 암기 노트만!</div></div>
+        <div style="margin-top:8px;font-size:11.5px;color:var(--text3);">※ 영어는 과목합격(면제) — 해당 교시 대기실 이용. <b style="color:var(--gold);">모든 시험 종료 15:50</b> · 쉬는 시간엔 다음 과목 암기 노트만!</div></div>
     </div></div>`;
 }
 // ========== 아바타: 오리지널 캐릭터 '루하' (SVG · 표정/립싱크/댄스) ==========
@@ -2595,7 +2637,7 @@ const LETTERS=[
 
 혹시 어느 한 문제에서 막히더라도, 거기서 무너지지 마. 한 문제는 그냥 한 문제일 뿐이야. 다음 문제로, 다음 과목으로 넘어가면 돼.
 
-다녀와. 3시쯤 끝나면, 그때 또 편지가 기다리고 있을 거야.
+다녀와. 마지막 7교시까지 끝나는 15시 50분, 그때 또 편지가 기다리고 있을 거야.
 
 — 너의 수호령`},
   {id:'after', unlockD:-1, label:'시험을 마치고', title:'다녀온 너에게',
@@ -2614,8 +2656,8 @@ const LETTERS=[
 — 수호령`},
 ];
 function letterUnlocked(l){
-  const d=dday(), hh=new Date(S.now).getHours();
-  if(l.id==='after') return d<0 || (d===0 && hh>=15);
+  const n=new Date(S.now), d=dday(), mins=n.getHours()*60+n.getMinutes();
+  if(l.id==='after') return d<0 || (d===0 && mins>=950);   // 15:50 = 7교시(도덕) 종료
   if(l.id==='morning') return d<=0;
   return d<=l.unlockD;
 }
@@ -2969,6 +3011,7 @@ const ACTS = {
   dodeokreveal:()=>{ if(S.dq){S.dq.reveal=true;render();} },
   dodeoknext:()=>dodeokNext(),
   dodeokpick:t=>dodeokPick(decodeURIComponent(t)),
+  dodeokretry:()=>dodeokRetryWrong(),
   examload:()=>loadExamKeys(),
   examgrade:()=>gradeExam(),
   examsave:()=>saveExam(),
@@ -3107,6 +3150,19 @@ document.addEventListener('keydown', e=>{
     if(S.flash){ S.flash=null; render(); return; }
     if(S.sheet){ S.sheet=null; render(); return; }
     if(S.openLetter){ S.openLetter=null; render(); return; }
+    return;
+  }
+  // 도덕 학습(빈칸/용어퀴즈/OX): 숫자=선지, O·X=참거짓, Space·→=다음
+  if(S.tab==='tower' && S.towerSubject==='도덕' && S.dq && !S.dq.done && S.dodeokMode!=='read'){
+    const q=S.dq;
+    if(e.key===' '||e.key==='ArrowRight'){ e.preventDefault();
+      if(S.dodeokMode==='blank' && !q.reveal){ q.reveal=true; render(); } else dodeokNext(); return; }
+    if(S.dodeokMode==='quiz' && /^[1-9]$/.test(e.key)){
+      const t=(q.choices||[])[+e.key-1]; if(t!=null){ e.preventDefault(); dodeokPick(t); } return; }
+    if(S.dodeokMode==='ox'){
+      if(e.key==='o'||e.key==='O'||e.key==='1'||e.key==='ㅐ'){ e.preventDefault(); dodeokPick('O'); return; }
+      if(e.key==='x'||e.key==='X'||e.key==='2'||e.key==='ㅌ'){ e.preventDefault(); dodeokPick('X'); return; }
+    }
     return;
   }
   // 빠른 복습: Space=정답 확인, 1=헷갈려, 2=알겠어

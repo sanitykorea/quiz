@@ -129,7 +129,7 @@ const S = {
   recommend:null, mock:null, askImg:{busy:false,text:'',q:''}, similar:null,
   today:null, checkExam:{}, cq:null, eye:null, focusHist:null,
   adminTab:'questions', adminMsg:'', muted:false,
-  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null,
+  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null,
 };
 const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 4점/문항
 let _barrierActive = null;
@@ -545,6 +545,7 @@ function cmdList(){
     {ic:'🔮', name:'수호령의 눈', hint:'화상 스터디', run:go('eye')},
     {ic:'📜', name:'전직소', hint:'입시 전략', run:go('guild')},
     {ic:'🎲', name:'랜덤 기출 소환', hint:'아무 회차나 바로 풀기', run:()=>{ closeCmdk(); S.tab='bank'; loadQuestions(true).then(render); }},
+    {ic:'⚡', name:'빠른 복습', hint:'오답 발문만 초고속 회상', run:()=>{ closeCmdk(); S.tab='wrong'; loadWrong().then(flashStart); }},
     {ic:'📄', name:'최종 요약 시트', hint:'내 오답 전부 한 장에', run:()=>{ closeCmdk(); S.tab='wrong'; loadSheet(); }},
     {ic:'🔍', name:'취약 유형 분석', hint:'반복해서 틀리는 개념 찾기', run:()=>{ closeCmdk(); S.tab='wrong'; loadWrong().then(()=>loadWeakspots()); }},
     {ic:'🧠', name:'종합 분석 리포트', hint:'모든 기록 종합 총평', run:()=>{ closeCmdk(); S.tab='camp'; loadReport(); }},
@@ -970,6 +971,67 @@ function sheetView(){
     <div style="font-size:12px;color:var(--text2);margin-bottom:14px;" class="noPrint">시험 전날 이것만 훑어도 돼요. <b>🔁반복</b>은 두 번 이상 틀린 문항이에요.</div>
     ${secs}</div>`;
 }
+// ========== 빠른 복습 (오답 발문만 초고속 회상 훈련) ==========
+async function flashStart(){
+  S.flash={loading:true}; render();
+  const r=S.sheet||await api('/api/sheet');
+  const items=[];
+  (r.subjects||[]).forEach(s=>s.items.forEach(it=>items.push({...it, subject:s.subject})));
+  if(!items.length){ S.flash=null; toast('복습할 오답이 없어요 🎉','good'); render(); return; }
+  S.flash={items:shuffle(items), idx:0, revealed:false, know:{}, done:false};
+  render(); scrollTo({top:0});
+}
+function flashReveal(){ const f=S.flash; if(!f||f.revealed) return; f.revealed=true; render(); }
+function flashMark(known){
+  const f=S.flash; if(!f) return;
+  if(!f.revealed){ flashReveal(); return; }
+  f.know[f.idx]=known;
+  if(f.idx+1>=f.items.length){ f.done=true; render(); return; }
+  f.idx++; f.revealed=false; render();
+}
+function flashRetryUnsure(){
+  const f=S.flash; if(!f) return;
+  const rest=f.items.filter((_,i)=>f.know[i]===false);
+  if(!rest.length){ S.flash=null; render(); return; }
+  S.flash={items:shuffle(rest), idx:0, revealed:false, know:{}, done:false}; render(); scrollTo({top:0});
+}
+function flashView(){
+  const f=S.flash; if(!f) return '';
+  if(f.loading) return `<div style="padding:36px;text-align:center;color:var(--gold);"><span style="animation:blink 1s infinite;">⚡</span> 오답을 모으는 중...</div>`;
+  const total=f.items.length;
+  if(f.done){
+    const ok=Object.values(f.know).filter(Boolean).length, unsure=total-ok;
+    return `<div style="border:1px solid var(--gold-d);border-radius:16px;padding:26px;background:linear-gradient(180deg,rgba(255,224,102,.1),var(--panel2));margin-bottom:18px;text-align:center;">
+      <div style="font-size:40px;margin-bottom:6px;">${unsure?'💪':'🎉'}</div>
+      <div style="font-size:20px;font-weight:900;color:var(--gold);">빠른 복습 ${total}문항 완료!</div>
+      <div style="margin:12px 0 18px;font-size:14.5px;color:var(--text2);">
+        <b style="color:var(--accent-b);">${ok}개</b> 확실히 알겠음 · <b style="color:var(--orange);">${unsure}개</b> 아직 헷갈림</div>
+      <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap;">
+        ${unsure?`<button data-act="flashretry" style="padding:11px 20px;border-radius:12px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-weight:800;font-size:14px;cursor:pointer;">🔁 헷갈린 ${unsure}개만 다시</button>`:''}
+        <button data-act="flashclose" style="padding:11px 20px;border-radius:12px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-weight:700;font-size:14px;cursor:pointer;">닫기</button></div></div>`;
+  }
+  const it=f.items[f.idx], pct=(f.idx)/total*100;
+  return `<div style="border:1px solid var(--gold-d);border-radius:16px;padding:20px;background:linear-gradient(180deg,rgba(255,224,102,.08),var(--panel2));margin-bottom:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:9px;">
+      <span style="padding:5px 12px;border-radius:999px;background:rgba(255,224,102,.15);border:1px solid var(--gold-d);color:var(--gold);font-size:12.5px;font-weight:800;">⚡ 빠른 복습 · ${h(it.subject)}</span>
+      <span style="font-size:12.5px;color:var(--text2);">${f.idx+1} / ${total}</span>
+      <button data-act="flashclose" style="padding:5px 11px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">닫기</button></div>
+    <div style="height:6px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;margin-bottom:16px;"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#c9a227,#ffe066);transition:width .3s;"></div></div>
+    <div style="font-size:11.5px;color:var(--text3);margin-bottom:7px;">${h(String(it.year).replace('년도',''))} ${h(String(it.exam_round).replace('시험',''))} ${it.qnum}번${it.repeat?' · 🔁 반복 오답':''}</div>
+    <div style="min-height:96px;display:flex;align-items:center;background:var(--inset);border:1px solid var(--border);border-radius:13px;padding:18px;font-size:16px;line-height:1.8;color:var(--text);margin-bottom:12px;">${h(it.stem)}</div>
+    ${f.revealed
+      ? `<div style="border:1px solid rgba(46,230,166,.55);background:rgba(20,117,92,.18);border-radius:13px;padding:15px 17px;margin-bottom:13px;animation:popIn .28s cubic-bezier(.34,1.56,.64,1);">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:4px;">정답</div>
+          <div style="font-size:18px;font-weight:900;color:var(--accent-b);">${CIRC[it.answer]||'?'} ${h(it.answer_text||'')}</div>
+          ${it.chosen?`<div style="margin-top:6px;font-size:12.5px;color:var(--text3);">그때 내 답: ${it.chosen===0?'모름':(CIRC[it.chosen]||'-')} ${h(it.chosen_text||'')}</div>`:''}</div>
+        <div style="display:flex;gap:9px;">
+          <button data-act="flashno" style="flex:1;padding:14px;border-radius:12px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-weight:800;font-size:15px;cursor:pointer;">🤔 아직 헷갈려</button>
+          <button data-act="flashyes" style="flex:1;padding:14px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:15px;cursor:pointer;">✓ 확실히 알겠어</button></div>`
+      : `<button data-act="flashreveal" style="width:100%;padding:15px;border-radius:12px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-weight:800;font-size:15px;cursor:pointer;">🔍 정답 확인 <span style="font-weight:500;opacity:.75;font-size:13px;">(먼저 머릿속으로 떠올려보기)</span></button>`}
+    <div class="kbdHint" style="margin-top:10px;font-size:11.5px;color:var(--text3);display:flex;gap:11px;flex-wrap:wrap;">
+      <span><kbd>Space</kbd> 정답 확인</span><span><kbd>1</kbd> 헷갈려</span><span><kbd>2</kbd> 알겠어</span></div>
+  </div>`;
+}
 function weakspotCard(){
   const w=S.weakspots;
   if(S.cq && S.cq.fromWrong){
@@ -1381,9 +1443,11 @@ function vWrong(){
   return `<div><div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">WRONG-ANSWER LOG</div>
       <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">📕 오답노트 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 틀린 문제 모음 (채점 ${d.answered||0}문항)</span></h2></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">${totalWrong?`<button data-act="sheet" class="noWrapBtn" style="padding:8px 14px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;">📄 최종 요약 시트</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${totalWrong?`<button data-act="flash" class="noWrapBtn" style="padding:8px 14px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.2);color:var(--gold);font-size:13px;font-weight:800;cursor:pointer;">⚡ 빠른 복습</button>
+      <button data-act="sheet" class="noWrapBtn" style="padding:8px 14px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;">📄 최종 요약 시트</button>
       <button data-act="wrongpdf" class="noWrapBtn" style="padding:8px 14px;border-radius:10px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;">🖨 오답 PDF 출력</button>
       <button data-act="wrongclear" class="noWrapBtn" style="padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:13px;cursor:pointer;">기록 초기화</button>`:''}</div></div>
+    ${S.flash?flashView():''}
     ${(S.sheet||S.sheetLoading)?sheetView():''}
     ${S.wrongPdfMsg?`<div style="margin-bottom:12px;color:var(--blue);font-size:13px;">${h(S.wrongPdfMsg)}</div>`:''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">${d.repeat?`<div style="padding:10px 14px;border-radius:12px;border:1px solid rgba(255,140,40,.5);background:rgba(255,140,40,.1);display:flex;gap:10px;align-items:center;"><span style="font-weight:800;color:var(--orange);">🔁 반복 오답</span><span style="font-family:'Press Start 2P',monospace;font-size:12px;color:var(--orange);">${d.repeat}</span></div>`:''}${chips}</div>
@@ -2876,6 +2940,9 @@ const ACTS = {
   banksearch:()=>{},
   sheet:()=>loadSheet(), sheetclose:()=>{ S.sheet=null; render(); },
   sheetprint:()=>window.print(),
+  flash:()=>flashStart(), flashreveal:()=>flashReveal(),
+  flashyes:()=>flashMark(true), flashno:()=>flashMark(false),
+  flashretry:()=>flashRetryUnsure(), flashclose:()=>{ S.flash=null; render(); },
 };
 $.addEventListener('click', e=>{ const el=e.target.closest('[data-act]'); if(!el) return; const a=el.getAttribute('data-act'); playSfx(a); if(ACTS[a]) ACTS[a](el.getAttribute('data-arg'), el); });
 function bindInputs(){
@@ -2947,8 +3014,16 @@ document.addEventListener('keydown', e=>{
 
   if(e.key==='Escape'){
     if(S.hdrMenu){ S.hdrMenu=false; render(); return; }
+    if(S.flash){ S.flash=null; render(); return; }
     if(S.sheet){ S.sheet=null; render(); return; }
     if(S.openLetter){ S.openLetter=null; render(); return; }
+    return;
+  }
+  // 빠른 복습: Space=정답 확인, 1=헷갈려, 2=알겠어
+  if(S.flash && !S.flash.done && !S.flash.loading){
+    if(e.key===' '||e.key==='Enter'){ e.preventDefault(); S.flash.revealed?flashMark(true):flashReveal(); return; }
+    if(e.key==='1'){ e.preventDefault(); flashMark(false); return; }
+    if(e.key==='2'){ e.preventDefault(); flashMark(true); return; }
     return;
   }
   const solver=activeSolver();
@@ -2991,6 +3066,24 @@ document.addEventListener('keydown', e=>{
       if(it&&it.hasPdf){ e.preventDefault(); cqShowImg(it.question_id+'_'+it.qnum); } }
   }
 });
+// ========== 모바일 스와이프로 이전/다음 문항 ==========
+let _swX=0, _swY=0, _swT=0;
+addEventListener('touchstart', e=>{
+  if(e.touches.length!==1) return;
+  _swX=e.touches[0].clientX; _swY=e.touches[0].clientY; _swT=Date.now();
+}, {passive:true});
+addEventListener('touchend', e=>{
+  if(!_swT || !activeSolver()) return;
+  const t=e.changedTouches[0], dx=t.clientX-_swX, dy=t.clientY-_swY, dt=Date.now()-_swT;
+  _swT=0;
+  // 가로로 충분히 · 세로는 거의 안 움직였고 · 빠르게 → 스크롤과 구분
+  if(dt>600 || Math.abs(dx)<70 || Math.abs(dy)>45 || Math.abs(dx)<Math.abs(dy)*2) return;
+  if(getSelection && String(getSelection()).length) return;   // 텍스트 선택 중이면 무시
+  const d=dx<0?1:-1, solver=activeSolver();
+  if(solver==='defense') defenseNav(d);
+  else if(solver==='cq'){ const q=S.cq; q.idx=(q.idx+d+q.items.length)%q.items.length; q.pick=null; persist(); render(); }
+  else quizNav(d);
+}, {passive:true});
 // ========== 맨 위로 버튼 ==========
 addEventListener('scroll', ()=>{ const b=document.getElementById('toTop'); if(b) b.classList.toggle('on', scrollY>420); }, {passive:true});
 

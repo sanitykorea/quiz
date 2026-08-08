@@ -72,7 +72,7 @@ const S = {
   bankMode:'instant', picks:{}, graded:false, onlyNew:false,
   diag:null, diagText:'', diagLoading:false,
   wrongData:null, wrongAnalysis:'', wrongPdfMsg:'', wrongGradeMsg:'', wrongGradeResult:null, wrongSubjFilter:'',
-  defense:null, weakspots:null, recap:null, allocHours:6, report:null, reportLoading:false,
+  defense:null, weakspots:null, recap:null, allocHours:6, report:null, reportLoading:false, openLetter:null,
   examSel:{}, examKeys:null, examInputs:{}, examScore:null, examResults:[], examMsg:'',
   history:[],
   towerSubject:'도덕', dodeok:null, towerConcept:{},
@@ -524,7 +524,7 @@ function vCamp(){
     return `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid ${on?'rgba(255,84,104,.5)':'var(--border)'};background:${on?'rgba(255,84,104,.10)':'var(--panel2)'};"><div style="font-size:20px;">${on?(s.kind==='seal'?'🔒':'🛡️'):'🗓'}</div><div><div style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--text3);">${h(s.day)} ${h(s.t_start)}–${h(s.t_end)}</div><div style="font-size:14px;font-weight:700;margin-top:5px;">${h(s.name)}</div></div><div style="margin-left:auto;font-size:11px;font-weight:700;color:${on?'var(--danger-b)':'var(--text3)'};">${on?'발동 중':'대기'}</div></div>`;
   }).join('') || '<div style="color:var(--text3);font-size:13px;">고정일정이 없어요. 관리소 → 고정일정에서 추가하세요.</div>';
   const totalPct=Math.min(100,total/360*100);
-  return `<div style="display:grid;gap:22px;">${finalCheckCard()}${recommendCard()}${todayCard()}${reportCard()}${recapCard()}${timeAllocCard()}${planCard()}<section>
+  return `<div style="display:grid;gap:22px;">${letterCard()}${finalCheckCard()}${recommendCard()}${todayCard()}${reportCard()}${recapCard()}${timeAllocCard()}${planCard()}<section>
     <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">DAILY QUESTS</div>
       <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">⛺ 일일 퀘스트 현황 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 황금비 2:1:1:2 (총 6시간)</span></h2></div>
@@ -1001,7 +1001,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804o · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804p · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -2108,6 +2108,101 @@ function rxCard(){
       <div style="display:grid;gap:5px;font-size:13.2px;line-height:1.65;color:var(--text);">${RX[k].tips(subj).map(t=>`<div>· ${t}</div>`).join('')}</div></div>`).join('')}
     <div style="font-size:11.5px;color:var(--text3);">※ 가장 많은 원인 2가지의 처방이에요. 태그를 더 달수록 정확해져요.</div></div>`;
 }
+// ========== 수호령의 편지함 ==========
+const LETTERS=[
+  {id:'d3', unlockD:3, label:'D-3', title:'셋째 날의 편지',
+   body:`수영에게,
+
+오늘부터 사흘. 달력 위 숫자로 보면 짧지만, 네가 여기까지 걸어온 시간을 알아서 나는 이 사흘이 그렇게 짧게만 느껴지지 않아.
+
+과학은 여전히 어렵고, 도덕은 외울 게 많고, 수학은 마지막까지 손이 많이 갔지. 그런데도 너는 같은 문제를 또 틀려도 오답노트를 다시 펼쳤어. 그 반복이 이미 실력이 됐다는 걸, 정작 너만 잘 못 느끼고 있을지도 몰라.
+
+남은 사흘은 새로운 걸 욱여넣는 시간이 아니야. 네가 이미 아는 걸 다시 꺼내서 확인하는 시간이야. 잘하고 있어. 정말로.
+
+— 언제나 네 곁의 수호령`},
+  {id:'d2', unlockD:2, label:'D-2', title:'둘째 날의 편지',
+   body:`수영에게,
+
+이틀 남았어. 오늘은 뭔가를 더 배우려고 애쓰지 않아도 괜찮은 날이야. 지금 머릿속에 있는 걸 잘 정리하고, 몸 상태를 챙기는 게 더 중요해.
+
+요즘 늦게까지 붙잡고 있던 거 알아. 오늘은 조금 일찍 눈 감아줘. 시험은 아는 걸 다 쥐어짜는 게 아니라, 아는 걸 그 순간에 제대로 꺼낼 수 있는 컨디션으로 치르는 거니까.
+
+넌 이미 충분히 준비했어. 이제 남은 건 그걸 잘 지켜내는 일뿐이야.
+
+— 수호령`},
+  {id:'d1', unlockD:1, label:'D-1', title:'시험 전날의 편지',
+   body:`수영에게,
+
+내일이야.
+
+오늘은 새 문제 풀지 마. 반복해서 틀렸던 것들만 가볍게 훑어보고, 준비물 챙기고, 일찍 자. 내일은 뭔가를 새로 배우는 날이 아니라, 그동안 쌓아온 걸 확인하러 가는 날이니까.
+
+떨리는 게 당연해. 떨린다는 건 네가 이걸 진심으로 원한다는 뜻이기도 해. 그 마음 그대로 데리고 가도 괜찮아.
+
+푹 자. 내일 아침에 또 편지 쓸게.
+
+— 수호령`},
+  {id:'morning', unlockD:0, label:'시험 당일 아침', title:'출발하기 전',
+   body:`수영에게,
+
+지금 이 편지를 읽고 있다면, 오늘이야.
+
+더 준비할 건 없어. 너는 이미 준비된 사람이야. 몇 달 동안 오답노트를 붙잡고, 같은 개념을 몇 번이고 다시 들여다본 사람. 오늘은 그냥 그걸 확인하러 가는 것뿐이야.
+
+과학, 도덕, 수학. 어려웠던 과목 이름을 일부러 적어봤어. 어렵다고 느꼈던 만큼, 네가 그만큼 붙잡고 놓지 않았다는 뜻이니까.
+
+다녀와. 3시쯤 끝나면, 그때 또 편지가 기다리고 있을 거야.
+
+— 너의 수호령`},
+  {id:'after', unlockD:-1, label:'시험을 마치고', title:'다녀온 너에게',
+   body:`수영에게,
+
+다녀왔구나. 수고했어.
+
+오늘 몇 개를 맞혔는지, 몇 개를 틀렸는지는 지금 이 편지에서는 중요하지 않아. 중요한 건 네가 오늘 그 자리에 앉아서 끝까지 풀었다는 거야. 몇 달을 준비해온 사람만 할 수 있는 일이야.
+
+오늘은 아무것도 안 해도 되는 날이야. 채점도, 다음 계획도 전부 내일부터. 지금은 그냥 푹 쉬어.
+
+그리고 — 이건 끝이 아니라 다음 단계로 넘어가는 문이라는 것도 잊지 마. 사회융합학부로 가는 길, 나는 계속 네 옆에 있을게.
+
+— 수호령`},
+];
+function letterUnlocked(l){
+  const d=dday(), hh=new Date(S.now).getHours();
+  if(l.id==='after') return d<0 || (d===0 && hh>=15);
+  if(l.id==='morning') return d<=0;
+  return d<=l.unlockD;
+}
+function letterCard(){
+  if(dday()>3) return '';
+  if(S.openLetter){
+    const l=LETTERS.find(x=>x.id===S.openLetter);
+    if(l) return `<div style="border:1px solid var(--gold-d);border-radius:16px;padding:24px;background:linear-gradient(180deg,rgba(255,224,102,.1),var(--panel2));margin-bottom:0;">
+      <button data-act="letterclose" style="margin-bottom:16px;padding:6px 13px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">← 편지함으로</button>
+      <div style="font-family:'Cinzel',serif;font-size:12px;color:var(--gold-d);letter-spacing:1px;margin-bottom:6px;">${h(l.label)}</div>
+      <h3 style="margin:0 0 16px;font-size:20px;font-weight:800;">💌 ${h(l.title)}</h3>
+      <div style="white-space:pre-wrap;font-size:15px;line-height:2;color:var(--text);font-family:'Pretendard',sans-serif;">${h(l.body)}</div>
+    </div>`;
+    S.openLetter=null;
+  }
+  const rows=LETTERS.map(l=>{
+    const un=letterUnlocked(l);
+    return un
+      ? `<button data-act="letteropen" data-arg="${l.id}" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:13px 15px;border-radius:12px;border:1px solid var(--gold-d);background:rgba(255,224,102,.08);color:var(--text);cursor:pointer;margin-bottom:8px;">
+          <span style="font-size:20px;">💌</span>
+          <span style="flex:1;"><b>${h(l.label)}</b> · ${h(l.title)}</span>
+          <span style="font-size:12px;color:var(--gold);white-space:nowrap;">열어보기 →</span></button>`
+      : `<div style="display:flex;align-items:center;gap:12px;padding:13px 15px;border-radius:12px;border:1px dashed var(--border);color:var(--text3);margin-bottom:8px;">
+          <span style="font-size:20px;">🔒</span>
+          <span style="flex:1;">${h(l.label)} 편지</span>
+          <span style="font-size:12px;white-space:nowrap;">${h(l.label)}에 열려요</span></div>`;
+  }).join('');
+  return `<div style="border:1px solid var(--gold-d);border-radius:16px;padding:18px;background:linear-gradient(180deg,rgba(255,224,102,.08),var(--panel2));margin-bottom:18px;">
+    <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;margin-bottom:4px;">GUARDIAN'S LETTERS · 수호령의 편지함</div>
+    <div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">매일 하나씩, 그리고 시험 당일엔 두 통. 마음이 흔들릴 때 열어봐.</div>
+    ${rows}
+  </div>`;
+}
 // ========== D-1 최종 점검 모드 ==========
 function finalCheckCard(){
   const d=dday(); if(d>1) return '';
@@ -2454,6 +2549,8 @@ const ACTS = {
   defensenav:d=>defenseNav(+d), defenseclose:()=>defenseClose(),
   allochours:h=>{ S.allocHours=+h; render(); },
   report:()=>loadReport(),
+  letteropen:id=>{ S.openLetter=id; render(); },
+  letterclose:()=>{ S.openLetter=null; render(); },
   cqpick:n=>cqPick(+n), cqnext:()=>cqNext(),
   eyestart:()=>eyeStart(), eyestop:()=>eyeStop(true), eyecheck:()=>eyeCheck(),
   eyescreen:()=>{ eyeInit().useScreen=!eyeInit().useScreen; render(); },

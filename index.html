@@ -135,7 +135,7 @@ const S = {
   recommend:null, mock:null, askImg:{busy:false,text:'',q:''}, similar:null,
   today:null, checkExam:{}, cq:null, eye:null, focusHist:null,
   adminTab:'questions', adminMsg:'', muted:false,
-  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null,
+  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null,
 };
 const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 4점/문항
 let _barrierActive = null;
@@ -582,6 +582,9 @@ function cmdList(){
     {ic:'🔮', name:'수호령의 눈', hint:'화상 스터디', run:go('eye')},
     {ic:'📜', name:'전직소', hint:'입시 전략', run:go('guild')},
     {ic:'🎲', name:'랜덤 기출 소환', hint:'아무 회차나 바로 풀기', run:()=>{ closeCmdk(); S.tab='bank'; loadQuestions(true).then(render); }},
+    {ic:'🧮', name:'점수 시뮬레이터', hint:'몇 개 더 맞히면 어디까지 열리나', run:()=>{ closeCmdk(); ACTS.tab('exam').then(()=>{
+        const el=[...document.querySelectorAll('div')].find(d=>d.innerText&&d.innerText.startsWith('SCORE SIMULATOR'));
+        if(el) scrollTo({top:el.getBoundingClientRect().top+scrollY-110, behavior:'smooth'}); }); }},
     {ic:'⚡', name:'빠른 복습', hint:'오답 발문만 초고속 회상', run:()=>{ closeCmdk(); S.tab='wrong'; loadWrong().then(flashStart); }},
     {ic:'📄', name:'최종 요약 시트', hint:'내 오답 전부 한 장에', run:()=>{ closeCmdk(); S.tab='wrong'; loadSheet(); }},
     {ic:'🔍', name:'취약 유형 분석', hint:'반복해서 틀리는 개념 찾기', run:()=>{ closeCmdk(); S.tab='wrong'; loadWrong().then(()=>loadWeakspots()); }},
@@ -1314,7 +1317,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809b · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809c · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1771,7 +1774,7 @@ function vExam(){
       <button data-act="examload" style="padding:9px 16px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-weight:700;font-size:14px;cursor:pointer;">정답키 불러오기</button></div>
     ${S.examMsg?`<div style="margin-top:10px;color:var(--pink);font-size:13px;">${h(S.examMsg)}</div>`:''}
     ${gradeArea}
-    <div style="margin-top:20px;">${predictCard()}${trendCard()}</div>
+    <div style="margin-top:20px;">${predictCard()}${simCard()}${trendCard()}</div>
     ${records?`<h3 style="margin:22px 0 10px;font-size:16px;font-weight:800;">📊 채점 기록</h3><div style="display:grid;gap:8px;">${records}</div>`:''}
     <h3 style="margin:22px 0 10px;font-size:16px;font-weight:800;">📖 기출 풀이 기록 <span style="font-size:12px;color:var(--text3);font-weight:600;">· 언제 무엇을 풀고 몇 개 틀렸는지</span></h3>
     <div style="display:grid;gap:8px;">${hist||'<div style="color:var(--text3);font-size:13px;">아직 기출 풀이 기록이 없어요. 문제은행에서 풀면 여기 쌓여요.</div>'}</div></div>`;
@@ -2801,6 +2804,69 @@ function predict(){
   const avg=(700-lost)/7, cv=convert(Math.round(avg*100)/100);
   return {avg:Math.round(avg*100)/100, lost, wrongTotal:per.reduce((s,x)=>s+x.wrong,0), per, ...cv};
 }
+// ========== 점수 시뮬레이터 ("몇 개 더 맞히면 어디까지 열리나") ==========
+function simInit(){
+  if(S.sim) return S.sim;
+  const p=predict();
+  S.sim={};                                   // 현재 예상 오답 수로 시작
+  p.per.forEach(x=>{ S.sim[x.subj]=x.wrong; });
+  return S.sim;
+}
+function simCalc(sim){
+  let lost=0;
+  EXAM6.forEach(([subj,n,pt])=>{ lost += Math.min(n, Math.max(0, sim[subj]||0)) * pt; });
+  const avg=Math.round((700-lost)/7*100)/100;
+  return {lost, avg, ...convert(avg)};
+}
+function simCard(){
+  const sim=simInit(), r=simCalc(sim);
+  const base=predict();
+  const pass=GYOGWA.filter(g=>r.score>=g[1]).map(g=>g[0]);
+  const openOK=r.avg>=94;                     // 열린인재(학종) 마지노선
+  const tone=r.avg>=98?'var(--accent-b)':r.avg>=94?'var(--gold)':'var(--danger-b)';
+  const totalWrong=EXAM6.reduce((s,[subj])=>s+(sim[subj]||0),0);
+  // 다음 등급까지 몇 점 더 필요한지 → 몇 문항인지로 환산
+  const nextBand=BANDS.filter(b=>b[0]>r.avg).sort((a,b)=>a[0]-b[0])[0];
+  const gap = nextBand ? Math.ceil((nextBand[0]*7 - (700-r.lost))) : 0;
+  const rows=EXAM6.map(([subj,n,pt])=>{
+    const w=Math.min(n,Math.max(0,sim[subj]||0));
+    const baseW=(base.per.find(x=>x.subj===subj)||{}).wrong||0;
+    const diff=w-baseW;
+    return `<div style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px dashed var(--line);">
+      <span style="width:46px;font-weight:700;font-size:13.5px;">${subj}</span>
+      <span style="font-size:11px;color:var(--text3);width:52px;">${pt}점×${n}</span>
+      <div style="display:flex;gap:5px;align-items:center;margin-left:auto;">
+        <button data-act="simadj" data-arg="${subj}:-1" style="width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:16px;font-weight:800;cursor:pointer;line-height:1;">−</button>
+        <span style="min-width:64px;text-align:center;font-size:14px;font-weight:800;color:${w?'var(--danger-b)':'var(--accent-b)'};">${w}개
+          ${diff?`<span title="현재 예상 ${baseW}개 대비" style="font-size:10.5px;font-weight:700;color:${diff<0?'var(--accent-b)':'var(--orange)'};">${diff<0?'▼':'▲'}${Math.abs(diff)}</span>`:''}</span>
+        <button data-act="simadj" data-arg="${subj}:1" style="width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:16px;font-weight:800;cursor:pointer;line-height:1;">+</button>
+        <span style="width:44px;text-align:right;font-size:12px;color:var(--text3);">−${w*pt}점</span>
+      </div></div>`;
+  }).join('');
+  return `<div style="border:1px solid var(--bluebd);border-radius:16px;padding:18px;background:linear-gradient(180deg,var(--tintB),var(--panel2));margin-bottom:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--blue);letter-spacing:1px;">SCORE SIMULATOR · 점수 시뮬레이터</div>
+      <div style="display:flex;gap:6px;">
+        <button data-act="simpreset" data-arg="now" style="padding:5px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-size:11.5px;cursor:pointer;">현재 예상</button>
+        <button data-act="simpreset" data-arg="perfect" style="padding:5px 11px;border-radius:8px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-size:11.5px;font-weight:700;cursor:pointer;">만점</button>
+      </div></div>
+    <div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">과목별 오답 개수를 바꿔보면 <b>환산점수와 지원 가능한 학부</b>가 바로 바뀌어요.</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:12px 14px;border-radius:12px;background:var(--inset);border:1px solid var(--border);margin-bottom:12px;">
+      <div><div style="font-size:11.5px;color:var(--text2);">오답</div><div style="font-size:22px;font-weight:900;color:${tone};">${totalWrong}<span style="font-size:12px;">개</span></div></div>
+      <div><div style="font-size:11.5px;color:var(--text2);">평균</div><div style="font-size:22px;font-weight:900;color:${tone};">${r.avg}</div></div>
+      <div><div style="font-size:11.5px;color:var(--text2);">환산</div><div style="font-size:22px;font-weight:900;color:${tone};">${r.score}<span style="font-size:12px;">점 · ${r.grade}등급</span></div></div>
+      ${gap>0?`<div style="margin-left:auto;font-size:12px;color:var(--gold);">⬆ <b>${gap}점</b>만 더 지키면 ${nextBand[3]}점(${nextBand[2]}등급)</div>`:''}
+    </div>
+    <div style="margin-bottom:12px;">${rows}</div>
+    <div style="display:grid;gap:6px;">
+      <div style="padding:9px 13px;border-radius:10px;font-size:13px;border:1px solid ${openOK?'rgba(46,230,166,.5)':'rgba(255,84,104,.5)'};background:${openOK?'rgba(20,117,92,.13)':'rgba(255,84,104,.1)'};">
+        <b>${openOK?'✅':'⚠️'} 열린인재(학종) · 사회융합</b> — 마지노선 평균 94 ${openOK?`도달 (여유 ${(r.avg-94).toFixed(2)})`:`미달 (${(94-r.avg).toFixed(2)} 부족)`}</div>
+      <div style="padding:9px 13px;border-radius:10px;font-size:13px;border:1px solid ${pass.length?'rgba(46,230,166,.5)':'var(--border)'};background:${pass.length?'rgba(20,117,92,.1)':'var(--panel2)'};">
+        <b>${pass.length?'✅':'❌'} 교과성적</b> — ${pass.length?`<span style="color:var(--accent-b);font-weight:700;">${pass.join(' · ')}</span>`:'지원 가능한 학부 없음'}</div>
+    </div>
+    <div style="margin-top:9px;font-size:11.5px;color:var(--text3);">※ 수학은 문항당 5점, 나머지는 4점 — 수학 1개가 다른 과목 1개보다 크게 깎여요.</div>
+  </div>`;
+}
 function predictCard(){
   const p=predict();
   const hakjong = p.avg>=94;
@@ -3069,6 +3135,11 @@ const ACTS = {
   sheetprint:()=>window.print(),
   qjump:n=>{ const i=S.quizItems.findIndex(x=>x.qnum===+n); if(i>=0){ S.quizIdx=i; persist(); render(); scrollTop(); } },
   retrywrong:async()=>{ await loadWrong(); await loadDiag(false); render(); },
+  simadj:arg=>{ const[subj,d]=arg.split(':'); const sim=simInit();
+    const max=(EXAM6.find(x=>x[0]===subj)||[,25])[1];
+    sim[subj]=Math.max(0, Math.min(max, (sim[subj]||0)+(+d))); render(); },
+  simpreset:kind=>{ if(kind==='perfect'){ const sim={}; EXAM6.forEach(([s])=>sim[s]=0); S.sim=sim; }
+    else S.sim=null; render(); },
   jump:id=>{ const el=document.getElementById('sec-'+id);
     if(el) scrollTo({top: el.getBoundingClientRect().top+scrollY-116, behavior:'smooth'});
     else toast('그 섹션은 지금 없어요','bad'); },

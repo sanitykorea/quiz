@@ -59,6 +59,10 @@
     .hdrNav button{ padding:11px 10px !important; font-size:13.5px !important; }
     main{ padding:16px 13px 96px !important; }
   }
+  /* 섹션 바로가기 바: 스크롤바 숨기고 상단에 고정 */
+  .jumpBar{ scrollbar-width:none; position:sticky; top:104px; z-index:20; background:var(--bg); padding-top:6px !important; }
+  .jumpBar::-webkit-scrollbar{ display:none; }
+  @media (max-width:860px){ .jumpBar{ top:100px; } }
   /* 물리 키보드 없는 기기에선 단축키 안내 숨김 */
   @media (hover:none) and (pointer:coarse){ .kbdHint{ display:none !important; } }
   /* 좁은 화면에서 버튼 글자 깨짐 방지 */
@@ -578,6 +582,14 @@ function cmdkView(){
       <span><kbd>↑</kbd><kbd>↓</kbd> 이동</span><span><kbd>Enter</kbd> 실행</span><span><kbd>Esc</kbd> 닫기</span></div>
   </div></div>`;
 }
+// ========== 긴 탭용 섹션 바로가기 ==========
+// sec(): 내용이 있을 때만 id를 단 래퍼로 감싸 앵커를 만든다
+function sec(id, html){ return html ? `<div id="sec-${id}">${html}</div>` : ''; }
+function jumpBar(list){
+  const on=list.filter(([id])=>document.getElementById('sec-'+id)||S._jumpForce);
+  const items=list.map(([id,ic,lb])=>`<button data-act="jump" data-arg="${id}" style="padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap;">${ic} ${lb}</button>`).join('');
+  return `<div class="jumpBar" style="display:flex;gap:7px;overflow-x:auto;padding:2px 0 4px;margin-bottom:2px;-webkit-overflow-scrolling:touch;">${items}</div>`;
+}
 function fmtMin(t){ t=Math.round(t); return t>=60 ? `${Math.floor(t/60)}시간 ${t%60}분` : `${t}분`; }
 function studyStatsCard(){
   const s=S.studyStats; if(!s) return '';
@@ -636,7 +648,9 @@ function vCamp(){
     return `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid ${on?'rgba(255,84,104,.5)':'var(--border)'};background:${on?'rgba(255,84,104,.10)':'var(--panel2)'};"><div style="font-size:20px;">${on?(s.kind==='seal'?'🔒':'🛡️'):'🗓'}</div><div><div style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--text3);">${h(s.day)} ${h(s.t_start)}–${h(s.t_end)}</div><div style="font-size:14px;font-weight:700;margin-top:5px;">${h(s.name)}</div></div><div style="margin-left:auto;font-size:11px;font-weight:700;color:${on?'var(--danger-b)':'var(--text3)'};">${on?'발동 중':'대기'}</div></div>`;
   }).join('') || '<div style="color:var(--text3);font-size:13px;">고정일정이 없어요. 관리소 → 고정일정에서 추가하세요.</div>';
   const totalPct=Math.min(100,total/360*100);
-  return `<div style="display:grid;gap:22px;">${letterCard()}${finalCheckCard()}${recommendCard()}${todayCard()}${reportCard()}${recapCard()}${timeAllocCard()}${planCard()}<section>
+  return `<div style="display:grid;gap:22px;">
+    ${jumpBar([['letters','💌','편지'],['quest','🎯','오늘의 퀘스트'],['report','🧠','리포트'],['alloc','⏱','시간 배분'],['plan','🗓','플랜'],['quests','⛺','일일 퀘스트'],['stats','📊','통계']])}
+    ${sec('letters',letterCard())}${sec('final',finalCheckCard())}${sec('quest',recommendCard()+todayCard())}${sec('report',reportCard()+recapCard())}${sec('alloc',timeAllocCard())}${sec('plan',planCard())}<section id="sec-quests">
     <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">DAILY QUESTS</div>
       <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">⛺ 일일 퀘스트 현황 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 황금비 2:1:1:2 (총 6시간)</span></h2></div>
@@ -645,7 +659,7 @@ function vCamp(){
     </div>
     <div style="position:relative;"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${cards}</div>${overlay}</div>
   </section>
-  ${studyStatsCard()}
+  <div id="sec-stats">${studyStatsCard()}</div>
   <section style="background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:16px;padding:18px;">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;"><h3 style="margin:0;font-size:16px;font-weight:800;">🗝 결계 · 고정일정 (자동 발동)</h3>
     <button data-act="preview" style="font-size:12px;padding:6px 13px;border-radius:999px;cursor:pointer;border:1px solid ${S.lockPreview?'rgba(255,84,104,.5)':'var(--border)'};background:${S.lockPreview?'rgba(255,84,104,.12)':'var(--panel2)'};color:${S.lockPreview?'var(--danger-b)':'var(--text2)'};">${S.lockPreview?'미리보기 끄기':'결계 미리보기'}</button></div>
@@ -1470,12 +1484,13 @@ function vWrong(){
     ${S.wrongPdfMsg?`<div style="margin-bottom:12px;color:var(--blue);font-size:13px;">${h(S.wrongPdfMsg)}</div>`:''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">${d.repeat?`<div style="padding:10px 14px;border-radius:12px;border:1px solid rgba(255,140,40,.5);background:rgba(255,140,40,.1);display:flex;gap:10px;align-items:center;"><span style="font-weight:800;color:var(--orange);">🔁 반복 오답</span><span style="font-family:'Press Start 2P',monospace;font-size:12px;color:var(--orange);">${d.repeat}</span></div>`:''}${chips}</div>
     ${diagCard()}
-    ${totalWrong?perfectDefenseCard():''}
-    ${totalWrong?weakspotCard():''}
-    ${totalWrong?rxCard():''}
-    ${totalWrong?wrongGradeCard():''}
+    ${totalWrong?jumpBar([['defense','🛡','만점 방어전'],['weak','🔍','취약 유형'],['rx','💊','오답 처방'],['grade','📤','PDF 채점'],['list','📕','오답 목록']]):''}
+    ${totalWrong?sec('defense',perfectDefenseCard()):''}
+    ${totalWrong?sec('weak',weakspotCard()):''}
+    ${totalWrong?sec('rx',rxCard()):''}
+    ${totalWrong?sec('grade',wrongGradeCard()):''}
     ${totalWrong?analyzeBox():''}
-    ${items}
+    <div id="sec-list">${items}</div>
     ${totalWrong?'<p style="margin-top:14px;color:var(--text3);font-size:12.5px;">문제은행에서 다시 풀어 맞히면 목록에서 사라져요. <b>🔁 반복 오답</b>은 복습·PDF 채점에서 또 틀린 문항이에요.</p>':''}</div>`;
 }
 function analyzeBox(){
@@ -2959,6 +2974,9 @@ const ACTS = {
   sheet:()=>loadSheet(), sheetclose:()=>{ S.sheet=null; render(); },
   sheetprint:()=>window.print(),
   qjump:n=>{ const i=S.quizItems.findIndex(x=>x.qnum===+n); if(i>=0){ S.quizIdx=i; persist(); render(); scrollTop(); } },
+  jump:id=>{ const el=document.getElementById('sec-'+id);
+    if(el) scrollTo({top: el.getBoundingClientRect().top+scrollY-116, behavior:'smooth'});
+    else toast('그 섹션은 지금 없어요','bad'); },
   goreviewwrong:async()=>{ S.tab='wrong'; await loadWrong(); await loadDiag(false); render(); scrollTo({top:0}); },
   flash:()=>flashStart(), flashreveal:()=>flashReveal(),
   flashyes:()=>flashMark(true), flashno:()=>flashMark(false),

@@ -743,6 +743,9 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._file(HTML, "text/html; charset=utf-8")
         if p == "/api/session":
             return self._json({"authed": self._authed(), "setup": not has_seal(), "isAdmin": self._authed(), "ai": ai_provider()})
+        # 봉인(PIN) 밖으로 새면 안 되는 학습 콘텐츠 — 기출 본문·정답키·문항 이미지 등
+        if p.startswith("/api/") and p != "/api/session" and self._guard():
+            return
         if p == "/api/state":
             if self._guard():
                 return

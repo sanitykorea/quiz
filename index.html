@@ -482,8 +482,14 @@ function tick(){
     if(S.now>=S.mock.endAt){ mockSubmit(true); return; }
     render(); return;
   }
-  if(S.tab==='camp' && S.running) render(); // 타이머 작동 중에만 갱신(입력창 없어 안전)
+  if(S.tab==='camp' && S.running){ render(); return; } // 타이머 작동 중에만 갱신(입력창 없어 안전)
+  // 시험 당일엔 '현재 교시' 표시를 위해 분이 바뀔 때만 갱신
+  if(S.tab==='camp' && dday()===0){
+    const mn=new Date(S.now).getMinutes();
+    if(mn!==_lastMin){ _lastMin=mn; render(); }
+  }
 }
+let _lastMin=-1;
 
 // ======================================================
 //                     RENDER
@@ -2016,6 +2022,25 @@ function examItemsAdmin(){
         <button data-act="examitemdel" data-arg="${i}" style="padding:6px 12px;border-radius:8px;border:1px solid rgba(255,84,104,.5);background:rgba(255,84,104,.1);color:var(--danger-b);font-size:12px;cursor:pointer;">삭제</button>
       </div>`).join('')}</div>`;
 }
+// '09:00~09:40' 구간을 지금 시각과 비교 → past / now / soon
+function examSlotState(range){
+  const m=String(range).match(/(\d{1,2}):(\d{2})\D+(\d{1,2}):(\d{2})/); if(!m) return 'soon';
+  const n=new Date(S.now), cur=n.getHours()*60+n.getMinutes();
+  const a=+m[1]*60 + +m[2], b=+m[3]*60 + +m[4];
+  return cur<a ? 'soon' : (cur<b ? 'now' : 'past');
+}
+// 다음 교시까지 남은 시간 안내 (시험 당일에만)
+function examNextUp(){
+  const n=new Date(S.now), cur=n.getHours()*60+n.getMinutes();
+  const upcoming=EXAM_TT.map(([g,s,t])=>{
+    const m=String(t).match(/(\d{1,2}):(\d{2})/); return {g,s,t,start:+m[1]*60 + +m[2]};
+  }).filter(x=>x.start>cur && x.s!=='영어').sort((a,b)=>a.start-b.start)[0];
+  if(!upcoming) return `<div style="margin-top:9px;padding:10px 13px;border-radius:10px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.16);font-size:13px;color:var(--accent-b);font-weight:800;text-align:center;">🎉 모든 교시 종료 — 정말 수고했어요!</div>`;
+  const left=upcoming.start-cur;
+  return `<div style="margin-top:9px;padding:10px 13px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.1);font-size:12.8px;color:var(--text);">
+    ⏭ 다음: <b style="color:var(--gold);">${upcoming.g} ${upcoming.s}</b> (${upcoming.t.split('~')[0]}) ·
+    <b>${left>=60?Math.floor(left/60)+'시간 ':''}${left%60}분</b> 뒤 — 지금은 ${h(upcoming.s)} 요약만 훑기</div>`;
+}
 function examDayCard(){
   const d=dday();
   if(d>7) return '';
@@ -2032,13 +2057,17 @@ function examDayCard(){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
       <div><div style="font-size:13.5px;font-weight:800;margin-bottom:7px;">🎒 준비물</div>
         <div style="display:grid;gap:5px;">${(S.examItems||DEFAULT_EXAM_ITEMS).map((it,i)=>`<button data-act="chkexam" data-arg="${i}" style="display:flex;align-items:center;gap:9px;text-align:left;padding:8px 11px;border-radius:9px;border:1px solid ${done[i]?'rgba(46,230,166,.5)':'var(--border)'};background:${done[i]?'rgba(20,117,92,.14)':'var(--panel2)'};color:${done[i]?'var(--accent-b)':'var(--text)'};font-size:13px;cursor:pointer;"><span>${done[i]?'✅':'⬜'}</span><span style="${done[i]?'text-decoration:line-through;opacity:.75;':''}">${h(it)}</span></button>`).join('')}</div></div>
-      <div><div style="font-size:13.5px;font-weight:800;margin-bottom:7px;">🕐 교시별 시간표</div>
+      <div><div style="font-size:13.5px;font-weight:800;margin-bottom:7px;">🕐 교시별 시간표${d===0?' <span style="font-size:11px;color:var(--danger-b);font-weight:700;">· 실시간</span>':''}</div>
         <div style="display:grid;gap:4px;">${EXAM_TT.map(([g,s,t])=>{
           const skip=s==='영어';
-          return `<div style="display:flex;gap:9px;align-items:center;padding:8px 11px;border-radius:9px;border:1px solid ${skip?'var(--border)':'var(--bluebd)'};background:${skip?'var(--panel2)':'var(--tintB)'};font-size:12.8px;${skip?'opacity:.55;':''}">
+          const st=examSlotState(t), now=d===0&&st==='now', past=d===0&&st==='past';
+          return `<div style="display:flex;gap:9px;align-items:center;padding:8px 11px;border-radius:9px;border:1px solid ${now?'var(--danger-b)':(skip?'var(--border)':'var(--bluebd)')};background:${now?'rgba(255,84,104,.16)':(skip?'var(--panel2)':'var(--tintB)')};font-size:12.8px;${skip?'opacity:.55;':(past?'opacity:.45;':'')}${now?'animation:bossPulse 2.4s ease-in-out infinite;':''}">
             <span style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--text3);">${g}</span>
-            <b style="min-width:38px;">${s}</b><span style="color:var(--text2);">${t}</span>
-            ${skip?'<span style="margin-left:auto;font-size:11px;color:var(--accent-b);">면제 ✓</span>':''}</div>`;}).join('')}</div>
+            <b style="min-width:38px;${past?'text-decoration:line-through;':''}">${s}</b><span style="color:var(--text2);">${t}</span>
+            ${now?'<span style="margin-left:auto;font-size:11px;font-weight:800;color:var(--danger-b);">지금 ▶</span>'
+                 :past?'<span style="margin-left:auto;font-size:11px;color:var(--text3);">완료</span>'
+                 :skip?'<span style="margin-left:auto;font-size:11px;color:var(--accent-b);">면제 ✓</span>':''}</div>`;}).join('')}</div>
+        ${d===0?examNextUp():''}
         <div style="margin-top:8px;font-size:11.5px;color:var(--text3);">※ 영어는 과목합격(면제) — 해당 교시 대기실 이용. 쉬는 시간엔 다음 과목 암기 노트만!</div></div>
     </div></div>`;
 }

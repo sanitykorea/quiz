@@ -678,13 +678,54 @@ function cqView(){
     if(q.pick!=null){ if(c.n===it.answer){bg='rgba(20,117,92,.28)';bd='rgba(46,230,166,.6)';col='var(--accent-b)';} else if(c.n===q.pick){bg='rgba(255,84,104,.18)';bd='rgba(255,84,104,.6)';col='var(--danger-b)';} else col='var(--text3)'; }
     return `<button data-act="cqpick" data-arg="${c.n}" ${q.pick!=null?'disabled':''} style="display:flex;gap:9px;align-items:center;text-align:left;padding:12px 14px;border-radius:11px;border:1px solid ${bd};background:${bg};color:${col};font-size:14.5px;line-height:1.6;cursor:${q.pick!=null?'default':'pointer'};"><span style="font-size:17px;flex:0 0 auto;">${CIRC[c.n]}</span><span>${h(c.text)}</span></button>`;
   }).join('');
-  return `<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px;">
+  return `${q.topic?`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="padding:5px 12px;border-radius:999px;background:var(--tintO);border:1px solid var(--orangebd);color:var(--orange);font-size:12.5px;font-weight:800;">🎯 ${h(q.topic)} 집중 연습 · 전체 기출 통합</span>
+      ${q.fromWrong?`<button data-act="cqclose2" style="padding:5px 11px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">닫기</button>`:''}</div>`:''}
+    <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:8px;">
       <span style="color:var(--text3);">${h(it.year)} ${h(it.exam_round)} ${it.qnum}번 · ${q.idx+1}/${q.items.length}</span>
       <span style="color:var(--accent-b);font-weight:700;">점수 ${q.score} / ${q.answered}</span></div>
     ${it.passage?`<div style="max-height:22vh;overflow:auto;border:1px solid var(--bluebd);background:var(--tintB);border-radius:10px;padding:11px 13px;margin-bottom:9px;font-size:13px;line-height:1.75;white-space:pre-wrap;color:var(--text);">${h(it.passage)}</div>`:''}
     <div style="background:var(--inset);border:1px solid var(--orangebd);border-radius:12px;padding:15px;font-size:15.5px;line-height:1.75;white-space:pre-wrap;color:var(--text);margin-bottom:10px;">${h(it.stem)}</div>
     <div style="display:grid;gap:8px;">${choices}</div>
     ${q.pick!=null?`<button data-act="cqnext" style="width:100%;margin-top:11px;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 문제 ▶</button>`:''}`;
+}
+// ========== 취약 유형 분석 + 전체 기출 통합 연습 ==========
+async function loadWeakspots(){
+  S.weakspots={loading:true}; render();
+  const r=await api('/api/weakspots');
+  S.weakspots = r.clusters ? {clusters:r.clusters} : {error: r.error==='no-ai'?'🧚 수호령 미연결(GEMINI_API_KEY 필요).':(r.empty?'empty':'분석 실패. 잠시 후 다시.')};
+  render();
+}
+async function topicQuizStart(idx){
+  const cl=(S.weakspots&&S.weakspots.clusters||[])[idx]; if(!cl) return;
+  S.cq={loading:true, subject:cl.subject}; render();
+  const r=await api('/api/conceptquiz?subject='+encodeURIComponent(cl.subject)+'&kw='+encodeURIComponent(cl.keywords.join(',')));
+  const items=shuffle(r.items||[]);
+  S.cq={subject:cl.subject, topic:cl.topic, items, idx:0, pick:null, score:0, answered:0, fromWrong:true};
+  render();
+}
+function weakspotCard(){
+  const w=S.weakspots;
+  if(S.cq && S.cq.fromWrong){
+    return `<div style="border:1px solid var(--orangebd);border-radius:16px;padding:18px;background:linear-gradient(180deg,var(--tintO),var(--panel2));margin-bottom:18px;">${cqView()}</div>`;
+  }
+  if(!w) return `<div style="border:1px dashed var(--orangebd);border-radius:14px;padding:15px;background:var(--tintO);margin-bottom:18px;">
+    <div style="font-weight:800;color:var(--orange);margin-bottom:5px;">🔍 반복 취약 유형 분석</div>
+    <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;">틀린 문제들을 보고 <b>반복해서 틀리는 개념·유형</b>(예: 과학의 '충격량', 한국사의 '통일신라')을 찾아, 전체 기출에서 같은 유형만 모아 풀어볼 수 있어요.</div>
+    <button data-act="weakspots" style="padding:11px 18px;border-radius:12px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-weight:800;font-size:14px;cursor:pointer;">🔍 취약 유형 분석받기</button></div>`;
+  if(w.loading) return `<div style="margin-bottom:18px;font-size:13px;color:var(--orange);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 반복되는 취약 유형을 분석하는 중...</div>`;
+  if(w.error==='empty') return `<div style="border:1px solid var(--border);border-radius:14px;padding:14px 16px;background:var(--panel);margin-bottom:18px;font-size:13.5px;color:var(--text2);">🔍 아직 분석하기엔 오답이 적어요. 더 풀고 나서 다시 시도해보세요.</div>`;
+  if(w.error) return `<div style="margin-bottom:18px;font-size:13px;color:var(--pink);">${h(w.error)} <button data-act="weakspots" style="margin-left:8px;padding:6px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">다시 시도</button></div>`;
+  const cls=w.clusters||[];
+  if(!cls.length) return `<div style="border:1px solid var(--border);border-radius:14px;padding:14px 16px;background:var(--panel);margin-bottom:18px;font-size:13.5px;color:var(--text2);">🔍 아직 뚜렷하게 반복되는 유형이 없어요. 잘 하고 있다는 뜻이에요!</div>`;
+  return `<div style="border:1px solid var(--orangebd);border-radius:16px;padding:18px;background:linear-gradient(180deg,var(--tintO),var(--panel2));margin-bottom:18px;">
+    <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--orange);letter-spacing:1px;margin-bottom:10px;">WEAK SPOTS · 반복 취약 유형</div>
+    <div style="display:grid;gap:8px;">${cls.map((cl,i)=>`<div style="border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--panel);display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+      <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(cl.subject)}</span>
+      <b style="font-size:14.5px;">${h(cl.topic)}</b>
+      <span style="font-size:12px;color:var(--text3);">최근 ${cl.count}번 틀림 · ${h(cl.keywords.join(', '))}</span>
+      <button data-act="topicquiz" data-arg="${i}" style="margin-left:auto;padding:7px 14px;border-radius:999px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-size:12.5px;font-weight:700;cursor:pointer;">🎯 전체 기출에서 통합 연습</button></div>`).join('')}</div>
+    <button data-act="weakspots" style="margin-top:10px;padding:7px 13px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">↻ 다시 분석</button></div>`;
 }
 function conceptPanel(){
   const subj=S.towerSubject;
@@ -847,7 +888,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804k · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804l · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1061,6 +1102,7 @@ function vWrong(){
     ${S.wrongPdfMsg?`<div style="margin-bottom:12px;color:var(--blue);font-size:13px;">${h(S.wrongPdfMsg)}</div>`:''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">${d.repeat?`<div style="padding:10px 14px;border-radius:12px;border:1px solid rgba(255,140,40,.5);background:rgba(255,140,40,.1);display:flex;gap:10px;align-items:center;"><span style="font-weight:800;color:var(--orange);">🔁 반복 오답</span><span style="font-family:'Press Start 2P',monospace;font-size:12px;color:var(--orange);">${d.repeat}</span></div>`:''}${chips}</div>
     ${diagCard()}
+    ${totalWrong?weakspotCard():''}
     ${totalWrong?rxCard():''}
     ${totalWrong?wrongGradeCard():''}
     ${totalWrong?analyzeBox():''}
@@ -2222,6 +2264,7 @@ const ACTS = {
     await loadWrong(); await loadDiag(false); render(); },
   chkexam:i=>{ S.checkExam={...S.checkExam,[i]:!S.checkExam[i]}; render(); },
   cqstart:s=>cqStart(s), cqclose:()=>{ S.cq=null; render(); },
+  weakspots:()=>loadWeakspots(), topicquiz:i=>topicQuizStart(+i), cqclose2:()=>{ S.cq=null; render(); },
   cqpick:n=>cqPick(+n), cqnext:()=>cqNext(),
   eyestart:()=>eyeStart(), eyestop:()=>eyeStop(true), eyecheck:()=>eyeCheck(),
   eyescreen:()=>{ eyeInit().useScreen=!eyeInit().useScreen; render(); },

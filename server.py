@@ -790,7 +790,12 @@ class H(http.server.BaseHTTPRequestHandler):
         if p == "/api/conceptquiz":
             if self._guard():
                 return
-            return self._concept_quiz(q.get("subject", ""))
+            kw = [k for k in (q.get("kw", "") or "").split(",") if k]
+            return self._concept_quiz(q.get("subject", ""), kw or None)
+        if p == "/api/weakspots":
+            if self._guard():
+                return
+            return self._weakspots()
         if p == "/api/today":
             if self._guard():
                 return
@@ -1324,8 +1329,9 @@ class H(http.server.BaseHTTPRequestHandler):
         out.sort(key=lambda x: -x["score"])
         return self._json({"items": out[:6], "subject": row["subject"]})
 
-    def _concept_quiz(self, subject):
-        """해당 과목 기출 발문+선지+정답을 모아 속사포 개념 퀴즈로 제공(그림 문항 제외)."""
+    def _concept_quiz(self, subject, keywords=None):
+        """해당 과목 기출 발문+선지+정답을 모아 속사포 개념 퀴즈로 제공(그림 문항 제외).
+        keywords가 있으면 해당 단어를 포함하는 문항만(취약 유형 통합 연습용)."""
         if not subject:
             return self._json({"error": "bad_input"}, 400)
         c = db()
@@ -1346,10 +1352,65 @@ class H(http.server.BaseHTTPRequestHandler):
                     continue
                 if re.search(r'그림|그래프|지도|다음\s*표|아래\s*표|자료를 보고', stem):
                     continue
+                if keywords:
+                    blob = stem + " " + " ".join(ch.get("text", "") for ch in chs) + " " + (it.get("passage") or "")
+                    if not any(kw in blob for kw in keywords):
+                        continue
                 out.append({"question_id": r["id"], "qnum": it["qnum"], "stem": stem, "choices": chs,
                             "answer": ans, "year": r["year"], "exam_round": r["exam_round"],
                             "passage": (it.get("passage") or "")[:400]})
         return self._json({"items": out, "subject": subject, "count": len(out)})
+
+    def _weakspots(self):
+        """오답노트 기반 반복 취약 유형 분석(AI) — 과목별로 자주 틀리는 개념을 묶어 검색 키워드까지 제시."""
+        c = db()
+        rows = c.execute("""SELECT a.* FROM attempts a
+                JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
+                WHERE a.correct=0 ORDER BY a.subject, a.ts DESC""").fetchall()
+        pages, items = {}, []
+        for w in rows:
+            qid = w["question_id"]
+            if qid not in pages:
+                pr = c.execute("SELECT raw_text FROM questions WHERE id=?", (qid,)).fetchone()
+                pages[qid] = {it["qnum"]: it for it in parse_items(pr["raw_text"])} if pr else {}
+            it = pages[qid].get(w["qnum"], {})
+            stem = (it.get("stem") or "").replace("\n", " ").strip()[:90]
+            if stem:
+                items.append({"subject": w["subject"], "qid": qid, "qnum": w["qnum"], "stem": stem})
+        c.close()
+        if len(items) < 2:
+            return self._json({"clusters": [], "empty": True})
+        lines = [f"#{i+1} [{it['subject']}] {it['stem']}" for i, it in enumerate(items)]
+        prompt = ("아래는 검정고시 수험생이 최근 틀린 문제들의 발문입니다(앞에 #번호). "
+                  "학생이 '반복해서' 틀리는 개념·유형을 과목별로 찾아 묶어주세요. "
+                  "한 유형에 문항이 2개 이상 모일 때만 포함하고(1개뿐이면 제외), 과목당 최대 3개 유형만 뽑으세요.\n"
+                  "각 유형마다: subject(과목명), topic(간결한 한국어 이름, 12자 이내, 예: '충격량과 운동량', '통일신라의 통치체제'), "
+                  "keywords(그 유형의 다른 기출을 찾을 때 검색할 핵심 단어 2~4개, 실제 문제 발문에 등장할 만한 짧은 단어), "
+                  "indices(해당하는 문항의 #번호 목록)를 담아 JSON 배열로만 출력하세요. 다른 설명 없이 JSON만.\n"
+                  '형식 예: [{"subject":"과학","topic":"충격량과 운동량","keywords":["충격량","운동량","F·t"],"indices":[1,4]}]\n\n'
+                  + "\n".join(lines))
+        try:
+            txt = ai_complete("당신은 검정고시 학습 코치입니다. 데이터에 근거해 정확하게 분석합니다.",
+                              [{"role": "user", "content": prompt}], 900)
+        except Exception as e:
+            return self._json({"error": "ai_failed", "detail": str(e)}, 502)
+        if txt is None:
+            return self._json({"error": "no-ai"}, 503)
+        try:
+            clusters = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', txt.strip()))
+        except Exception:
+            return self._json({"error": "ai_parse", "raw": txt[:300]}, 502)
+        out = []
+        for cl in (clusters if isinstance(clusters, list) else []):
+            idxs = [i for i in cl.get("indices", []) if isinstance(i, int) and 1 <= i <= len(items)]
+            if len(idxs) < 2:
+                continue
+            refs = [{"question_id": items[i - 1]["qid"], "qnum": items[i - 1]["qnum"]} for i in idxs]
+            out.append({"subject": str(cl.get("subject", "")), "topic": str(cl.get("topic", ""))[:20],
+                        "keywords": [str(k)[:12] for k in (cl.get("keywords") or [])][:5],
+                        "count": len(refs), "refs": refs})
+        return self._json({"clusters": out})
 
     def _today(self, date):
         """하루 마감 리포트: 오늘 푼 문항·정답률·과목별·해결한 반복오답."""

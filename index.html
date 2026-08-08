@@ -77,6 +77,8 @@
   #cmdk .row{ padding:11px 18px; display:flex; gap:10px; align-items:center; cursor:pointer; font-size:14.5px; color:var(--text); }
   #cmdk .row.sel{ background:rgba(255,224,102,.13); color:var(--gold); }
   kbd{ font-family:ui-monospace,monospace; font-size:11px; border:1px solid var(--border); border-bottom-width:2px; border-radius:5px; padding:1px 5px; color:var(--text3); background:var(--panel2); }
+  /* ---- 연결 끊김 배너 ---- */
+  #netBanner{ position:fixed; left:50%; transform:translateX(-50%); bottom:16px; z-index:250; padding:11px 20px; border-radius:999px; font-size:13.5px; font-weight:700; color:#fff; background:linear-gradient(180deg,#ff8093,#d43148); box-shadow:0 12px 32px rgba(0,0,0,.45); animation:popIn .3s cubic-bezier(.34,1.56,.64,1); max-width:92vw; text-align:center; }
   /* ---- 인쇄: 최종 요약 시트만 흑백으로 깔끔하게 ---- */
   @media print{
     header, nav, .noPrint, #toTop, #cmdk, #eyePip{ display:none !important; }
@@ -139,11 +141,35 @@ const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 
 let _barrierActive = null;
 
 // ---------- api ----------
+// 네트워크가 끊겨도 앱이 죽지 않도록: fetch 실패를 정상 응답 객체로 흡수
 async function api(path, opts){
-  const r = await fetch(path, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
+  let r;
+  try{
+    r = await fetch(path, Object.assign({headers:{'Content-Type':'application/json'}}, opts));
+  }catch(e){
+    netDown(true);
+    return {ok:false, status:0, offline:true, error:'offline'};
+  }
+  netDown(false);
   let j = {}; try{ j = await r.json(); }catch(e){}
   return {ok:r.ok, status:r.status, ...j};
 }
+// 연결 끊김 배너 (재렌더와 무관하게 body에 직접 붙임)
+let _netDown=false;
+function netDown(down){
+  if(down===_netDown) return;
+  _netDown=down;
+  let el=document.getElementById('netBanner');
+  if(down){
+    if(!el){
+      el=document.createElement('div'); el.id='netBanner';
+      el.innerHTML='📡 연결이 끊겼어요 — 기록은 다시 연결되면 저장돼요';
+      document.body.appendChild(el);
+    }
+  } else if(el) el.remove();
+}
+addEventListener('online', ()=>netDown(false));
+addEventListener('offline', ()=>netDown(true));
 const jbody = o => ({body: JSON.stringify(o)});
 
 // ---------- persistence ----------
@@ -309,7 +335,12 @@ async function verify(){ const text=S.blankText.trim(); if(!text||S.blankLoading
 }
 
 // ---------- question bank ----------
-async function loadFacets(){ const r=await api('/api/questions/facets'); S.qFacets=r; }
+async function loadFacets(){
+  const r=await api('/api/questions/facets');
+  // 실패 응답을 그대로 덮어쓰면 qFacets.subject 가 사라져 다른 화면이 깨짐 → 모양 보존
+  if(!r.ok || !Array.isArray(r.subject)) return;
+  S.qFacets={subject:r.subject||[], year:r.year||[], exam_round:r.exam_round||[], level:r.level||[]};
+}
 async function loadQuestions(random){
   const q=Object.assign({}, S.qFilter); if(random) q.random='1';
   const qs=Object.entries(q).filter(([k,v])=>v).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
@@ -356,6 +387,8 @@ async function mark(qnum, choice){
     if(r.correct){ S.streak=(S.streak||0)+1; const xp=10*Math.min(S.streak,5); toast(S.streak>=2?`🔥 ${S.streak} 연속!  +${xp} XP`:`⚔️ 명중!  +10 XP`, 'good'); }
     else { const had=S.streak; S.streak=0; toast(choice===0?'🤔 다음엔 맞혀보자':(had>=2?`💥 콤보 끊김…`:'💧 아쉬워요'), 'bad'); }
     persist(); render();
+  } else if(r.offline){
+    toast('📡 연결이 끊겨 채점을 못 했어요', 'bad');
   } else if(r.error==='no_key'){
     toast('🔑 이 문제는 정답키가 아직 없어요', 'bad');   // 정답표 미등록 → 채점 불가
   }
@@ -370,7 +403,7 @@ function toast(text, kind){
 }
 function quizNav(d){ const n=S.quizItems.length; if(!n) return; S.quizIdx=(S.quizIdx+d+n)%n; persist(); render(); scrollTop(); }
 function scrollTop(){ const el=document.getElementById('quizCard'); if(el) el.scrollIntoView({block:'start',behavior:'smooth'}); }
-async function loadWrong(){ const r=await api('/api/wrong'); S.wrongData=r; S.wrongAnalysis=''; render(); }
+async function loadWrong(){ const r=await api('/api/wrong'); if(!r.ok&&!r.wrong) { render(); return; } S.wrongData=r; S.wrongAnalysis=''; render(); }
 async function reviewWrong(qid, subject, year, round, qnum){
   S.tab='bank'; S.qFilter={subject, year, exam_round:round};
   if(!S.qFacets.subject.length) await loadFacets();
@@ -511,7 +544,7 @@ function app(){
             <span style="font-family:'Press Start 2P',monospace;font-size:11px;color:#fff;background:var(--danger);padding:5px 8px;border-radius:8px;box-shadow:0 0 12px rgba(255,84,104,.6);">D-${dday()}</span>
           </div>
         </div>
-        <button class="hdrMenuBtn" data-act="hdrmenu" title="메뉴" style="${iconBtn}">${S.hdrMenu?'✕':'☰'}</button>
+        <button class="hdrMenuBtn" data-act="hdrmenu" title="메뉴" aria-label="메뉴" style="${iconBtn}">${S.hdrMenu?'✕':'☰'}</button>
         <div class="hdrRest${S.hdrMenu?' open':''}" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <div style="display:flex;flex-direction:column;gap:6px;padding:8px 12px;border:1px solid var(--border);border-radius:12px;background:var(--panel2);">
             <div style="font-size:10px;color:var(--gold-d);letter-spacing:.5px;">🛏 여관 휴식 · 체력 회복</div>
@@ -521,17 +554,17 @@ function app(){
             </div>
           </div>
           <div style="display:flex;gap:10px;">
-            <button data-act="cmdk" title="빠른 이동 (Ctrl+K)" style="${iconBtn}">⌘</button>
-            <button data-act="mute" title="효과음 켜기/끄기" style="${iconBtn}">${S.muted?'🔇':'🔊'}</button>
-            <button data-act="theme" title="테마 전환" style="${iconBtn}">${S.theme==='light'?'☾':'☀'}</button>
-            <button data-act="relock" title="다시 봉인" style="${iconBtn}">🔒</button>
+            <button data-act="cmdk" title="빠른 이동 (Ctrl+K)" aria-label="빠른 이동 (Ctrl+K)" style="${iconBtn}">⌘</button>
+            <button data-act="mute" title="효과음 켜기/끄기" aria-label="효과음 켜기/끄기" style="${iconBtn}">${S.muted?'🔇':'🔊'}</button>
+            <button data-act="theme" title="테마 전환" aria-label="테마 전환" style="${iconBtn}">${S.theme==='light'?'☾':'☀'}</button>
+            <button data-act="relock" title="다시 봉인" aria-label="다시 봉인" style="${iconBtn}">🔒</button>
           </div>
         </div>
       </div>
       <nav class="hdrNav" style="max-width:1180px;margin:0 auto;padding:0 20px;display:flex;gap:4px;overflow-x:auto;">${nav}</nav>
     </header>
     <main style="max-width:1180px;margin:0 auto;padding:26px 20px 90px;">${view}${eyePip()}</main>
-    <button id="toTop" onclick="scrollTo({top:0,behavior:'smooth'})" title="맨 위로">↑</button>
+    <button id="toTop" onclick="scrollTo({top:0,behavior:'smooth'})" title="맨 위로" aria-label="맨 위로">↑</button>
     ${cmdkView()}
   </div>`;
 }
@@ -605,7 +638,7 @@ function studyStatsCard(){
   const subRows=subs.map(([k,lb,col])=>{ const v=Math.round(period[k]||0); return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;"><span style="width:64px;font-size:13px;color:var(--text2);">${lb}</span><div style="flex:1;height:14px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;"><div style="height:100%;width:${v/smax*100}%;background:${col};border-radius:999px;transition:width .4s;"></div></div><span style="width:64px;text-align:right;font-size:12.5px;font-weight:700;color:${col};">${fmtMin(v)}</span></div>`; }).join('');
   // 최근 21일(3주) 일별 막대
   const bars=[...Array(21)].map((_,i)=>{ const dt=new Date(); dt.setDate(dt.getDate()-(20-i)); const key=ymd(dt); const v=key===tk?today:(byDate[key]||0); const hp=Math.min(100,v/360*100); const on=key===tk; const dd=dt.getDate();
-    return `<div title="${key} · ${v}분" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:56px;display:flex;align-items:flex-end;"><div style="width:100%;background:${v?'linear-gradient(180deg,#2ee6a6,#14755C)':'var(--panel2)'};border:1px solid ${on?'var(--gold-d)':'var(--border)'};border-radius:3px 3px 0 0;height:${Math.max(3,hp)}%;"></div></div><div style="font-size:8px;color:${on?'var(--gold)':'var(--text3)'};">${(dt.getDay()===1||on)?dd:''}</div></div>`;
+    return `<div title="${key} · ${v}분" aria-label="${key} · ${v}분" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;"><div style="width:100%;height:56px;display:flex;align-items:flex-end;"><div style="width:100%;background:${v?'linear-gradient(180deg,#2ee6a6,#14755C)':'var(--panel2)'};border:1px solid ${on?'var(--gold-d)':'var(--border)'};border-radius:3px 3px 0 0;height:${Math.max(3,hp)}%;"></div></div><div style="font-size:8px;color:${on?'var(--gold)':'var(--text3)'};">${(dt.getDay()===1||on)?dd:''}</div></div>`;
   }).join('');
   return `<section style="background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--border);border-radius:16px;padding:18px;">
     <h3 style="margin:0 0 14px;font-size:16px;font-weight:800;">📊 학습 통계 <span style="font-size:12px;color:var(--text2);font-weight:600;">· 서버에 계속 쌓여요</span></h3>
@@ -1138,7 +1171,7 @@ function vTower(){
         <h3 style="margin:8px 0 4px;font-size:18px;font-weight:800;">📜 실전 토벌</h3><div style="font-size:12px;color:var(--text2);margin-bottom:14px;">6회독~ · 말하고 쓰고 반복 (백지 test)</div>
         <input data-model="topic" value="${h(S.topic)}" placeholder="주제 (예: 광합성)" style="width:100%;margin-bottom:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--pinkbd);background:var(--inset);color:var(--text);font-size:14px;">
         <div style="position:relative;"><textarea data-model="blankText" placeholder="머릿속에 떠오르는 개념을 자유롭게 영창(작성)하세요..." style="width:100%;min-height:150px;resize:vertical;padding:14px;padding-right:52px;border-radius:12px;border:1px solid var(--pinkbd);background:var(--inset);color:var(--text);font-size:15px;line-height:1.8;">${h(S.blankText)}</textarea>
-        <button data-act="mic" title="받아쓰기" style="position:absolute;top:12px;right:12px;width:40px;height:40px;border-radius:11px;font-size:17px;cursor:pointer;border:1px solid ${S.recording?'rgba(255,84,104,.6)':'var(--border)'};background:${S.recording?'rgba(255,84,104,.18)':'var(--panel2)'};color:${S.recording?'var(--danger-b)':'var(--text)'};${S.recording?'animation:bossPulse 1.2s infinite;':''}">🎙</button></div>
+        <button data-act="mic" title="받아쓰기" aria-label="받아쓰기" style="position:absolute;top:12px;right:12px;width:40px;height:40px;border-radius:11px;font-size:17px;cursor:pointer;border:1px solid ${S.recording?'rgba(255,84,104,.6)':'var(--border)'};background:${S.recording?'rgba(255,84,104,.18)':'var(--panel2)'};color:${S.recording?'var(--danger-b)':'var(--text)'};${S.recording?'animation:bossPulse 1.2s infinite;':''}">🎙</button></div>
         <div style="display:flex;gap:8px;margin-top:12px;"><button data-act="verify" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-weight:800;font-size:14px;cursor:pointer;">수호령의 검증 받기 🧚</button>
         <button data-act="clearBlank" style="padding:12px 14px;border-radius:12px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:14px;cursor:pointer;">지우기</button></div>${blankBox}
       </div>
@@ -1184,7 +1217,7 @@ function vSummon(){
         <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;">${quicks}</div>
         <div style="display:flex;gap:10px;margin-top:10px;">
           <input id="chatInput" data-model="input" value="${h(S.input)}" placeholder="수호령에게 말 걸기..." style="flex:1;padding:12px 15px;border-radius:12px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:15px;">
-          <button data-act="send" title="전송" style="width:48px;height:48px;flex:0 0 auto;border-radius:12px;border:none;background:linear-gradient(180deg,#2ee6a6,#14755C);color:#04120c;font-size:20px;cursor:pointer;box-shadow:0 0 18px rgba(46,230,166,.35);">🪄</button></div>
+          <button data-act="send" title="전송" aria-label="전송" style="width:48px;height:48px;flex:0 0 auto;border-radius:12px;border:none;background:linear-gradient(180deg,#2ee6a6,#14755C);color:#04120c;font-size:20px;cursor:pointer;box-shadow:0 0 18px rgba(46,230,166,.35);">🪄</button></div>
       </div></div></div>`;
 }
 
@@ -1305,7 +1338,7 @@ function vAdmin(){
     const ph=LBL[f]||f;
     const big = (f==='raw_text'||f==='body');
     if(big) return `<textarea id="${id}" placeholder="${ph}" style="width:100%;min-height:${f==='raw_text'?'120px':'70px'};padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;line-height:1.6;">${h(val||'')}</textarea>`;
-    return `<input id="${id}" placeholder="${ph}" title="${ph}" value="${h(val==null?'':val)}" style="padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;min-width:90px;flex:${f==='q'||f==='a'||f==='name'?'1':'0 0 auto'};">`;
+    return `<input id="${id}" placeholder="${ph}" title="${ph}" aria-label="${ph}" value="${h(val==null?'':val)}" style="padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;min-width:90px;flex:${f==='q'||f==='a'||f==='name'?'1':'0 0 auto'};">`;
   };
   const newForm=`<div style="border:1px dashed var(--gold-d);border-radius:14px;padding:16px;background:rgba(255,224,102,.05);margin-bottom:18px;">
     <div style="font-weight:800;margin-bottom:10px;color:var(--gold);">➕ 새 항목 추가</div>
@@ -1439,7 +1472,13 @@ function quiz(){
 
 function vWrong(){
   const d=S.wrongData;
-  if(!d) return '<div style="color:var(--text3);">불러오는 중...</div>';
+  if(!d) return _netDown
+    ? `<div style="border:1px solid var(--border);border-radius:16px;padding:26px;text-align:center;background:var(--panel);">
+        <div style="font-size:34px;margin-bottom:8px;">📡</div>
+        <div style="font-size:15px;font-weight:800;margin-bottom:4px;">오답노트를 불러오지 못했어요</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">연결이 끊긴 것 같아요. 다시 시도해볼까요?</div>
+        <button data-act="retrywrong" style="padding:10px 20px;border-radius:11px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다시 시도</button></div>`
+    : '<div style="color:var(--text3);">불러오는 중...</div>';
   const subs=Object.entries(d.by_subject||{}).sort((a,b)=>b[1]-a[1]);
   const totalWrong=(d.wrong||[]).length;
   const fSubj=S.wrongSubjFilter;
@@ -1459,8 +1498,8 @@ function vWrong(){
         ${TAGS.map(([k,lb])=>`<button data-act="wrongtag" data-arg="${w.question_id}|${w.qnum}|${k}" style="padding:4px 9px;border-radius:8px;font-size:11.5px;cursor:pointer;border:1px solid ${w.tag===k?'var(--pink)':'var(--border)'};background:${w.tag===k?'var(--tintP)':'var(--panel2)'};color:${w.tag===k?'var(--pink)':'var(--text3)'};">${lb}</button>`).join('')}
       </div>
       <div style="margin-left:auto;display:flex;gap:6px;">
-        ${w.wrong_count>1?`<button data-act="wrongdec" data-arg="${w.question_id}|${w.qnum}" title="오답 횟수 1회 차감" style="padding:6px 11px;border-radius:999px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-size:12.5px;font-weight:700;cursor:pointer;">−1 차감</button>`:''}
-        <button data-act="wrongremove" data-arg="${w.question_id}|${w.qnum}" title="이 문제를 오답노트에서 제거" style="padding:6px 11px;border-radius:999px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.14);color:var(--accent-b);font-size:12.5px;font-weight:700;cursor:pointer;">✓ 해결</button>
+        ${w.wrong_count>1?`<button data-act="wrongdec" data-arg="${w.question_id}|${w.qnum}" title="오답 횟수 1회 차감" aria-label="오답 횟수 1회 차감" style="padding:6px 11px;border-radius:999px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-size:12.5px;font-weight:700;cursor:pointer;">−1 차감</button>`:''}
+        <button data-act="wrongremove" data-arg="${w.question_id}|${w.qnum}" title="이 문제를 오답노트에서 제거" aria-label="이 문제를 오답노트에서 제거" style="padding:6px 11px;border-radius:999px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.14);color:var(--accent-b);font-size:12.5px;font-weight:700;cursor:pointer;">✓ 해결</button>
         <button data-act="review" data-arg="${w.question_id}|${h(w.subject)}|${h(w.year)}|${h(w.exam_round)}|${w.qnum}" style="padding:6px 13px;border-radius:999px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer;">↺ 복습</button>
       </div>
     </div>`;
@@ -1883,7 +1922,7 @@ function timeAllocCard(){
   </div>`;
 }
 // ========== 지금까지의 기록 회고 ==========
-async function loadRecap(){ S.recap=await api('/api/recap'); render(); }
+async function loadRecap(){ const r=await api('/api/recap'); if(r.ok) S.recap=r; render(); }
 function recapCard(){
   const r=S.recap; if(!r) return '';
   const acc=r.total_attempts?Math.round(r.total_correct/r.total_attempts*100):0;
@@ -2342,7 +2381,7 @@ function eyeListen(){                      // 마이크 항상 켜기/끄기 토
   if(e.muteMic) stopRec(); else { e.always=true; startRec(); }
   render();
 }
-async function loadFocusHist(){ const r=await api('/api/focus/sessions'); S.focusHist=r; render(); }
+async function loadFocusHist(){ const r=await api('/api/focus/sessions'); if(r.ok) S.focusHist=r; render(); }
 function fmtSec(s){ const m=Math.floor(s/60); return `${Math.floor(m/60)?Math.floor(m/60)+'시간 ':''}${m%60}분`; }
 function eyePip(){
   const e=eyeInit();
@@ -2355,8 +2394,8 @@ function eyePip(){
       <span style="padding:3px 8px;border-radius:999px;background:rgba(0,0,0,.5);color:#fff;font-size:11px;font-weight:700;">🔮 루하</span>
       <span id="pipTimer" style="padding:3px 8px;border-radius:999px;background:rgba(0,0,0,.5);color:${st.c};font-size:11px;font-weight:800;">${mm}:${ss}</span></div>
     <div style="position:absolute;top:6px;right:6px;display:flex;gap:4px;">
-      <button data-act="piphide" title="숨기기" style="width:26px;height:26px;border-radius:8px;border:none;background:rgba(0,0,0,.5);color:#fff;font-size:13px;cursor:pointer;">─</button>
-      <button data-act="tab" data-arg="eye" title="크게 보기" style="width:26px;height:26px;border-radius:8px;border:none;background:rgba(0,0,0,.5);color:#fff;font-size:12px;cursor:pointer;">⤢</button></div>
+      <button data-act="piphide" title="숨기기" aria-label="숨기기" style="width:26px;height:26px;border-radius:8px;border:none;background:rgba(0,0,0,.5);color:#fff;font-size:13px;cursor:pointer;">─</button>
+      <button data-act="tab" data-arg="eye" title="크게 보기" aria-label="크게 보기" style="width:26px;height:26px;border-radius:8px;border:none;background:rgba(0,0,0,.5);color:#fff;font-size:12px;cursor:pointer;">⤢</button></div>
     ${e.msg?`<div style="position:absolute;left:8px;right:8px;bottom:38px;padding:7px 10px;border-radius:10px;background:rgba(0,0,0,.62);color:#fff;font-size:11.5px;line-height:1.45;max-height:52px;overflow:hidden;">${h(e.msg)}</div>`:''}
     <div style="display:flex;gap:4px;padding:6px;background:var(--panel2);">
       <button data-act="eyelisten" style="flex:1;padding:7px;border-radius:8px;border:1px solid ${e.muteMic?'var(--border)':'var(--pinkbd)'};background:${e.muteMic?'var(--panel)':'var(--tintP)'};color:${e.muteMic?'var(--text3)':'var(--pink)'};font-size:11.5px;font-weight:700;cursor:pointer;">${e.muteMic?'🎙 꺼짐':(e.listening?'🎙 듣는 중':'🎙 대기')}</button>
@@ -2624,7 +2663,7 @@ function finalCheckCard(){
       <button data-act="finaldodeok" style="flex:1;min-width:130px;padding:11px;border-radius:11px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-weight:800;font-size:14px;cursor:pointer;">✏️ 도덕 핵심 훑기</button></div></div>`;
 }
 // ========== 하루 마감 리포트 ==========
-async function loadToday(){ const r=await api('/api/today?date='+ymd(new Date())); S.today=r; render(); }
+async function loadToday(){ const r=await api('/api/today?date='+ymd(new Date())); if(r.ok) S.today=r; render(); }
 function todayCard(){
   const t=S.today; if(!t) return '';
   const strk=t.streak?`<span style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;background:linear-gradient(180deg,#ff8a3d,#e0603b);color:#fff;font-weight:800;font-size:13px;box-shadow:0 0 14px rgba(255,120,60,.45);">🔥 ${t.streak}일 연속</span>`:'';
@@ -2777,7 +2816,7 @@ function trendCard(){
     <div style="font-size:11.5px;color:var(--text3);margin-top:4px;">점선 = 98(교과 3등급선) · 94(학종 마지노선)</div></div>`;
 }
 // ========== 오늘의 추천 학습 ==========
-async function loadRecommend(){ const r=await api('/api/recommend'); S.recommend=r; }
+async function loadRecommend(){ const r=await api('/api/recommend'); if(r.ok) S.recommend=r; }
 function recommendCard(){
   const r=S.recommend; if(!r||!r.tasks) return '';
   const dd=dday();
@@ -2974,6 +3013,7 @@ const ACTS = {
   sheet:()=>loadSheet(), sheetclose:()=>{ S.sheet=null; render(); },
   sheetprint:()=>window.print(),
   qjump:n=>{ const i=S.quizItems.findIndex(x=>x.qnum===+n); if(i>=0){ S.quizIdx=i; persist(); render(); scrollTop(); } },
+  retrywrong:async()=>{ await loadWrong(); await loadDiag(false); render(); },
   jump:id=>{ const el=document.getElementById('sec-'+id);
     if(el) scrollTo({top: el.getBoundingClientRect().top+scrollY-116, behavior:'smooth'});
     else toast('그 섹션은 지금 없어요','bad'); },

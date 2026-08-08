@@ -1593,6 +1593,7 @@ function startResultReveal(result){
   S.examScore=null; S.examLetter=null; S.examLetterLoading=false;
   S.examReveal={phase:'count', n:3, display:0, real:result};
   render();
+  loadExamLetter(result);            // 발표 연출(약 7초) 동안 편지를 미리 받아둔다
   setTimeout(()=>revealTick(), 600);
 }
 function revealTick(){
@@ -1609,7 +1610,7 @@ function revealTick(){
     if(t>=1){
       rv.phase='reveal'; rv.display=rv.real.avg; render();
       playSfx('examreveal');
-      setTimeout(()=>{ S.examScore=rv.real; S.examReveal=null; render(); loadExamLetter(rv.real); }, 1500);
+      setTimeout(()=>{ S.examScore=rv.real; S.examReveal=null; render(); }, 1500);
       return;
     }
     const jitter=(1-t)*32;
@@ -1636,10 +1637,16 @@ function examRevealView(){
 }
 async function loadExamLetter(result){
   S.examLetterLoading=true; S.examLetter=null; render();
+  // AI 편지는 20초 넘게 걸릴 수 있음 → 그 이상 기다리게 두지 않고 준비된 편지로 대체
+  const timeout=new Promise(res=>setTimeout(()=>res({timeout:true}), 25000));
+  let letter;
   try{
-    const r=await api('/api/resultletter',{method:'POST',...jbody({avg:result.avg, pass:result.pass, detail:result.detail})});
-    S.examLetter = (r.ok && r.letter) ? r.letter : fallbackResultLetter(result);
-  }catch(e){ S.examLetter = fallbackResultLetter(result); }
+    const r=await Promise.race([
+      api('/api/resultletter',{method:'POST',...jbody({avg:result.avg, pass:result.pass, detail:result.detail})}),
+      timeout]);
+    letter = (r && r.ok && r.letter) ? r.letter : fallbackResultLetter(result);
+  }catch(e){ letter = fallbackResultLetter(result); }
+  if(!S.examLetter) S.examLetter=letter;      // 이미 표시 중이면 덮어쓰지 않음
   S.examLetterLoading=false; render();
 }
 function fallbackResultLetter(result){
@@ -1675,7 +1682,10 @@ function fallbackResultLetter(result){
 }
 function examLetterCard(){
   if(!S.examScore) return '';
-  if(S.examLetterLoading) return `<div style="margin-top:14px;font-size:13px;color:var(--pink);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 편지를 쓰는 중...</div>`;
+  if(S.examLetterLoading) return `<div style="margin-top:14px;border:1px dashed var(--gold-d);border-radius:14px;padding:18px;background:rgba(255,224,102,.05);text-align:center;">
+    <div style="font-size:22px;animation:floaty 2.6s ease-in-out infinite;">🧚</div>
+    <div style="margin-top:6px;font-size:13.5px;color:var(--gold);font-weight:700;">수호령이 네 결과를 보고 편지를 쓰고 있어…</div>
+    <div style="margin-top:3px;font-size:12px;color:var(--text3);">조금만 기다려줘 (최대 20초쯤)</div></div>`;
   if(!S.examLetter) return '';
   return `<div style="border:1px solid var(--gold-d);border-radius:16px;padding:22px;background:linear-gradient(180deg,rgba(255,224,102,.1),var(--panel2));margin-top:14px;">
     <div style="font-family:'Cinzel',serif;font-size:12px;color:var(--gold-d);letter-spacing:1px;margin-bottom:6px;">GUARDIAN'S LETTER</div>

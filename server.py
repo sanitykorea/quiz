@@ -1076,6 +1076,14 @@ class H(http.server.BaseHTTPRequestHandler):
         c.close()
         return self._json({"wrong": wrong, "by_subject": by_subject, "answered": total, "repeat": repeat})
 
+    @staticmethod
+    def _garbled(s):
+        """수식·심볼 폰트가 깨져 추출된 발문인지 판정 (수학 문항에서 흔함)."""
+        if not s:
+            return True
+        bad = sum(1 for ch in s if "À" <= ch <= "ɏ" or ch in "˘˙˚˛˜˝ˆˇ")
+        return bad >= 4 and bad / max(1, len(s)) > 0.06
+
     def _final_sheet(self):
         """최종 요약 시트: 남은 오답 전부를 발문·내 답·정답까지 붙여 과목별로 한 번에 반환(시험 전날 1장 훑기용)."""
         c = db()
@@ -1095,13 +1103,16 @@ class H(http.server.BaseHTTPRequestHandler):
                 pages[qid] = {it["qnum"]: it for it in parse_items(pr["raw_text"])} if pr else {}
             it = pages[qid].get(w["qnum"], {})
             chs = {ch.get("n"): (ch.get("text") or "") for ch in it.get("choices", [])}
+            stem = (it.get("stem") or "").replace("\n", " ").strip()[:150]
+            ans_t, cho_t = chs.get(w["answer"], "")[:60], chs.get(w["chosen"], "")[:60]
+            # 수학은 수식이 텍스트로 안 나오므로 항상 원본 이미지, 그 외엔 깨졌을 때만
+            img = w["subject"] == "수학" or self._garbled(stem) or self._garbled(ans_t)
             by_subject.setdefault(w["subject"], []).append({
                 "question_id": qid, "qnum": w["qnum"], "year": w["year"], "exam_round": w["exam_round"],
-                "stem": (it.get("stem") or "").replace("\n", " ").strip()[:150],
+                "stem": stem, "img": img,
                 "answer": w["answer"], "chosen": w["chosen"], "tag": w["tag"],
                 "repeat": (w["wrong_count"] or 0) >= 2,
-                "answer_text": chs.get(w["answer"], "")[:60],
-                "chosen_text": chs.get(w["chosen"], "")[:60],
+                "answer_text": ans_t, "chosen_text": cho_t,
             })
         c.close()
         order = ["과학", "도덕", "수학", "국어", "한국사", "사회"]

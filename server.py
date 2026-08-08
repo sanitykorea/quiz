@@ -796,6 +796,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._weakspots()
+        if p == "/api/sheet":
+            if self._guard():
+                return
+            return self._final_sheet()
         if p == "/api/recap":
             if self._guard():
                 return
@@ -1071,6 +1075,39 @@ class H(http.server.BaseHTTPRequestHandler):
         total = c.execute("SELECT COUNT(DISTINCT question_id||'-'||qnum) n FROM attempts WHERE source='quiz'").fetchone()["n"]
         c.close()
         return self._json({"wrong": wrong, "by_subject": by_subject, "answered": total, "repeat": repeat})
+
+    def _final_sheet(self):
+        """최종 요약 시트: 남은 오답 전부를 발문·내 답·정답까지 붙여 과목별로 한 번에 반환(시험 전날 1장 훑기용)."""
+        c = db()
+        rows = c.execute("""
+            SELECT a.*, wc.wc wrong_count FROM attempts a
+            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
+            JOIN (SELECT question_id,qnum,SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) wc
+                    FROM attempts GROUP BY question_id,qnum) wc
+              ON wc.question_id=a.question_id AND wc.qnum=a.qnum
+            WHERE a.correct=0 ORDER BY a.subject, wc.wc DESC, a.year, a.qnum""").fetchall()
+        pages, by_subject = {}, {}
+        for w in rows:
+            qid = w["question_id"]
+            if qid not in pages:
+                pr = c.execute("SELECT raw_text FROM questions WHERE id=?", (qid,)).fetchone()
+                pages[qid] = {it["qnum"]: it for it in parse_items(pr["raw_text"])} if pr else {}
+            it = pages[qid].get(w["qnum"], {})
+            chs = {ch.get("n"): (ch.get("text") or "") for ch in it.get("choices", [])}
+            by_subject.setdefault(w["subject"], []).append({
+                "question_id": qid, "qnum": w["qnum"], "year": w["year"], "exam_round": w["exam_round"],
+                "stem": (it.get("stem") or "").replace("\n", " ").strip()[:150],
+                "answer": w["answer"], "chosen": w["chosen"], "tag": w["tag"],
+                "repeat": (w["wrong_count"] or 0) >= 2,
+                "answer_text": chs.get(w["answer"], "")[:60],
+                "chosen_text": chs.get(w["chosen"], "")[:60],
+            })
+        c.close()
+        order = ["과학", "도덕", "수학", "국어", "한국사", "사회"]
+        subs = sorted(by_subject.keys(), key=lambda s: (order.index(s) if s in order else 99, s))
+        return self._json({"subjects": [{"subject": s, "items": by_subject[s]} for s in subs],
+                           "total": sum(len(v) for v in by_subject.values())})
 
     def _wrong_grade(self, b):
         """푼 오답노트 PDF 업로드 → Gemini 비전으로 표시된 답 읽어 채점. (attempts 미기록 → 오답노트 유지)"""

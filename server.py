@@ -796,6 +796,14 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._weakspots()
+        if p == "/api/recap":
+            if self._guard():
+                return
+            return self._recap()
+        if p == "/api/report":
+            if self._guard():
+                return
+            return self._full_report()
         if p == "/api/today":
             if self._guard():
                 return
@@ -1411,6 +1419,81 @@ class H(http.server.BaseHTTPRequestHandler):
                         "keywords": [str(k)[:12] for k in (cl.get("keywords") or [])][:5],
                         "count": len(refs), "refs": refs})
         return self._json({"clusters": out})
+
+    def _recap(self):
+        """지금까지의 기록 회고: 학습일수·누적시간·정답률·되찾은 오답."""
+        c = db()
+        days = c.execute("SELECT COUNT(DISTINCT date) n FROM study_log WHERE (math+sci+kor+nc2)>0").fetchone()["n"]
+        total_min = c.execute("SELECT SUM(math+sci+kor+nc2) s FROM study_log").fetchone()["s"] or 0
+        rows = c.execute("SELECT question_id,qnum,correct,ts FROM attempts WHERE source='quiz' ORDER BY ts").fetchall()
+        c.close()
+        groups = {}
+        for r in rows:
+            groups.setdefault((r["question_id"], r["qnum"]), []).append(r["correct"])
+        ever_wrong = sum(1 for v in groups.values() if 0 in v)
+        recovered = sum(1 for v in groups.values() if 0 in v and v[-1] == 1)
+        return self._json({"study_days": days, "total_minutes": round(total_min),
+                           "total_attempts": len(rows), "total_correct": sum(r["correct"] for r in rows),
+                           "recovered": recovered, "ever_wrong": ever_wrong})
+
+    def _full_report(self):
+        """모든 로그(정답률·반복오답·오답원인·실전성적 추이·학습시간·화상스터디 집중기록)를 종합한 AI 리포트."""
+        c = db()
+        latest = """SELECT a.* FROM attempts a
+            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'"""
+        rows = [dict(r) for r in c.execute(latest)]
+        if len(rows) < 3:
+            c.close(); return self._json({"empty": True})
+        wc = {}
+        for r in c.execute("SELECT question_id,qnum,SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) wc FROM attempts GROUP BY question_id,qnum"):
+            wc[(r["question_id"], r["qnum"])] = r["wc"]
+        stats = {}
+        for r in rows:
+            s = stats.setdefault(r["subject"], {"total": 0, "correct": 0, "wrong": 0, "repeat": 0, "tags": {}})
+            s["total"] += 1
+            if r["correct"]:
+                s["correct"] += 1
+            else:
+                s["wrong"] += 1
+                if wc.get((r["question_id"], r["qnum"]), 0) >= 2:
+                    s["repeat"] += 1
+                if r["tag"]:
+                    s["tags"][r["tag"]] = s["tags"].get(r["tag"], 0) + 1
+        exams = [dict(r) for r in c.execute("SELECT date,avg FROM exam_results ORDER BY ts")]
+        study = c.execute("SELECT SUM(math) m,SUM(sci) s,SUM(kor) k,SUM(nc2) n FROM study_log").fetchone()
+        study_days = c.execute("SELECT COUNT(DISTINCT date) n FROM study_log WHERE (math+sci+kor+nc2)>0").fetchone()["n"]
+        focus = c.execute("SELECT SUM(focused_sec) f, SUM(distract_cnt) d, COUNT(*) n FROM focus_log").fetchone()
+        c.close()
+        import datetime as _dt
+        dday = (_dt.date(2026, 8, 11) - _dt.date.today()).days
+        lines = [f"시험까지 D-{dday}."]
+        for subj, s in stats.items():
+            acc = round(s["correct"] / s["total"] * 100) if s["total"] else 0
+            tagtxt = ", ".join(f"{k} {v}건" for k, v in s["tags"].items()) or "태그 없음"
+            lines.append(f"[{subj}] 정답률 {acc}%({s['correct']}/{s['total']}) · 반복오답(2회 이상 틀림) {s['repeat']}개 · 오답 원인: {tagtxt}")
+        if exams:
+            lines.append("실전 채점 성적 추이: " + " → ".join(f"{e['date']} {e['avg']}점" for e in exams))
+        smin = round((study["m"] or 0) + (study["s"] or 0) + (study["k"] or 0) + (study["n"] or 0))
+        lines.append(f"누적 학습시간(타이머 기록) {smin}분 · 학습일수 {study_days}일")
+        if focus and focus["n"]:
+            lines.append(f"화상 스터디(수호령의 눈) {focus['n']}회 · 총 집중시간 {round((focus['f'] or 0)/60)}분 · 딴짓 감지 {focus['d']}회")
+        prompt = ("당신은 검정고시 학습 코치입니다. 아래는 학생의 전체 학습 기록(정답률·반복오답·오답 원인 태그·"
+                  "실전 채점 성적 추이·누적 학습시간·화상 스터디 집중 기록)입니다. 이 데이터를 모두 종합해 "
+                  "학생에게 도움이 되는 총체적 분석 리포트를 작성하세요.\n\n"
+                  "구성:\n[총평] 전체 현재 상태·강점·가장 시급한 개선점·남은 기간을 고려한 종합 조언을 4~6문장으로.\n"
+                  "그다음 데이터가 있는 과목마다 [과목명] 형태로: 현재 수준(정답률 인용), 구체적 취약 패턴(반복오답·오답원인 데이터 근거로), "
+                  "지금 당장 해야 할 것 2~3가지.\n"
+                  "실제 수치를 인용해 구체적으로 쓰고, 데이터에 없는 내용은 지어내지 마세요. 존댓말로.\n\n"
+                  + "\n".join(lines))
+        try:
+            txt = ai_complete("당신은 검정고시 학습 코치입니다. 데이터에 근거해 상세하고 실행 가능한 분석을 제공합니다.",
+                              [{"role": "user", "content": prompt}], 2200)
+        except Exception as e:
+            return self._json({"error": "ai_failed", "detail": str(e)}, 502)
+        if txt is None:
+            return self._json({"error": "no-ai"}, 503)
+        return self._json({"report": txt.strip(), "generated_at": int(__import__("time").time())})
 
     def _today(self, date):
         """하루 마감 리포트: 오늘 푼 문항·정답률·과목별·해결한 반복오답."""

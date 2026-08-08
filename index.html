@@ -72,6 +72,7 @@ const S = {
   bankMode:'instant', picks:{}, graded:false, onlyNew:false,
   diag:null, diagText:'', diagLoading:false,
   wrongData:null, wrongAnalysis:'', wrongPdfMsg:'', wrongGradeMsg:'', wrongGradeResult:null, wrongSubjFilter:'',
+  perfectMode:false, weakspots:null, recap:null, allocHours:6, report:null, reportLoading:false,
   examSel:{}, examKeys:null, examInputs:{}, examScore:null, examResults:[], examMsg:'',
   history:[],
   towerSubject:'도덕', dodeok:null, towerConcept:{},
@@ -147,7 +148,7 @@ async function openApp(){
   render();
   if(S.towerSubject==='도덕' && !S.dodeok) loadDodeok().then(render);   // 도덕 노트 미리 로드(초기 탭이 수련의 탑이어도 표시)
   loadAvatarImg();
-  loadRecommend().then(loadToday).then(()=>{ if(dday()<=1) return loadWrong(); }).then(render);   // 캠프 카드(추천·리포트·D-1) 초기 로드
+  loadRecommend().then(loadToday).then(loadRecap).then(()=>{ if(dday()<=1) return loadWrong(); }).then(render);   // 캠프 카드(추천·리포트·D-1·회고) 초기 로드
 }
 
 // ---------- gate ----------
@@ -315,6 +316,17 @@ async function reviewWrong(qid, subject, year, round, qnum){
   if(idx>=0) S.quizIdx=idx;
   render();
 }
+// ========== 만점 방어전: 회차 오답만 다시 몰아서 풀기 ==========
+async function perfectStart(qid){
+  S.tab='bank';
+  await pickQuestionById(qid);
+  if(!S.qCurrent) return;
+  const wrongQnums = new Set((S.wrongData&&S.wrongData.wrong||[]).filter(w=>w.question_id===qid).map(w=>w.qnum));
+  S.quizItems = S.quizItems.filter(it=>wrongQnums.has(it.qnum));
+  S.quizIdx=0; S.quizMarks={}; S.picks={}; S.graded=false; S.perfectMode=true; S.bankMode='instant';
+  render(); scrollTop();
+}
+async function perfectClose(){ S.perfectMode=false; await loadWrong(); S.tab='wrong'; render(); }
 async function scoreQuestion(){ const q=S.qCurrent; if(!q) return;
   S.qMsg='🧚 수호령이 기출을 분석하는 중...'; render();
   try{ const out=await callAI([{role:'user',content:`다음은 검정고시 ${q.subject} 기출 지문/문항 원문입니다. 수험생이 공부에 활용하도록 (1) 핵심 출제 포인트 3가지 (2) 자주 헷갈리는 함정 (3) 암기 팁을 존댓말로 정리해 주세요.\n\n---\n${(q.raw_text||'').slice(0,3500)}`}], systemFor('B'), 800);
@@ -491,7 +503,7 @@ function vCamp(){
     return `<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:12px;border:1px solid ${on?'rgba(255,84,104,.5)':'var(--border)'};background:${on?'rgba(255,84,104,.10)':'var(--panel2)'};"><div style="font-size:20px;">${on?(s.kind==='seal'?'🔒':'🛡️'):'🗓'}</div><div><div style="font-family:'Press Start 2P',monospace;font-size:8px;color:var(--text3);">${h(s.day)} ${h(s.t_start)}–${h(s.t_end)}</div><div style="font-size:14px;font-weight:700;margin-top:5px;">${h(s.name)}</div></div><div style="margin-left:auto;font-size:11px;font-weight:700;color:${on?'var(--danger-b)':'var(--text3)'};">${on?'발동 중':'대기'}</div></div>`;
   }).join('') || '<div style="color:var(--text3);font-size:13px;">고정일정이 없어요. 관리소 → 고정일정에서 추가하세요.</div>';
   const totalPct=Math.min(100,total/360*100);
-  return `<div style="display:grid;gap:22px;">${finalCheckCard()}${recommendCard()}${todayCard()}${planCard()}<section>
+  return `<div style="display:grid;gap:22px;">${finalCheckCard()}${recommendCard()}${todayCard()}${reportCard()}${recapCard()}${timeAllocCard()}${planCard()}<section>
     <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">DAILY QUESTS</div>
       <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">⛺ 일일 퀘스트 현황 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 황금비 2:1:1:2 (총 6시간)</span></h2></div>
@@ -704,6 +716,22 @@ async function topicQuizStart(idx){
   S.cq={subject:cl.subject, topic:cl.topic, items, idx:0, pick:null, score:0, answered:0, fromWrong:true};
   render();
 }
+function perfectDefenseCard(){
+  const wrong=(S.wrongData&&S.wrongData.wrong)||[];
+  const byQid={};
+  wrong.forEach(w=>{ (byQid[w.question_id]=byQid[w.question_id]||{subject:w.subject,year:w.year,exam_round:w.exam_round,qid:w.question_id,n:0}).n++; });
+  const rounds=Object.values(byQid).sort((a,b)=>b.n-a.n);
+  if(!rounds.length) return '';
+  return `<div style="border:1px solid rgba(46,230,166,.5);border-radius:16px;padding:18px;background:linear-gradient(180deg,rgba(20,117,92,.1),var(--panel2));margin-bottom:18px;">
+    <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--accent-b);letter-spacing:1px;margin-bottom:4px;">PERFECT DEFENSE · 만점 방어전</div>
+    <div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">아직 만점이 아닌 회차예요. 오답만 몰아서 다시 풀어 <b>오답 0개</b>를 만들어보세요.</div>
+    <div style="display:grid;gap:7px;">${rounds.map(r=>`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;border:1px solid var(--border);border-radius:11px;padding:10px 13px;background:var(--panel);">
+      <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(r.subject)}</span>
+      <span style="font-size:13px;color:var(--text2);">${h(r.year)} · ${h(r.exam_round)}</span>
+      <span style="font-size:12.5px;color:var(--danger-b);font-weight:700;">남은 오답 ${r.n}개</span>
+      <button data-act="perfectstart" data-arg="${r.qid}" style="margin-left:auto;padding:7px 14px;border-radius:999px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-size:12.5px;font-weight:700;cursor:pointer;">🛡 방어전 시작</button></div>`).join('')}</div>
+  </div>`;
+}
 function weakspotCard(){
   const w=S.weakspots;
   if(S.cq && S.cq.fromWrong){
@@ -888,7 +916,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804l · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804m · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1036,7 +1064,18 @@ function quiz(){
       <div style="font-size:13px;color:var(--text2);">${h(subj)} · 문항당 ${pts}점</div>
       <div style="font-size:30px;font-weight:900;color:var(--accent-b);margin:2px 0;">${got*pts}<span style="font-size:15px;">점</span> <span style="font-size:15px;color:var(--text2);">/ ${its.length*pts}</span></div>
       <div style="font-size:14px;color:var(--text2);">맞음 ${got} · 틀림 ${marked-got} · 총 ${its.length}문항</div></div>` : '';
+  const perfectBanner = S.perfectMode ? (
+    marked>=its.length && got>=its.length
+      ? `<div style="border:1px solid rgba(46,230,166,.6);border-radius:14px;padding:16px;background:rgba(20,117,92,.16);margin-bottom:12px;text-align:center;">
+          <div style="font-size:22px;font-weight:900;color:var(--accent-b);">🛡✨ 만점 방어 성공!</div>
+          <div style="font-size:13px;color:var(--text2);margin-top:4px;">이 회차의 남은 오답 ${its.length}개를 전부 맞혔어요.</div>
+          <button data-act="perfectclose" style="margin-top:10px;padding:9px 18px;border-radius:10px;border:1px solid var(--accent-b);background:rgba(20,117,92,.22);color:var(--accent-b);font-weight:700;cursor:pointer;">🛡 방어전 목록으로</button></div>`
+      : `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;border:1px solid var(--orangebd);border-radius:12px;padding:10px 14px;background:var(--tintO);margin-bottom:12px;">
+          <span style="font-weight:800;color:var(--orange);font-size:13.5px;">🛡 만점 방어전 · 이 회차의 오답만 다시</span>
+          <button data-act="perfectclose" style="padding:5px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">그만두기</button></div>`
+  ) : '';
   return `<div id="quizCard">
+    ${perfectBanner}
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
       <div style="display:flex;align-items:center;gap:8px;"><span style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--gold);">${it.qnum}번 · ${idx+1}/${its.length}</span>${S.streak>=2?`<span style="font-family:'Press Start 2P',monospace;font-size:10px;color:#fff;background:linear-gradient(180deg,#ff8a3d,#e0384b);padding:4px 8px;border-radius:8px;box-shadow:0 0 12px rgba(255,120,60,.6);animation:popIn .3s ease;">🔥 ${S.streak} 연속</span>`:''}</div>
       <div style="font-size:12.5px;color:var(--text2);">맞음 <b style="color:var(--accent-b);">${got}</b> / 채점 ${marked} · 총 ${its.length}</div>
@@ -1102,6 +1141,7 @@ function vWrong(){
     ${S.wrongPdfMsg?`<div style="margin-bottom:12px;color:var(--blue);font-size:13px;">${h(S.wrongPdfMsg)}</div>`:''}
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">${d.repeat?`<div style="padding:10px 14px;border-radius:12px;border:1px solid rgba(255,140,40,.5);background:rgba(255,140,40,.1);display:flex;gap:10px;align-items:center;"><span style="font-weight:800;color:var(--orange);">🔁 반복 오답</span><span style="font-family:'Press Start 2P',monospace;font-size:12px;color:var(--orange);">${d.repeat}</span></div>`:''}${chips}</div>
     ${diagCard()}
+    ${totalWrong?perfectDefenseCard():''}
     ${totalWrong?weakspotCard():''}
     ${totalWrong?rxCard():''}
     ${totalWrong?wrongGradeCard():''}
@@ -1368,6 +1408,64 @@ function wrongGradeCard(){
 
 // ========== 마지막 7일 학습 플랜 ==========
 const ALLOC=[['과학',55],['수학',55],['도덕',40],['국어',35],['한국사',30],['사회',25]];   // 일일 배분(분) — 기존 dday()/examDate() 사용
+// ========== 남은 시간 과목별 배분 ==========
+function timeAllocCard(){
+  const acc=(S.diag||[]).reduce((m,s)=>(m[s.subject]=s.acc,m),{});
+  const WEAKS=new Set(['과학','도덕','수학']);   // 전년도 실점 76%가 몰린 과목
+  const weight=s=>{ const a=acc[s]!=null?acc[s]:(LASTYEAR[s]||80); return Math.max(4,(100-a))+(WEAKS.has(s)?14:0); };
+  const subs=ALLOC.map(([s])=>s);
+  const totalW=subs.reduce((sum,s)=>sum+weight(s),0);
+  const totalMin=S.allocHours*60;
+  const rows=subs.map(s=>({subj:s, acc:acc[s]!=null?acc[s]:(LASTYEAR[s]||80), src:acc[s]!=null?'풀이':'전년',
+                            min:Math.round(totalMin*weight(s)/totalW)}))
+    .sort((a,b)=>a.acc-b.acc);
+  return `<div style="border:1px solid var(--gold-d);border-radius:16px;padding:18px;background:linear-gradient(180deg,rgba(255,224,102,.08),var(--panel2));margin-bottom:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">TIME ALLOCATION · 남은 시간 배분</div>
+      <div style="display:flex;gap:5px;">${[2,4,6,8].map(hh=>`<button data-act="allochours" data-arg="${hh}" style="padding:5px 11px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${S.allocHours===hh?'var(--gold-d)':'var(--border)'};background:${S.allocHours===hh?'rgba(255,224,102,.16)':'var(--panel2)'};color:${S.allocHours===hh?'var(--gold)':'var(--text2)'};">${hh}시간</button>`).join('')}</div></div>
+    <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;">오늘 <b style="color:var(--gold);">${S.allocHours}시간</b> 공부한다면, 취약도(정답률 낮을수록·과학·도덕·수학 가중)에 비례해 이렇게 나눠보세요.</div>
+    <div style="display:grid;gap:6px;">${rows.map(r=>`<div style="display:flex;align-items:center;gap:9px;font-size:13px;">
+      <span style="width:44px;font-weight:700;">${h(r.subj)}</span>
+      <div style="flex:1;height:9px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;"><div style="height:100%;width:${Math.min(100,r.min/(totalMin*0.4)*100)}%;background:${r.acc<80?'var(--danger-b)':r.acc<92?'var(--gold)':'var(--accent-b)'};"></div></div>
+      <span style="width:96px;text-align:right;color:var(--text2);">${Math.floor(r.min/60)?Math.floor(r.min/60)+'시간 ':''}${r.min%60}분 <span style="font-size:10.5px;color:var(--text3);">(${r.acc}%·${r.src})</span></span></div>`).join('')}</div>
+  </div>`;
+}
+// ========== 지금까지의 기록 회고 ==========
+async function loadRecap(){ S.recap=await api('/api/recap'); render(); }
+function recapCard(){
+  const r=S.recap; if(!r) return '';
+  const acc=r.total_attempts?Math.round(r.total_correct/r.total_attempts*100):0;
+  return `<div style="border:1px solid var(--pinkbd);border-radius:16px;padding:18px;background:linear-gradient(180deg,var(--tintP),var(--panel2));margin-bottom:18px;">
+    <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--pink);letter-spacing:1px;margin-bottom:10px;">RECAP · 지금까지의 기록</div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:6px;">
+      <div><div style="font-size:12px;color:var(--text2);">학습일수</div><div style="font-size:24px;font-weight:900;">${r.study_days}<span style="font-size:13px;">일</span></div></div>
+      <div><div style="font-size:12px;color:var(--text2);">누적 학습시간</div><div style="font-size:24px;font-weight:900;">${Math.floor(r.total_minutes/60)}<span style="font-size:13px;">시간</span> ${r.total_minutes%60}<span style="font-size:13px;">분</span></div></div>
+      <div><div style="font-size:12px;color:var(--text2);">총 푼 문항</div><div style="font-size:24px;font-weight:900;">${r.total_attempts}<span style="font-size:13px;">개 · ${acc}%</span></div></div>
+      <div><div style="font-size:12px;color:var(--text2);">되찾은 오답</div><div style="font-size:24px;font-weight:900;color:var(--accent-b);">${r.recovered}<span style="font-size:13px;color:var(--text2);"> / ${r.ever_wrong}</span></div></div>
+    </div>
+    <div style="font-size:12.5px;color:var(--text2);margin-top:6px;">${r.study_days?`${r.study_days}일 동안 ${r.total_attempts}문항을 풀면서, 한 번 틀렸던 문제 중 ${r.recovered}개를 다시 맞혀냈어요. 여기까지 온 것만으로도 대단해요 🔥`:'아직 기록이 적어요. 오늘부터 하나씩 쌓아봐요!'}</div>
+  </div>`;
+}
+// ========== 종합 분석 리포트 ==========
+async function loadReport(){
+  S.reportLoading=true; render();
+  const r=await api('/api/report');
+  S.reportLoading=false;
+  S.report = r.report ? r.report : (r.empty?'empty':(r.error==='no-ai'?'🧚 수호령 미연결(GEMINI_API_KEY 필요).':'분석 실패. 잠시 후 다시 시도하세요.'));
+  render();
+}
+function reportCard(){
+  return `<div style="border:1px solid var(--bluebd);border-radius:16px;padding:18px;background:linear-gradient(180deg,var(--tintB),var(--panel2));margin-bottom:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--blue);letter-spacing:1px;">FULL REPORT · 종합 분석 리포트</div>
+      ${(!S.reportLoading&&S.report&&S.report!=='empty')?`<button data-act="report" style="padding:6px 12px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">↻ 다시 분석</button>`:''}</div>
+    ${S.reportLoading?`<div style="font-size:13px;color:var(--blue);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 모든 기록을 종합해 분석하는 중... (20~30초 정도 걸려요)</div>`
+    : !S.report?`<div style="font-size:13px;color:var(--text2);margin-bottom:10px;">정답률·반복오답·오답원인·실전 성적 추이·학습시간·화상 스터디 기록까지 <b>모든 로그</b>를 종합해 총평과 과목별 세부 분석을 만들어드려요.</div>
+      <button data-act="report" style="padding:12px 20px;border-radius:12px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-weight:800;font-size:14.5px;cursor:pointer;">🧠 종합 분석 리포트 생성</button>`
+    : S.report==='empty'?`<div style="font-size:13.5px;color:var(--text2);">아직 데이터가 적어서 종합 분석을 만들기 어려워요. 기출을 좀 더 풀고 다시 시도해보세요.</div>`
+    : `<div style="background:var(--inset);border:1px solid var(--bluebd);border-radius:12px;padding:16px;font-size:14px;line-height:1.85;white-space:pre-wrap;color:var(--text);max-height:60vh;overflow:auto;">${mdLite(S.report)}</div>`}
+  </div>`;
+}
 function planCard(){
   const r=S.recommend; const d=dday();
   const acc=(S.diag||[]).reduce((m,s)=>(m[s.subject]=s.acc,m),{});
@@ -2218,7 +2316,7 @@ const ACTS = {
     if(id==='admin'){await adminReload();}
     if(id==='exam'){ if(!S.qFacets.subject.length)await loadFacets(); await loadExamRecords(); if(!S.diag)await loadDiag(false); render(); }
     if(id==='eye'){ await loadFocusHist(); }
-    if(id==='camp'){ await loadRecommend(); await loadToday(); if(!S.diag)await loadDiag(false); if(dday()<=1&&!S.wrongData)await loadWrong(); render(); }
+    if(id==='camp'){ await loadRecommend(); await loadToday(); if(!S.diag)await loadDiag(false); if(!S.recap)await loadRecap(); if(dday()<=1&&!S.wrongData)await loadWrong(); render(); }
     if(id==='tower'&&S.towerSubject==='도덕'&&!S.dodeok){ await loadDodeok(); render(); } },
   timer:sub=>toggleTimer(sub), add:arg=>{const[s,d]=arg.split(':');addMins(s,+d);}, nc2:pickNc2, preview:()=>{S.lockPreview=!S.lockPreview;render();},
   nextUnit, flip, critical, dodge, verify, clearBlank:()=>{S.blankText='';S.blankResult='';render();},
@@ -2265,6 +2363,9 @@ const ACTS = {
   chkexam:i=>{ S.checkExam={...S.checkExam,[i]:!S.checkExam[i]}; render(); },
   cqstart:s=>cqStart(s), cqclose:()=>{ S.cq=null; render(); },
   weakspots:()=>loadWeakspots(), topicquiz:i=>topicQuizStart(+i), cqclose2:()=>{ S.cq=null; render(); },
+  perfectstart:qid=>perfectStart(+qid), perfectclose:()=>perfectClose(),
+  allochours:h=>{ S.allocHours=+h; render(); },
+  report:()=>loadReport(),
   cqpick:n=>cqPick(+n), cqnext:()=>cqNext(),
   eyestart:()=>eyeStart(), eyestop:()=>eyeStop(true), eyecheck:()=>eyeCheck(),
   eyescreen:()=>{ eyeInit().useScreen=!eyeInit().useScreen; render(); },

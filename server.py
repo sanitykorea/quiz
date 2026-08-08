@@ -1343,14 +1343,17 @@ class H(http.server.BaseHTTPRequestHandler):
         if not subject:
             return self._json({"error": "bad_input"}, 400)
         c = db()
-        rows = c.execute("SELECT id,year,exam_round,level,raw_text FROM questions WHERE subject=?", (subject,)).fetchall()
+        rows = c.execute("SELECT id,year,exam_round,level,subject,raw_text FROM questions WHERE subject=?", (subject,)).fetchall()
         keys = {}
         for r in c.execute("""SELECT k.question_id qid,k.qnum qnum,k.answer ans FROM qkey k
                               JOIN questions q ON q.id=k.question_id WHERE q.subject=?""", (subject,)):
             keys[(r["qid"], r["qnum"])] = r["ans"]
         c.close()
+        need = max(2, len(keywords) - 1) if keywords and len(keywords) >= 3 else (len(keywords) if keywords else 0)
+        # 키워드 2개 이하면 전부 일치, 3개 이상이면 과반 이상 일치 요구 → 흔한 단어 1개만 겹쳐서 오탐 묶이는 것 방지
         out = []
         for r in rows:
+            path = pdf_path(r); has_pdf = os.path.exists(path)
             for it in parse_items(r["raw_text"]):
                 ans = keys.get((r["id"], it["qnum"]))
                 stem = (it.get("stem") or "").strip()
@@ -1362,11 +1365,11 @@ class H(http.server.BaseHTTPRequestHandler):
                     continue
                 if keywords:
                     blob = stem + " " + " ".join(ch.get("text", "") for ch in chs) + " " + (it.get("passage") or "")
-                    if not any(kw in blob for kw in keywords):
+                    if sum(1 for kw in keywords if kw in blob) < need:
                         continue
                 out.append({"question_id": r["id"], "qnum": it["qnum"], "stem": stem, "choices": chs,
                             "answer": ans, "year": r["year"], "exam_round": r["exam_round"],
-                            "passage": (it.get("passage") or "")[:400]})
+                            "hasPdf": has_pdf, "passage": (it.get("passage") or "")[:400]})
         return self._json({"items": out, "subject": subject, "count": len(out)})
 
     def _weakspots(self):
@@ -1394,7 +1397,9 @@ class H(http.server.BaseHTTPRequestHandler):
                   "학생이 '반복해서' 틀리는 개념·유형을 과목별로 찾아 묶어주세요. "
                   "한 유형에 문항이 2개 이상 모일 때만 포함하고(1개뿐이면 제외), 과목당 최대 3개 유형만 뽑으세요.\n"
                   "각 유형마다: subject(과목명), topic(간결한 한국어 이름, 12자 이내, 예: '충격량과 운동량', '통일신라의 통치체제'), "
-                  "keywords(그 유형의 다른 기출을 찾을 때 검색할 핵심 단어 2~4개, 실제 문제 발문에 등장할 만한 짧은 단어), "
+                  "keywords(그 유형의 다른 기출을 찾을 때 검색할 핵심 단어 3~5개, 실제 문제 발문에 등장할 만한 단어. "
+                  "단, '설명', '것은', '문제', '다음', '가장', '적절', '경우', '이유', '방법', '역할', '특징' 같은 범용 단어는 "
+                  "절대 넣지 말고, 그 유형에서만 나올 법한 구체적인 용어(전문 명사·고유명사)만 넣으세요), "
                   "indices(해당하는 문항의 #번호 목록)를 담아 JSON 배열로만 출력하세요. 다른 설명 없이 JSON만.\n"
                   '형식 예: [{"subject":"과학","topic":"충격량과 운동량","keywords":["충격량","운동량","F·t"],"indices":[1,4]}]\n\n'
                   + "\n".join(lines))

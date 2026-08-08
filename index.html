@@ -72,7 +72,7 @@ const S = {
   bankMode:'instant', picks:{}, graded:false, onlyNew:false,
   diag:null, diagText:'', diagLoading:false,
   wrongData:null, wrongAnalysis:'', wrongPdfMsg:'', wrongGradeMsg:'', wrongGradeResult:null, wrongSubjFilter:'',
-  perfectMode:false, weakspots:null, recap:null, allocHours:6, report:null, reportLoading:false,
+  defense:null, weakspots:null, recap:null, allocHours:6, report:null, reportLoading:false,
   examSel:{}, examKeys:null, examInputs:{}, examScore:null, examResults:[], examMsg:'',
   history:[],
   towerSubject:'도덕', dodeok:null, towerConcept:{},
@@ -101,7 +101,8 @@ function persist(){
     const st={ day:ymd(new Date()), theme:S.theme, sleepDone:S.sleepDone, wakeDone:S.wakeDone,
       mins:S.mins, nc2Pick:S.nc2Pick, towerUnit:S.towerUnit, deckIdx:S.deckIdx, known:S.known,
       checklist:S.checklist, stance:S.stance, muted:S.muted, messages:(S.messages||[]).slice(-40),
-      eyeCfg: S.eye ? {mouthX:S.eye.mouthX, mouthY:S.eye.mouthY, voiceURI:S.eye.voiceURI, pitch:S.eye.pitch, rate:S.eye.rate, interval:S.eye.interval, useScreen:S.eye.useScreen, muteTTS:S.eye.muteTTS} : undefined };
+      eyeCfg: S.eye ? {mouthX:S.eye.mouthX, mouthY:S.eye.mouthY, voiceURI:S.eye.voiceURI, pitch:S.eye.pitch, rate:S.eye.rate, interval:S.eye.interval, useScreen:S.eye.useScreen, muteTTS:S.eye.muteTTS} : undefined,
+      cq: (S.cq && !S.cq.loading) ? {subject:S.cq.subject, topic:S.cq.topic, items:S.cq.items, idx:S.cq.idx, pick:S.cq.pick, score:S.cq.score, answered:S.cq.answered, fromWrong:S.cq.fromWrong, showImg:S.cq.showImg} : undefined };
     api('/api/state', {method:'POST', ...jbody({state:st})});
   }, 400);
 }
@@ -141,6 +142,7 @@ async function openApp(){
   S.stance = saved.stance || 'A';
   S.muted = !!saved.muted;
   if(saved.eyeCfg){ Object.assign(eyeInit(), saved.eyeCfg); }   // 입 위치·목소리 설정 복원
+  if(saved.cq && saved.cq.items && saved.cq.items.length) S.cq = saved.cq;   // 집중 연습 진행 상황 복원
   S.messages = (saved.messages&&saved.messages.length) ? saved.messages
     : [{role:'assistant', text:'수영! 《지식의 탑》에 잘 왔어 ⚔️ 나는 너의 수호령이야.\n오늘 첫 퀘스트부터 같이 정해볼까? 아래 스펠을 눌러도 좋아.'}];
   S.gateMode = 'open';
@@ -316,17 +318,36 @@ async function reviewWrong(qid, subject, year, round, qnum){
   if(idx>=0) S.quizIdx=idx;
   render();
 }
-// ========== 만점 방어전: 회차 오답만 다시 몰아서 풀기 ==========
-async function perfectStart(qid){
-  S.tab='bank';
-  await pickQuestionById(qid);
-  if(!S.qCurrent) return;
-  const wrongQnums = new Set((S.wrongData&&S.wrongData.wrong||[]).filter(w=>w.question_id===qid).map(w=>w.qnum));
-  S.quizItems = S.quizItems.filter(it=>wrongQnums.has(it.qnum));
-  S.quizIdx=0; S.quizMarks={}; S.picks={}; S.graded=false; S.perfectMode=true; S.bankMode='instant';
+// ========== 만점 방어전: 과목 전체 오답을 여러 회차에서 모아 한 번에 풀기 ==========
+async function defenseStart(subject){
+  S.defense={loading:true, subject}; S.tab='wrong'; render();
+  const wrongs=(S.wrongData&&S.wrongData.wrong||[]).filter(w=>w.subject===subject);
+  const byQid={};
+  wrongs.forEach(w=>{ (byQid[w.question_id]=byQid[w.question_id]||new Set()).add(w.qnum); });
+  const items=[];
+  for(const qidStr of Object.keys(byQid)){
+    const qid=+qidStr;
+    const r=await api('/api/quiz?question_id='+qid);
+    const meta=r.meta||{};
+    (r.items||[]).forEach(it=>{ if(byQid[qid].has(it.qnum)) items.push({...it, qid, year:meta.year, exam_round:meta.exam_round}); });
+  }
+  S.defense={subject, items:shuffle(items), idx:0, marks:{}};
   render(); scrollTop();
 }
-async function perfectClose(){ S.perfectMode=false; await loadWrong(); S.tab='wrong'; render(); }
+async function defenseMark(qid, qnum, choice){
+  const d=S.defense; if(!d) return;
+  const key=qid+'_'+qnum; if(d.marks[key]) return;
+  const r=await api('/api/attempt',{method:'POST',...jbody({question_id:qid, qnum, chosen:choice})});
+  if(r.ok){
+    d.marks[key]={chosen:choice, correct:r.correct, answer:r.answer};
+    if(r.correct) toast('⚔️ 명중!  +10 XP','good'); else toast(choice===0?'🤔 다음엔 맞혀보자':'💧 아쉬워요','bad');
+    render();
+  } else if(r.error==='no_key'){
+    toast('🔑 이 문제는 정답키가 아직 없어요','bad');
+  }
+}
+function defenseNav(delta){ const d=S.defense; if(!d||!d.items.length) return; d.idx=(d.idx+delta+d.items.length)%d.items.length; render(); scrollTop(); }
+async function defenseClose(){ S.defense=null; await loadWrong(); render(); }
 async function scoreQuestion(){ const q=S.qCurrent; if(!q) return;
   S.qMsg='🧚 수호령이 기출을 분석하는 중...'; render();
   try{ const out=await callAI([{role:'user',content:`다음은 검정고시 ${q.subject} 기출 지문/문항 원문입니다. 수험생이 공부에 활용하도록 (1) 핵심 출제 포인트 3가지 (2) 자주 헷갈리는 함정 (3) 암기 팁을 존댓말로 정리해 주세요.\n\n---\n${(q.raw_text||'').slice(0,3500)}`}], systemFor('B'), 800);
@@ -670,21 +691,25 @@ async function cqStart(subject){
   const r=await api('/api/conceptquiz?subject='+encodeURIComponent(subject));
   const items=shuffle(r.items||[]);
   S.cq={subject, items, idx:0, pick:null, score:0, answered:0};
-  render();
+  persist(); render();
 }
 function cqPick(n){
   const q=S.cq; if(!q||q.pick!=null) return;
   q.pick=n; q.answered++;
   if(n===q.items[q.idx].answer){ q.score++; toast('⚔️ 정답!','good'); } else toast('💧 오답','bad');
-  render();
+  persist(); render();
 }
-function cqNext(){ const q=S.cq; if(!q||!q.items.length) return; q.idx=(q.idx+1)%q.items.length; q.pick=null; render(); }
+function cqNext(){ const q=S.cq; if(!q||!q.items.length) return; q.idx=(q.idx+1)%q.items.length; q.pick=null; persist(); render(); }
+function cqShowImg(key){ const q=S.cq; if(!q) return; q.showImg=q.showImg||{}; q.showImg[key]=!q.showImg[key]; persist(); render(); }
 function cqView(){
   const q=S.cq;
   if(!q) return '';
   if(q.loading) return `<div style="font-size:13px;color:var(--orange);">기출 문항을 불러오는 중...</div>`;
   if(!q.items.length) return `<div style="color:var(--text3);font-size:13.5px;">이 과목은 텍스트로 풀 수 있는 기출이 아직 없어요. 문제은행에서 이미지 문항으로 풀어보세요.</div>`;
   const it=q.items[q.idx];
+  const imgKey=it.question_id+'_'+it.qnum;
+  const showImg=q.showImg&&q.showImg[imgKey];
+  const imgBtn=it.hasPdf?`<button data-act="cqshowimg" data-arg="${imgKey}" style="margin-top:2px;margin-bottom:10px;padding:9px 15px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.1);color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;">${showImg?'🖼 사진 숨기기':'🖼 원본 사진(표·그림) 보기'}</button>`:'';
   const choices=it.choices.map(c=>{
     let bg='var(--panel2)',bd='var(--border)',col='var(--text)';
     if(q.pick!=null){ if(c.n===it.answer){bg='rgba(20,117,92,.28)';bd='rgba(46,230,166,.6)';col='var(--accent-b)';} else if(c.n===q.pick){bg='rgba(255,84,104,.18)';bd='rgba(255,84,104,.6)';col='var(--danger-b)';} else col='var(--text3)'; }
@@ -698,6 +723,8 @@ function cqView(){
       <span style="color:var(--accent-b);font-weight:700;">점수 ${q.score} / ${q.answered}</span></div>
     ${it.passage?`<div style="max-height:22vh;overflow:auto;border:1px solid var(--bluebd);background:var(--tintB);border-radius:10px;padding:11px 13px;margin-bottom:9px;font-size:13px;line-height:1.75;white-space:pre-wrap;color:var(--text);">${h(it.passage)}</div>`:''}
     <div style="background:var(--inset);border:1px solid var(--orangebd);border-radius:12px;padding:15px;font-size:15.5px;line-height:1.75;white-space:pre-wrap;color:var(--text);margin-bottom:10px;">${h(it.stem)}</div>
+    ${showImg?`<div style="margin-bottom:10px;">${qImg(it.qnum, it.question_id)}</div>`:''}
+    ${imgBtn}
     <div style="display:grid;gap:8px;">${choices}</div>
     ${q.pick!=null?`<button data-act="cqnext" style="width:100%;margin-top:11px;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다음 문제 ▶</button>`:''}`;
 }
@@ -714,22 +741,80 @@ async function topicQuizStart(idx){
   const r=await api('/api/conceptquiz?subject='+encodeURIComponent(cl.subject)+'&kw='+encodeURIComponent(cl.keywords.join(',')));
   const items=shuffle(r.items||[]);
   S.cq={subject:cl.subject, topic:cl.topic, items, idx:0, pick:null, score:0, answered:0, fromWrong:true};
-  render();
+  persist(); render();
+}
+function defenseView(){
+  const d=S.defense;
+  if(d.loading) return `<div style="font-size:13px;color:var(--accent-b);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🛡</span> ${h(d.subject)} 오답을 여러 회차에서 모으는 중...</div>`;
+  if(!d.items.length) return `<div style="color:var(--text3);font-size:13.5px;">이 과목엔 다시 풀 오답 문항이 없어요.</div>`;
+  const idx=Math.min(d.idx,d.items.length-1), it=d.items[idx];
+  const key=it.qid+'_'+it.qnum, m=d.marks[key];
+  const marked=Object.keys(d.marks).length, got=Object.values(d.marks).filter(x=>x.correct).length;
+  const allDone = marked>=d.items.length;
+  const passage = it.passage ? `<div style="border:1px solid var(--bluebd);background:var(--tintB);border-radius:14px;padding:14px 16px;margin-bottom:14px;">
+      <div style="font-family:'Cinzel',serif;font-size:11px;color:var(--blue);letter-spacing:1px;margin-bottom:8px;">📖 지문</div>
+      <div style="max-height:34vh;overflow:auto;white-space:pre-wrap;font-size:14.5px;line-height:1.85;color:var(--text);">${h(it.passage)}</div></div>` : '';
+  const stem = it.img ? qImg(it.qnum, it.qid)
+    : `<div style="font-size:17.5px;font-weight:700;line-height:1.75;white-space:pre-wrap;letter-spacing:-.1px;">${h(it.stem)}</div>`;
+  const choices=it.choices.map(c=>{
+    let bg='var(--panel2)', bd='var(--border)', col='var(--text)', extra='';
+    if(m){
+      if(c.n===it.answer){ bg='rgba(20,117,92,.28)'; bd='rgba(46,230,166,.6)'; col='var(--accent-b)'; extra='✓'; }
+      else if(c.n===m.chosen){ bg='rgba(255,84,104,.18)'; bd='rgba(255,84,104,.6)'; col='var(--danger-b)'; extra='✗'; }
+      else col='var(--text3)';
+    }
+    const arg=`${it.qid}:${it.qnum}:${c.n}`;
+    if(it.img) return `<button data-act="defensepick" data-arg="${arg}" ${m?'disabled':''} style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:14px 0;border-radius:12px;border:1px solid ${bd};background:${bg};color:${col};font-size:20px;cursor:${m?'default':'pointer'};">${CIRC[c.n]}<span style="font-size:15px;font-weight:800;">${extra}</span></button>`;
+    return `<button data-act="defensepick" data-arg="${arg}" ${m?'disabled':''} style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:13px 15px;border-radius:12px;border:1px solid ${bd};background:${bg};color:${col};font-size:15.5px;cursor:${m?'default':'pointer'};line-height:1.6;">
+      <span style="font-size:18px;flex:0 0 auto;">${CIRC[c.n]}</span><span style="flex:1;${c.text?'':'color:var(--text3)'}">${h(c.text)||'(원문·이미지 참조)'}</span><span style="color:inherit;font-weight:800;">${extra}</span></button>`;
+  }).join('');
+  const choiceWrap = it.img ? 'display:flex;gap:9px;' : 'display:grid;gap:9px;';
+  const unknownBtn = m ? '' : `<button data-act="defensepick" data-arg="${it.qid}:${it.qnum}:0" style="width:100%;margin-top:9px;padding:11px;border-radius:12px;border:1px dashed var(--border);background:var(--panel2);color:var(--text3);font-size:14px;font-weight:600;cursor:pointer;">🤔 모름 · 정답 보기</button>`;
+  const result = m ? `<div style="margin-top:12px;font-size:15px;font-weight:800;color:${m.correct?'var(--accent-b)':(m.chosen===0?'var(--pink)':'var(--danger-b)')};">${m.correct?'✓ 정답!':(m.chosen===0?`🤔 모름 — 정답은 ${CIRC[it.answer]}`:`✗ 오답 · 정답은 ${CIRC[it.answer]}`)}</div>` : '';
+  const doneBanner = allDone ? (
+    got>=d.items.length
+      ? `<div style="border:1px solid rgba(46,230,166,.6);border-radius:14px;padding:16px;background:rgba(20,117,92,.16);margin-bottom:12px;text-align:center;">
+          <div style="font-size:22px;font-weight:900;color:var(--accent-b);">🛡✨ ${h(d.subject)} 만점 방어 성공!</div>
+          <div style="font-size:13px;color:var(--text2);margin-top:4px;">${d.items.length}개 회차 오답을 전부 맞혔어요.</div></div>`
+      : `<div style="border:1px solid var(--orangebd);border-radius:14px;padding:14px;background:var(--tintO);margin-bottom:12px;text-align:center;">
+          <div style="font-size:15px;font-weight:800;color:var(--orange);">이번 회차는 ${got}/${d.items.length}개 방어 성공</div>
+          <div style="font-size:12.5px;color:var(--text2);margin-top:3px;">틀린 문항은 오답노트에 계속 남아있어요. 다시 도전해봐요!</div></div>`
+  ) : '';
+  return `<div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <span style="padding:5px 12px;border-radius:999px;background:var(--tintO);border:1px solid var(--orangebd);color:var(--orange);font-size:12.5px;font-weight:800;">🛡 ${h(d.subject)} 통합 방어전 · ${h(it.year)} ${h(it.exam_round)}</span>
+      <button data-act="defenseclose" style="padding:5px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">닫기</button></div>
+    ${doneBanner}
+    <div style="font-size:12.5px;color:var(--text2);margin-bottom:8px;">${idx+1}/${d.items.length} · 맞음 <b style="color:var(--accent-b);">${got}</b> / 채점 ${marked}</div>
+    <div style="height:6px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;margin-bottom:14px;"><div style="height:100%;width:${(idx+1)/d.items.length*100}%;background:linear-gradient(90deg,#14755C,#2ee6a6,#ffe066);transition:width .3s;"></div></div>
+    ${passage}
+    <div style="border:1px solid var(--border);background:linear-gradient(180deg,var(--panel),var(--panel2));border-radius:16px;padding:20px;box-shadow:0 10px 26px rgba(0,0,0,.35);">
+      ${stem}
+      <div style="${choiceWrap}margin-top:16px;">${choices}</div>
+      ${unknownBtn}
+      ${result}
+    </div>
+    <div style="display:flex;gap:10px;margin-top:14px;">
+      <button data-act="defensenav" data-arg="-1" style="flex:1;padding:12px;border-radius:12px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-weight:700;font-size:14px;cursor:pointer;">◀ 이전</button>
+      <button data-act="defensenav" data-arg="1" style="flex:2;padding:12px;border-radius:12px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:700;font-size:14px;cursor:pointer;">다음 문제 ▶</button>
+    </div></div>`;
 }
 function perfectDefenseCard(){
+  if(S.defense) return `<div style="border:1px solid rgba(46,230,166,.5);border-radius:16px;padding:18px;background:linear-gradient(180deg,rgba(20,117,92,.1),var(--panel2));margin-bottom:18px;">${defenseView()}</div>`;
   const wrong=(S.wrongData&&S.wrongData.wrong)||[];
-  const byQid={};
-  wrong.forEach(w=>{ (byQid[w.question_id]=byQid[w.question_id]||{subject:w.subject,year:w.year,exam_round:w.exam_round,qid:w.question_id,n:0}).n++; });
-  const rounds=Object.values(byQid).sort((a,b)=>b.n-a.n);
-  if(!rounds.length) return '';
+  const bySubj={};
+  wrong.forEach(w=>{ const s=bySubj[w.subject]=bySubj[w.subject]||{subject:w.subject,n:0,rounds:new Set()};
+    s.n++; s.rounds.add(w.year+' '+w.exam_round); });
+  const subs=Object.values(bySubj).sort((a,b)=>b.n-a.n);
+  if(!subs.length) return '';
   return `<div style="border:1px solid rgba(46,230,166,.5);border-radius:16px;padding:18px;background:linear-gradient(180deg,rgba(20,117,92,.1),var(--panel2));margin-bottom:18px;">
     <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--accent-b);letter-spacing:1px;margin-bottom:4px;">PERFECT DEFENSE · 만점 방어전</div>
-    <div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">아직 만점이 아닌 회차예요. 오답만 몰아서 다시 풀어 <b>오답 0개</b>를 만들어보세요.</div>
-    <div style="display:grid;gap:7px;">${rounds.map(r=>`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;border:1px solid var(--border);border-radius:11px;padding:10px 13px;background:var(--panel);">
-      <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(r.subject)}</span>
-      <span style="font-size:13px;color:var(--text2);">${h(r.year)} · ${h(r.exam_round)}</span>
-      <span style="font-size:12.5px;color:var(--danger-b);font-weight:700;">남은 오답 ${r.n}개</span>
-      <button data-act="perfectstart" data-arg="${r.qid}" style="margin-left:auto;padding:7px 14px;border-radius:999px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-size:12.5px;font-weight:700;cursor:pointer;">🛡 방어전 시작</button></div>`).join('')}</div>
+    <div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">아직 만점이 아닌 과목이에요. <b>여러 회차의 오답을 한 번에 모아</b> 다시 풀어 오답 0개를 만들어보세요.</div>
+    <div style="display:grid;gap:7px;">${subs.map(s=>`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;border:1px solid var(--border);border-radius:11px;padding:10px 13px;background:var(--panel);">
+      <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(s.subject)}</span>
+      <span style="font-size:12.5px;color:var(--danger-b);font-weight:700;">남은 오답 ${s.n}개</span>
+      <span style="font-size:12px;color:var(--text3);">${s.rounds.size}개 회차에 흩어짐</span>
+      <button data-act="perfectstart" data-arg="${h(s.subject)}" style="margin-left:auto;padding:7px 14px;border-radius:999px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-size:12.5px;font-weight:700;cursor:pointer;">🛡 통합 방어전 시작</button></div>`).join('')}</div>
   </div>`;
 }
 function weakspotCard(){
@@ -916,7 +1001,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804m · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804n · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1003,8 +1088,8 @@ const CIRC=['','①','②','③','④','⑤'];
 const TAGS=[['concept','개념 몰라서'],['mistake','실수'],['confuse','헷갈림'],['time','시간 부족'],['guess','찍음']];
 const TAGLB=Object.fromEntries(TAGS);
 // 문항 원본 이미지 (로딩 실패 시 재시도 폴백)
-function qImg(qnum){
-  const src=`/api/qimage?question_id=${S.qCurrent.id}&qnum=${qnum}`;
+function qImg(qnum, qid){
+  const src=`/api/qimage?question_id=${qid!=null?qid:S.qCurrent.id}&qnum=${qnum}`;
   return `<div class="qimgw" style="position:relative;">
     <img src="${src}" alt="${qnum}번 문항" loading="eager" decoding="async"
       onload="var f=this.parentNode.querySelector('.qimgfb');if(f)f.style.display='none';"
@@ -1064,18 +1149,7 @@ function quiz(){
       <div style="font-size:13px;color:var(--text2);">${h(subj)} · 문항당 ${pts}점</div>
       <div style="font-size:30px;font-weight:900;color:var(--accent-b);margin:2px 0;">${got*pts}<span style="font-size:15px;">점</span> <span style="font-size:15px;color:var(--text2);">/ ${its.length*pts}</span></div>
       <div style="font-size:14px;color:var(--text2);">맞음 ${got} · 틀림 ${marked-got} · 총 ${its.length}문항</div></div>` : '';
-  const perfectBanner = S.perfectMode ? (
-    marked>=its.length && got>=its.length
-      ? `<div style="border:1px solid rgba(46,230,166,.6);border-radius:14px;padding:16px;background:rgba(20,117,92,.16);margin-bottom:12px;text-align:center;">
-          <div style="font-size:22px;font-weight:900;color:var(--accent-b);">🛡✨ 만점 방어 성공!</div>
-          <div style="font-size:13px;color:var(--text2);margin-top:4px;">이 회차의 남은 오답 ${its.length}개를 전부 맞혔어요.</div>
-          <button data-act="perfectclose" style="margin-top:10px;padding:9px 18px;border-radius:10px;border:1px solid var(--accent-b);background:rgba(20,117,92,.22);color:var(--accent-b);font-weight:700;cursor:pointer;">🛡 방어전 목록으로</button></div>`
-      : `<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;border:1px solid var(--orangebd);border-radius:12px;padding:10px 14px;background:var(--tintO);margin-bottom:12px;">
-          <span style="font-weight:800;color:var(--orange);font-size:13.5px;">🛡 만점 방어전 · 이 회차의 오답만 다시</span>
-          <button data-act="perfectclose" style="padding:5px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">그만두기</button></div>`
-  ) : '';
   return `<div id="quizCard">
-    ${perfectBanner}
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
       <div style="display:flex;align-items:center;gap:8px;"><span style="font-family:'Press Start 2P',monospace;font-size:10px;color:var(--gold);">${it.qnum}번 · ${idx+1}/${its.length}</span>${S.streak>=2?`<span style="font-family:'Press Start 2P',monospace;font-size:10px;color:#fff;background:linear-gradient(180deg,#ff8a3d,#e0384b);padding:4px 8px;border-radius:8px;box-shadow:0 0 12px rgba(255,120,60,.6);animation:popIn .3s ease;">🔥 ${S.streak} 연속</span>`:''}</div>
       <div style="font-size:12.5px;color:var(--text2);">맞음 <b style="color:var(--accent-b);">${got}</b> / 채점 ${marked} · 총 ${its.length}</div>
@@ -2361,9 +2435,12 @@ const ACTS = {
     await api('/api/wrong/tag',{method:'POST',...jbody({question_id:+id,qnum:+qn,tag:(cur&&cur.tag===tg)?null:tg})});
     await loadWrong(); await loadDiag(false); render(); },
   chkexam:i=>{ S.checkExam={...S.checkExam,[i]:!S.checkExam[i]}; render(); },
-  cqstart:s=>cqStart(s), cqclose:()=>{ S.cq=null; render(); },
-  weakspots:()=>loadWeakspots(), topicquiz:i=>topicQuizStart(+i), cqclose2:()=>{ S.cq=null; render(); },
-  perfectstart:qid=>perfectStart(+qid), perfectclose:()=>perfectClose(),
+  cqstart:s=>cqStart(s), cqclose:()=>{ S.cq=null; persist(); render(); },
+  weakspots:()=>loadWeakspots(), topicquiz:i=>topicQuizStart(+i), cqclose2:()=>{ S.cq=null; persist(); render(); },
+  cqshowimg:k=>cqShowImg(k),
+  perfectstart:subj=>defenseStart(subj),
+  defensepick:arg=>{const[qid,qn,c]=arg.split(':'); defenseMark(+qid,+qn,+c);},
+  defensenav:d=>defenseNav(+d), defenseclose:()=>defenseClose(),
   allochours:h=>{ S.allocHours=+h; render(); },
   report:()=>loadReport(),
   cqpick:n=>cqPick(+n), cqnext:()=>cqNext(),

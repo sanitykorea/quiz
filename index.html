@@ -1001,7 +1001,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804n · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0804o · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1483,25 +1483,36 @@ function wrongGradeCard(){
 // ========== 마지막 7일 학습 플랜 ==========
 const ALLOC=[['과학',55],['수학',55],['도덕',40],['국어',35],['한국사',30],['사회',25]];   // 일일 배분(분) — 기존 dday()/examDate() 사용
 // ========== 남은 시간 과목별 배분 ==========
+const MEMO_SUBJ=new Set(['도덕','한국사','사회']);   // 암기 위주 — 이해보다 반복 노출량이 회복 속도를 좌우해 같은 정답률 격차라도 시간이 더 필요
 function timeAllocCard(){
-  const acc=(S.diag||[]).reduce((m,s)=>(m[s.subject]=s.acc,m),{});
-  const WEAKS=new Set(['과학','도덕','수학']);   // 전년도 실점 76%가 몰린 과목
-  const weight=s=>{ const a=acc[s]!=null?acc[s]:(LASTYEAR[s]||80); return Math.max(4,(100-a))+(WEAKS.has(s)?14:0); };
+  const stat=(S.diag||[]).reduce((m,s)=>(m[s.subject]=s,m),{});
+  const weight=s=>{
+    const st=stat[s];
+    const a=st?st.acc:(LASTYEAR[s]||80);
+    const gap=Math.max(4,100-a);
+    const repeatRate=st&&st.wrong?st.repeat/st.wrong:0;    // 반복해서 틀림 = 안 고쳐지는 구조적 취약점
+    const unknownRate=st&&st.wrong?st.unknown/st.wrong:0;  // 아예 모름 = 개념 자체가 안 잡힘
+    const structural=1+repeatRate*0.7+unknownRate*0.4;
+    const memoBoost=MEMO_SUBJ.has(s)?1.25:1;               // 암기과목 회복엔 반복 시간이 더 듦
+    return gap*structural*memoBoost;
+  };
   const subs=ALLOC.map(([s])=>s);
   const totalW=subs.reduce((sum,s)=>sum+weight(s),0);
   const totalMin=S.allocHours*60;
-  const rows=subs.map(s=>({subj:s, acc:acc[s]!=null?acc[s]:(LASTYEAR[s]||80), src:acc[s]!=null?'풀이':'전년',
-                            min:Math.round(totalMin*weight(s)/totalW)}))
+  const rows=subs.map(s=>{ const st=stat[s]; return {
+      subj:s, acc:st?st.acc:(LASTYEAR[s]||80), src:st?'풀이':'전년',
+      repeat:st?st.repeat:0, unknown:st?st.unknown:0, wrong:st?st.wrong:0,
+      min:Math.round(totalMin*weight(s)/totalW)}; })
     .sort((a,b)=>a.acc-b.acc);
   return `<div style="border:1px solid var(--gold-d);border-radius:16px;padding:18px;background:linear-gradient(180deg,rgba(255,224,102,.08),var(--panel2));margin-bottom:18px;">
     <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
       <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">TIME ALLOCATION · 남은 시간 배분</div>
       <div style="display:flex;gap:5px;">${[2,4,6,8].map(hh=>`<button data-act="allochours" data-arg="${hh}" style="padding:5px 11px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${S.allocHours===hh?'var(--gold-d)':'var(--border)'};background:${S.allocHours===hh?'rgba(255,224,102,.16)':'var(--panel2)'};color:${S.allocHours===hh?'var(--gold)':'var(--text2)'};">${hh}시간</button>`).join('')}</div></div>
-    <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;">오늘 <b style="color:var(--gold);">${S.allocHours}시간</b> 공부한다면, 취약도(정답률 낮을수록·과학·도덕·수학 가중)에 비례해 이렇게 나눠보세요.</div>
+    <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;">오늘 <b style="color:var(--gold);">${S.allocHours}시간</b> 공부한다면, 정답률·반복오답·모름 비율·암기과목 가중을 종합해 이렇게 나눠보세요.</div>
     <div style="display:grid;gap:6px;">${rows.map(r=>`<div style="display:flex;align-items:center;gap:9px;font-size:13px;">
       <span style="width:44px;font-weight:700;">${h(r.subj)}</span>
       <div style="flex:1;height:9px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;"><div style="height:100%;width:${Math.min(100,r.min/(totalMin*0.4)*100)}%;background:${r.acc<80?'var(--danger-b)':r.acc<92?'var(--gold)':'var(--accent-b)'};"></div></div>
-      <span style="width:96px;text-align:right;color:var(--text2);">${Math.floor(r.min/60)?Math.floor(r.min/60)+'시간 ':''}${r.min%60}분 <span style="font-size:10.5px;color:var(--text3);">(${r.acc}%·${r.src})</span></span></div>`).join('')}</div>
+      <span style="width:150px;text-align:right;color:var(--text2);">${Math.floor(r.min/60)?Math.floor(r.min/60)+'시간 ':''}${r.min%60}분 <span style="font-size:10.5px;color:var(--text3);">(${r.acc}%·${r.src}${r.repeat?`·반복${r.repeat}`:''}${r.unknown?`·모름${r.unknown}`:''})</span></span></div>`).join('')}</div>
   </div>`;
 }
 // ========== 지금까지의 기록 회고 ==========

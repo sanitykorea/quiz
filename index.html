@@ -600,8 +600,16 @@ async function cramPlay(y,r,s){
   const rr=(String(r).match(/\d/)||['1'])[0];
   const d=await api(`/api/yt?subject=${encodeURIComponent(s)}&year=${yy}&round=${rr}`);
   if(!S.video) return;                                   // 그새 닫았으면 무시
-  S.video={y, r, s, video:(d&&d.video)||null, failed:!(d&&d.video)};
+  const vid=(d&&d.video)||null;
+  S.video={y, r, s, video:vid, failed:!vid};
   render();
+  if(!vid) return;
+  // 설명란 자료 링크는 영상이 뜬 뒤에 따로 (영상 재생을 기다리게 하지 않도록)
+  const fd=await api('/api/ytdesc?id='+encodeURIComponent(vid.id));
+  if(S.video && S.video.video && S.video.video.id===vid.id){
+    S.video.files=(fd&&fd.files)||[];
+    render();
+  }
 }
 function videoView(){
   const v=S.video; if(!v) return '';
@@ -620,8 +628,15 @@ function videoView(){
            style="position:absolute;inset:0;width:100%;height:100%;border:0;"></iframe></div>
        <div style="padding:13px 16px;font-size:13px;color:var(--text2);line-height:1.6;">
          ${h(v.video.title)}
-         <div style="margin-top:7px;font-size:12px;color:var(--text3);">📄 개념 PDF는 이 영상의 <b>더보기란</b>에 있어요 —
-           <a href="https://www.youtube.com/watch?v=${h(v.video.id)}" target="_blank" rel="noopener" style="color:var(--gold);">유튜브에서 열기 ↗</a></div></div>`
+         ${v.files===undefined
+           ? `<div style="margin-top:8px;font-size:12px;color:var(--text3);"><span style="animation:blink 1s infinite;">📄</span> 개념 자료 링크를 찾는 중…</div>`
+           : v.files.length
+           ? `<div style="margin-top:9px;display:flex;gap:7px;flex-wrap:wrap;">${v.files.map(f=>
+               `<a href="${h(f.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:9px 15px;border-radius:11px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-weight:800;font-size:13px;text-decoration:none;">📄 ${h(f.label)} ↗</a>`).join('')}</div>
+              <div style="margin-top:6px;font-size:11.5px;color:var(--text3);">틀린 문제의 개념을 이 자료에서 확인하고 암기하세요.</div>`
+           : `<div style="margin-top:7px;font-size:12px;color:var(--text3);">📄 이 영상엔 자료 링크가 없어요 —
+               <a href="https://www.youtube.com/watch?v=${h(v.video.id)}" target="_blank" rel="noopener" style="color:var(--gold);">유튜브 더보기란에서 확인 ↗</a></div>`}
+       </div>`
     : `<div style="padding:40px 22px;text-align:center;">
         <div style="font-size:30px;">🔍</div>
         <div style="margin-top:9px;font-size:14.5px;font-weight:700;">이 회차 강의를 자동으로 찾지 못했어요</div>
@@ -1496,7 +1511,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809g · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809h · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">

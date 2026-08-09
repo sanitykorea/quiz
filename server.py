@@ -396,7 +396,8 @@ def rebuild_qkey(c):
 
 
 # ---- 이미지 문항: 원본 PDF에서 문항 단위로 잘라 이미지 제공 ----
-_YT_CACHE = {}          # 유튜브 강의 영상 조회 캐시 {과목|연도|회차: (ts, video)}
+_YT_CACHE = {}
+_YTD_CACHE = {}         # 영상 설명란 자료 링크 캐시 {videoId: (ts, files)}          # 유튜브 강의 영상 조회 캐시 {과목|연도|회차: (ts, video)}
 _qstarts_cache = {}
 _pbreaks_cache = {}
 _qfigs_cache = {}
@@ -861,6 +862,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._yt_lookup(q)
+        if p == "/api/ytdesc":
+            if self._guard():
+                return
+            return self._yt_desc(q)
         if p == "/api/sheet":
             if self._guard():
                 return
@@ -2113,6 +2118,59 @@ class H(http.server.BaseHTTPRequestHandler):
         out = {"id": best[1], "title": best[2], "score": round(best[0], 2)}
         _YT_CACHE[ck] = (time.time(), out)
         return self._json({"video": out, "query": query})
+
+    # 설명란에서 '자료 파일' 링크만 골라내기 위한 기준
+    _FILE_HOSTS = ("drive.google.com", "docs.google.com", "dropbox.com", "1drv.ms",
+                   "mega.nz", "naver.me", "blog.naver.com", "cafe.naver.com", "notion.site")
+    _SKIP_HOSTS = ("kyobobook", "aladin", "yes24", "mebook.io", "/join", "instagram", "facebook",
+                   "youtube.com/channel", "youtu.be", "kakao", "smartstore")
+    _FILE_WORDS = ("다운로드", "자료", "파일", "pdf", "PDF", "교안", "필기", "요약", "정리")
+
+    def _yt_desc(self, q):
+        """영상 설명란(더보기)에서 개념 자료 링크만 추출. 파일을 가져오지 않고 원본 링크만 전달."""
+        vid = (q.get("id") or "").strip()
+        if not re.fullmatch(r"[\w-]{11}", vid):
+            return self._json({"error": "bad_input"}, 400)
+        hit = _YTD_CACHE.get(vid)
+        if hit and time.time() - hit[0] < (21600 if hit[1] else 180):
+            return self._json({"files": hit[1] or [], "cached": True})
+        try:
+            req = urllib.request.Request("https://www.youtube.com/watch?v=" + vid, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Accept-Language": "ko-KR,ko;q=0.9"})
+            html = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
+        except Exception as e:
+            return self._json({"error": "fetch_failed", "detail": str(e)[:80]}, 502)
+        m = re.search(r'"shortDescription":"(.*?)","', html, re.S)
+        if not m:
+            _YTD_CACHE[vid] = (time.time(), None)
+            return self._json({"files": []})
+        try:
+            desc = m.group(1).encode().decode("unicode_escape").encode("latin1", "ignore").decode("utf-8", "ignore")
+        except Exception:
+            desc = m.group(1)
+        files, label = [], ""
+        for line in desc.split("\n"):
+            t = line.strip()
+            if not t:
+                continue
+            urls = re.findall(r'https?://[^\s<>"\')]+', t)
+            if not urls:                                  # URL 없는 줄은 바로 위 제목으로 기억
+                label = t[:40]
+                continue
+            for u in urls:
+                low = u.lower()
+                if any(sk in low for sk in self._SKIP_HOSTS):
+                    continue                              # 교재 구매·채널 가입 링크 제외
+                host_ok = any(hh in low for hh in self._FILE_HOSTS)
+                label_ok = any(w in label for w in self._FILE_WORDS)
+                if host_ok or label_ok:
+                    nm = re.sub(r'[\[\]:·\-—]+', ' ', label).strip() or "자료 파일"
+                    if not any(f["url"] == u for f in files):
+                        files.append({"label": nm[:30], "url": u})
+        files = files[:4]
+        _YTD_CACHE[vid] = (time.time(), files)
+        return self._json({"files": files})
 
     def _attempt_batch(self, b):
         """여러 문항을 한 요청·한 커밋으로 채점. (기존: 문항마다 요청 → 25문항이면 왕복 25회)"""

@@ -101,6 +101,9 @@ const EXAM_DATE = '2026-08-11';
 const $ = document.getElementById('root');
 const h = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // AI(마크다운) 응답용 경량 렌더: **볼드** *이탤릭* `코드` 불릿 → HTML (먼저 이스케이프)
+// 설명란 텍스트의 URL만 링크로 (h()로 먼저 이스케이프하므로 안전)
+const linkify = s => h(s).replace(/(https?:\/\/[^\s<]+)/g,
+  '<a href="$1" target="_blank" rel="noopener" style="color:var(--gold);">$1</a>');
 const mdLite = s => h(s)
   .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
   .replace(/(^|[^*])\*(?!\s)([^*\n]+?)\*(?!\*)/g,'$1<em>$2</em>')
@@ -608,6 +611,7 @@ async function cramPlay(y,r,s){
   const fd=await api('/api/ytdesc?id='+encodeURIComponent(vid.id));
   if(S.video && S.video.video && S.video.video.id===vid.id){
     S.video.files=(fd&&fd.files)||[];
+    S.video.desc=(fd&&fd.desc)||'';
     render();
   }
 }
@@ -634,8 +638,14 @@ function videoView(){
            ? `<div style="margin-top:9px;display:flex;gap:7px;flex-wrap:wrap;">${v.files.map(f=>
                `<a href="${h(f.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:9px 15px;border-radius:11px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-weight:800;font-size:13px;text-decoration:none;">📄 ${h(f.label)} ↗</a>`).join('')}</div>
               <div style="margin-top:6px;font-size:11.5px;color:var(--text3);">틀린 문제의 개념을 이 자료에서 확인하고 암기하세요.</div>`
+           : v.desc
+           ? `<div style="margin-top:9px;">
+                <div style="font-size:12px;color:var(--text3);margin-bottom:5px;">📄 자료 링크를 자동으로 못 골라냈어요 — <b>설명란 전체</b>에서 직접 찾아보세요.</div>
+                <div style="max-height:170px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:11px 13px;background:var(--inset);font-size:12.5px;line-height:1.75;white-space:pre-wrap;word-break:break-all;color:var(--text2);">${linkify(v.desc)}</div></div>`
            : `<div style="margin-top:7px;font-size:12px;color:var(--text3);">📄 이 영상엔 자료 링크가 없어요 —
                <a href="https://www.youtube.com/watch?v=${h(v.video.id)}" target="_blank" rel="noopener" style="color:var(--gold);">유튜브 더보기란에서 확인 ↗</a></div>`}
+         ${(v.files&&v.files.length&&v.desc)?`<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:11.5px;color:var(--text3);">설명란 전체 보기</summary>
+            <div style="margin-top:6px;max-height:170px;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:11px 13px;background:var(--inset);font-size:12.5px;line-height:1.75;white-space:pre-wrap;word-break:break-all;color:var(--text2);">${linkify(v.desc)}</div></details>`:''}
        </div>`
     : `<div style="padding:40px 22px;text-align:center;">
         <div style="font-size:30px;">🔍</div>
@@ -1511,7 +1521,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809h · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809i · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">

@@ -2058,6 +2058,30 @@ class H(http.server.BaseHTTPRequestHandler):
         c.commit(); c.close()
         return self._json({"correct": bool(correct), "answer": ans})
 
+    @staticmethod
+    def _yt_fetch(url):
+        """유튜브 페이지 가져오기. 동의 인터스티셜·인증서 문제·일시적 실패에 대비해 재시도."""
+        last = None
+        for attempt in range(2):
+            try:
+                req = urllib.request.Request(url, headers={
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                                  "(KHTML, like Gecko) Chrome/122.0 Safari/537.36",
+                    "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+                    # 데이터센터 IP에 뜨는 쿠키 동의 화면을 건너뛰기 위한 표준 우회
+                    "Cookie": "CONSENT=YES+cb.20240101-00-p0.ko+FX+000; SOCS=CAI"})
+                ctx = None
+                try:
+                    import ssl, certifi                      # 인증서 번들이 없는 환경 대비
+                    ctx = ssl.create_default_context(cafile=certifi.where())
+                except Exception:
+                    ctx = None
+                return urllib.request.urlopen(req, timeout=12, context=ctx).read().decode("utf-8", "replace")
+            except Exception as e:
+                last = e
+                time.sleep(0.6)
+        raise last
+
     def _yt_lookup(self, q):
         """검정고시마스터 채널에서 '과목+연도+회차'에 맞는 강의 영상 1개를 찾아 videoId 반환.
         (API 키 없이 채널 검색 결과 페이지를 읽어 제목으로 매칭 · 결과는 캐시)"""
@@ -2074,10 +2098,7 @@ class H(http.server.BaseHTTPRequestHandler):
         query = f"{year} {rnd}회 {subject}"
         url = "https://www.youtube.com/@blackgosimaster/search?query=" + urllib.parse.quote(query)
         try:
-            req = urllib.request.Request(url, headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                "Accept-Language": "ko-KR,ko;q=0.9"})
-            html = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
+            html = self._yt_fetch(url + "&hl=ko&gl=KR")
         except Exception as e:
             return self._json({"error": "fetch_failed", "detail": str(e)[:80]}, 502)
         m = re.search(r"ytInitialData\s*=\s*({.*?})\s*;\s*</script>", html, re.S)
@@ -2126,6 +2147,30 @@ class H(http.server.BaseHTTPRequestHandler):
                    "youtube.com/channel", "youtu.be", "kakao", "smartstore")
     _FILE_WORDS = ("다운로드", "자료", "파일", "pdf", "PDF", "교안", "필기", "요약", "정리")
 
+    @staticmethod
+    def _yt_description(html):
+        """설명란 원문 추출. 유튜브가 페이지 구조를 바꿔도 버티도록 패턴을 여러 개 시도."""
+        # 1) 플레이어 응답의 shortDescription (가장 정확)
+        m = re.search(r'"shortDescription":"((?:[^"\\]|\\.)*)"', html)
+        if m:
+            try:
+                return json.loads('"' + m.group(1) + '"')
+            except Exception:
+                pass
+        # 2) 새 UI의 attributedDescription
+        m = re.search(r'"attributedDescription":\{"content":"((?:[^"\\]|\\.)*)"', html)
+        if m:
+            try:
+                return json.loads('"' + m.group(1) + '"')
+            except Exception:
+                pass
+        # 3) 최후: meta description (앞부분만 나오지만 없는 것보단 나음)
+        m = re.search(r'<meta name="description" content="([^"]*)"', html)
+        if m:
+            import html as _h
+            return _h.unescape(m.group(1))
+        return None
+
     def _yt_desc(self, q):
         """영상 설명란(더보기)에서 개념 자료 링크만 추출. 파일을 가져오지 않고 원본 링크만 전달."""
         vid = (q.get("id") or "").strip()
@@ -2133,22 +2178,15 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._json({"error": "bad_input"}, 400)
         hit = _YTD_CACHE.get(vid)
         if hit and time.time() - hit[0] < (21600 if hit[1] else 180):
-            return self._json({"files": hit[1] or [], "cached": True})
+            return self._json({**(hit[1] or {"files": []}), "cached": True})
         try:
-            req = urllib.request.Request("https://www.youtube.com/watch?v=" + vid, headers={
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-                "Accept-Language": "ko-KR,ko;q=0.9"})
-            html = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
+            html = self._yt_fetch(f"https://www.youtube.com/watch?v={vid}&hl=ko&gl=KR")
         except Exception as e:
             return self._json({"error": "fetch_failed", "detail": str(e)[:80]}, 502)
-        m = re.search(r'"shortDescription":"(.*?)","', html, re.S)
-        if not m:
+        desc = self._yt_description(html)
+        if desc is None:
             _YTD_CACHE[vid] = (time.time(), None)
-            return self._json({"files": []})
-        try:
-            desc = m.group(1).encode().decode("unicode_escape").encode("latin1", "ignore").decode("utf-8", "ignore")
-        except Exception:
-            desc = m.group(1)
+            return self._json({"files": [], "error": "no_description"})
         files, label = [], ""
         for line in desc.split("\n"):
             t = line.strip()
@@ -2169,8 +2207,9 @@ class H(http.server.BaseHTTPRequestHandler):
                     if not any(f["url"] == u for f in files):
                         files.append({"label": nm[:30], "url": u})
         files = files[:4]
-        _YTD_CACHE[vid] = (time.time(), files)
-        return self._json({"files": files})
+        out = {"files": files, "desc": desc[:4000]}     # 추출 실패 대비: 설명란 원문도 함께
+        _YTD_CACHE[vid] = (time.time(), out)
+        return self._json(out)
 
     def _attempt_batch(self, b):
         """여러 문항을 한 요청·한 커밋으로 채점. (기존: 문항마다 요청 → 25문항이면 왕복 25회)"""

@@ -171,6 +171,12 @@ def db():
         return _Conn(libsql.connect(os.path.join(DATA_DIR, "libsql_local.db"), check_same_thread=False), sync=False)
     c = sqlite3.connect(DB)
     c.row_factory = sqlite3.Row
+    # 커밋마다 fsync를 여러 번 하던 기본값(FULL/rollback journal) → 채점이 문항당 수백 ms 걸림
+    try:
+        c.execute("PRAGMA journal_mode=WAL")
+        c.execute("PRAGMA synchronous=NORMAL")
+    except Exception:
+        pass
     return c
 
 
@@ -950,8 +956,8 @@ class H(http.server.BaseHTTPRequestHandler):
         rows = c.execute("""SELECT a.question_id qid, a.qnum qnum, a.subject subj, a.year year, a.exam_round rnd,
                                    qu.level level
                             FROM attempts a
-                            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
-                              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
+                            JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.id=l.mi AND a.source='quiz'
                             JOIN questions qu ON qu.id=a.question_id
                             WHERE a.correct=0 ORDER BY a.subject, a.year, a.exam_round, a.qnum""").fetchall()
         c.close()
@@ -1117,8 +1123,8 @@ class H(http.server.BaseHTTPRequestHandler):
         # wrong_count: quiz+pdf 통틀어 틀린 횟수 → 2회 이상이면 '반복 오답'(복습·PDF에서 또 틀림)
         rows = c.execute("""
             SELECT a.*, wc.wc wrong_count FROM attempts a
-            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
-              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
+            JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.id=l.mi AND a.source='quiz'
             JOIN (SELECT question_id,qnum,SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) wc
                     FROM attempts GROUP BY question_id,qnum) wc
               ON wc.question_id=a.question_id AND wc.qnum=a.qnum
@@ -1147,8 +1153,8 @@ class H(http.server.BaseHTTPRequestHandler):
         c = db()
         rows = c.execute("""
             SELECT a.*, wc.wc wrong_count FROM attempts a
-            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
-              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
+            JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.id=l.mi AND a.source='quiz'
             JOIN (SELECT question_id,qnum,SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) wc
                     FROM attempts GROUP BY question_id,qnum) wc
               ON wc.question_id=a.question_id AND wc.qnum=a.qnum
@@ -1199,8 +1205,8 @@ class H(http.server.BaseHTTPRequestHandler):
         c = db()
         rows = c.execute("""SELECT a.question_id qid, a.qnum qnum, a.subject subj, a.year year, a.exam_round rnd, k.answer ans
                             FROM attempts a
-                            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
-                              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
+                            JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.id=l.mi AND a.source='quiz'
                             LEFT JOIN qkey k ON k.question_id=a.question_id AND k.qnum=a.qnum
                             WHERE a.correct=0 ORDER BY a.subject, a.year, a.exam_round, a.qnum""").fetchall()
         c.close()
@@ -1271,8 +1277,8 @@ class H(http.server.BaseHTTPRequestHandler):
         c = db()
         rows = c.execute("""
             SELECT a.* FROM attempts a
-            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
-              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
+            JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.id=l.mi AND a.source='quiz'
             WHERE a.correct=0 ORDER BY a.ts DESC LIMIT 30""").fetchall()
         if not rows:
             c.close(); return self._json({"analysis": "", "empty": True})
@@ -1350,8 +1356,8 @@ class H(http.server.BaseHTTPRequestHandler):
         c = db()
         acc = {}
         for r in c.execute("""SELECT a.subject s, COUNT(*) n, SUM(a.correct) ok FROM attempts a
-                JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
-                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz' GROUP BY a.subject"""):
+                JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.id=l.mi AND a.source='quiz' GROUP BY a.subject"""):
             acc[r["s"]] = f'{round((r["ok"] or 0)/r["n"]*100)}%({r["n"]}문항)'
         c.close()
         import datetime as _dt
@@ -1380,15 +1386,15 @@ class H(http.server.BaseHTTPRequestHandler):
         c = db()
         st = {}
         for r in c.execute("""SELECT a.subject subj, a.correct ok FROM attempts a
-                JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
-                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'"""):
+                JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.id=l.mi AND a.source='quiz'"""):
             s = st.setdefault(r["subj"], [0, 0]); s[0] += 1; s[1] += r["ok"] or 0
         rep = {}
         for r in c.execute("""SELECT a.subject subj, COUNT(*) n FROM attempts a
                 JOIN (SELECT question_id,qnum,SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) wc FROM attempts GROUP BY question_id,qnum) w
                   ON w.question_id=a.question_id AND w.qnum=a.qnum
-                JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
-                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
+                JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.id=l.mi AND a.source='quiz'
                 WHERE a.correct=0 AND w.wc>=2 GROUP BY a.subject"""):
             rep[r["subj"]] = r["n"]
         unsolved = [dict(x) for x in c.execute(
@@ -1482,8 +1488,8 @@ class H(http.server.BaseHTTPRequestHandler):
         """오답노트 기반 반복 취약 유형 분석(AI) — 과목별로 자주 틀리는 개념을 묶어 검색 키워드까지 제시."""
         c = db()
         rows = c.execute("""SELECT a.* FROM attempts a
-                JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
-                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'
+                JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                  ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.id=l.mi AND a.source='quiz'
                 WHERE a.correct=0 ORDER BY a.subject, a.ts DESC""").fetchall()
         pages, items = {}, []
         for w in rows:
@@ -1580,8 +1586,8 @@ class H(http.server.BaseHTTPRequestHandler):
         """모든 로그(정답률·반복오답·오답원인·실전성적 추이·학습시간·화상스터디 집중기록)를 종합한 AI 리포트."""
         c = db()
         latest = """SELECT a.* FROM attempts a
-            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
-              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'"""
+            JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.id=l.mi AND a.source='quiz'"""
         rows = [dict(r) for r in c.execute(latest)]
         if len(rows) < 3:
             c.close(); return self._json({"empty": True})
@@ -1700,8 +1706,8 @@ class H(http.server.BaseHTTPRequestHandler):
         """오답노트 기반 과목별 취약점 상세 진단(통계 + AI 코칭)."""
         c = db()
         latest = """SELECT a.* FROM attempts a
-            JOIN (SELECT question_id,qnum,MAX(ts) mt FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
-              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.ts=l.mt AND a.source='quiz'"""
+            JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+              ON a.question_id=l.question_id AND a.qnum=l.qnum AND a.id=l.mi AND a.source='quiz'"""
         rows = [dict(r) for r in c.execute(latest)]
         if not rows:
             c.close(); return self._json({"empty": True, "stats": []})
@@ -1832,6 +1838,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._attempt(b)
+        if p == "/api/attempts":
+            if self._guard():
+                return
+            return self._attempt_batch(b)
         if p == "/api/wrong/clear":
             if self._guard():
                 return
@@ -2024,6 +2034,39 @@ class H(http.server.BaseHTTPRequestHandler):
                   (qid, meta["subject"], meta["year"], meta["exam_round"], qnum, chosen, ans, correct, int(time.time())))
         c.commit(); c.close()
         return self._json({"correct": bool(correct), "answer": ans})
+
+    def _attempt_batch(self, b):
+        """여러 문항을 한 요청·한 커밋으로 채점. (기존: 문항마다 요청 → 25문항이면 왕복 25회)"""
+        try:
+            qid = int(b["question_id"])
+        except (KeyError, ValueError, TypeError):
+            return self._json({"error": "bad_input"}, 400)
+        picks = b.get("picks")
+        if not isinstance(picks, dict) or not picks:
+            return self._json({"error": "bad_input"}, 400)
+        c = db()
+        meta = c.execute("SELECT subject,year,exam_round FROM questions WHERE id=?", (qid,)).fetchone()
+        if not meta:
+            c.close(); return self._json({"error": "not_found"}, 404)
+        keys = {r["qnum"]: r["answer"] for r in c.execute("SELECT qnum,answer FROM qkey WHERE question_id=?", (qid,))}
+        ts, rows, out = int(time.time()), [], {}
+        for k, v in picks.items():
+            try:
+                qnum, chosen = int(k), int(v)
+            except (ValueError, TypeError):
+                continue
+            ans = keys.get(qnum)
+            if ans is None:
+                continue
+            correct = 1 if chosen == ans else 0
+            rows.append((qid, meta["subject"], meta["year"], meta["exam_round"], qnum, chosen, ans, correct, ts))
+            out[str(qnum)] = {"correct": bool(correct), "answer": ans}
+        if rows:
+            c.executemany("""INSERT INTO attempts(question_id,subject,year,exam_round,qnum,chosen,answer,correct,ts,source)
+                             VALUES(?,?,?,?,?,?,?,?,?,'quiz')""", rows)
+            c.commit()
+        c.close()
+        return self._json({"results": out, "count": len(rows)})
 
     def do_PUT(self):
         m = re.match(r"^/api/(questions|units|cards|schedule)/(\d+)$", self.path)

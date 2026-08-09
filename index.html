@@ -135,7 +135,7 @@ const S = {
   recommend:null, mock:null, askImg:{busy:false,text:'',q:''}, similar:null,
   today:null, checkExam:{}, cq:null, eye:null, focusHist:null,
   adminTab:'questions', adminMsg:'', muted:false,
-  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null, cram:null,
+  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null, cram:null, grading:false,
 };
 const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 4점/문항
 let _barrierActive = null;
@@ -421,13 +421,14 @@ async function defenseStart(subject){
   const wrongs=(S.wrongData&&S.wrongData.wrong||[]).filter(w=>w.subject===subject);
   const byQid={};
   wrongs.forEach(w=>{ (byQid[w.question_id]=byQid[w.question_id]||new Set()).add(w.qnum); });
+  // 회차마다 순차로 부르면 회차 수만큼 왕복이 쌓임 → 한꺼번에 병렬로
+  const qids=Object.keys(byQid).map(Number);
+  const res=await Promise.all(qids.map(qid=>api('/api/quiz?question_id='+qid)));
   const items=[];
-  for(const qidStr of Object.keys(byQid)){
-    const qid=+qidStr;
-    const r=await api('/api/quiz?question_id='+qid);
-    const meta=r.meta||{};
+  qids.forEach((qid,i)=>{
+    const r=res[i]||{}, meta=r.meta||{};
     (r.items||[]).forEach(it=>{ if(byQid[qid].has(it.qnum)) items.push({...it, qid, year:meta.year, exam_round:meta.exam_round}); });
-  }
+  });
   S.defense={subject, items:shuffle(items), idx:0, marks:{}};
   render(); scrollTop();
 }
@@ -1446,7 +1447,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809e · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809f · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -1594,7 +1595,7 @@ function quiz(){
     : `<button data-act="explainq" data-arg="${it.qnum}" style="margin-top:10px;padding:9px 14px;border-radius:10px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-size:13px;font-weight:700;cursor:pointer;">🧚 왜 이게 정답인지 해설 보기</button>`
   ) : '';
   const subj=S.qCurrent?S.qCurrent.subject:'', pts=PTS(subj);
-  const gradeBtn = (S.bankMode==='batch'&&!S.graded) ? `<button data-act="gradeall" style="width:100%;margin-top:10px;padding:14px;border-radius:12px;border:1px solid var(--gold-d);background:linear-gradient(180deg,rgba(255,224,102,.2),rgba(255,180,60,.12));color:var(--gold);font-weight:800;font-size:15px;cursor:pointer;">🎯 한번에 채점하기 (${Object.keys(S.picks).length}/${its.length} 선택)</button>` : '';
+  const gradeBtn = (S.bankMode==='batch'&&!S.graded) ? `<button data-act="gradeall" ${S.grading?'disabled':''} style="width:100%;margin-top:10px;padding:14px;border-radius:12px;border:1px solid var(--gold-d);background:linear-gradient(180deg,rgba(255,224,102,.2),rgba(255,180,60,.12));color:var(--gold);font-weight:800;font-size:15px;cursor:${S.grading?'default':'pointer'};opacity:${S.grading?'.65':'1'};">${S.grading?'⏳ 채점 중...':`🎯 한번에 채점하기 (${Object.keys(S.picks).length}/${its.length} 선택)`}</button>` : '';
   const scoreBanner = S.graded ? `<div style="margin-top:14px;border-radius:14px;padding:16px;text-align:center;background:rgba(20,117,92,.14);border:1px solid rgba(46,230,166,.5);">
       <div style="font-size:13px;color:var(--text2);">${h(subj)} · 문항당 ${pts}점</div>
       <div style="font-size:30px;font-weight:900;color:var(--accent-b);margin:2px 0;">${got*pts}<span style="font-size:15px;">점</span> <span style="font-size:15px;color:var(--text2);">/ ${its.length*pts}</span></div>
@@ -1913,11 +1914,16 @@ function vExam(){
 async function gradeAll(){
   const picks=S.picks, qnums=Object.keys(picks);
   if(!qnums.length){ toast('먼저 답을 선택하세요','bad'); return; }
-  for(const qn of qnums){
-    const r=await api('/api/attempt',{method:'POST',...jbody({question_id:S.qCurrent.id, qnum:+qn, chosen:picks[qn]})});
-    if(r.ok) S.quizMarks[qn]={chosen:picks[qn], correct:r.correct, answer:r.answer};
-  }
-  S.graded=true; render();
+  if(S.grading) return;
+  S.grading=true; render();                       // 한 번의 요청으로 전체 채점
+  const r=await api('/api/attempts',{method:'POST',...jbody({question_id:S.qCurrent.id, picks})});
+  S.grading=false;
+  if(r.results){
+    Object.entries(r.results).forEach(([qn,v])=>{ S.quizMarks[qn]={chosen:picks[qn], correct:v.correct, answer:v.answer}; });
+    S.graded=true; persist();
+  } else if(r.offline){ toast('📡 연결이 끊겨 채점을 못 했어요','bad'); }
+  else toast('채점에 실패했어요','bad');
+  render();
 }
 
 // ========== 수련의 탑: 도덕 파일 · 오답 AI 개념정리 ==========

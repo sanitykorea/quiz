@@ -396,6 +396,7 @@ def rebuild_qkey(c):
 
 
 # ---- 이미지 문항: 원본 PDF에서 문항 단위로 잘라 이미지 제공 ----
+_YT_CACHE = {}          # 유튜브 강의 영상 조회 캐시 {과목|연도|회차: (ts, video)}
 _qstarts_cache = {}
 _pbreaks_cache = {}
 _qfigs_cache = {}
@@ -856,6 +857,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._weakspots()
+        if p == "/api/yt":
+            if self._guard():
+                return
+            return self._yt_lookup(q)
         if p == "/api/sheet":
             if self._guard():
                 return
@@ -1053,17 +1058,30 @@ class H(http.server.BaseHTTPRequestHandler):
                 rows = [dict(x) for x in c.execute(base + clause + " ORDER BY RANDOM() LIMIT 1", args)]
         else:
             rows = [dict(x) for x in c.execute(base + clause + " ORDER BY id LIMIT 200", args)]
-            # 회차별 풀이 현황(푼 문항수·맞은수) → 미풀이 기출을 목록에서 바로 구분
-            prog = {r["qid"]: (r["n"], r["ok"]) for r in c.execute(
-                "SELECT question_id qid, COUNT(DISTINCT qnum) n, SUM(correct) ok FROM attempts WHERE source='quiz' GROUP BY question_id")}
+            # 현재 상태는 '문항별 최신 시도'만으로 집계.
+            # (기존엔 SUM(correct)가 모든 시도를 합산해 2회 풀면 49/25·224% 같은 값이 나왔음)
+            prog = {r["qid"]: (r["n"], r["ok"]) for r in c.execute("""
+                SELECT a.question_id qid, COUNT(*) n, SUM(a.correct) ok FROM attempts a
+                JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                  ON a.id=l.mi
+                GROUP BY a.question_id""")}
+            # 몇 번 풀었는지(문항별 최대 시도 횟수)와 전체 평균 정답률
+            hist = {r["qid"]: (r["passes"], r["tries"], r["allok"]) for r in c.execute("""
+                SELECT question_id qid, MAX(c) passes, SUM(c) tries, SUM(sc) allok FROM
+                  (SELECT question_id, qnum, COUNT(*) c, SUM(correct) sc
+                     FROM attempts WHERE source='quiz' GROUP BY question_id, qnum)
+                GROUP BY question_id""")}
             # 회차별 총 문항수(정답키 기준) → 진도율 계산용
             tot = {r["qid"]: r["n"] for r in c.execute(
                 "SELECT question_id qid, COUNT(*) n FROM qkey GROUP BY question_id")}
             for r in rows:
                 n, ok = prog.get(r["id"], (0, 0))
+                passes, tries, allok = hist.get(r["id"], (0, 0, 0))
                 r["solved"] = n
                 r["correct"] = ok or 0
                 r["total"] = tot.get(r["id"], 0)
+                r["passes"] = passes or 0                                  # 몇 회독
+                r["avg_pct"] = round((allok or 0) / tries * 100) if tries else 0   # 전체 시도 평균
         c.close()
         return self._json({"questions": rows})
 
@@ -2034,6 +2052,67 @@ class H(http.server.BaseHTTPRequestHandler):
                   (qid, meta["subject"], meta["year"], meta["exam_round"], qnum, chosen, ans, correct, int(time.time())))
         c.commit(); c.close()
         return self._json({"correct": bool(correct), "answer": ans})
+
+    def _yt_lookup(self, q):
+        """검정고시마스터 채널에서 '과목+연도+회차'에 맞는 강의 영상 1개를 찾아 videoId 반환.
+        (API 키 없이 채널 검색 결과 페이지를 읽어 제목으로 매칭 · 결과는 캐시)"""
+        subject = (q.get("subject") or "").strip()
+        year = re.sub(r"\D", "", q.get("year") or "")[:4]
+        rnd = re.sub(r"\D", "", q.get("round") or "")[:1]
+        if subject not in ("국어", "수학", "영어", "사회", "과학", "한국사", "도덕") or not year or not rnd:
+            return self._json({"error": "bad_input"}, 400)
+        ck = f"{subject}|{year}|{rnd}"
+        hit = _YT_CACHE.get(ck)
+        # 성공은 오래, 실패는 짧게 캐시 (일시적 실패가 몇 시간 동안 굳지 않도록)
+        if hit and time.time() - hit[0] < (21600 if hit[1] else 180):
+            return self._json({"video": hit[1], "cached": True})
+        query = f"{year} {rnd}회 {subject}"
+        url = "https://www.youtube.com/@blackgosimaster/search?query=" + urllib.parse.quote(query)
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                "Accept-Language": "ko-KR,ko;q=0.9"})
+            html = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
+        except Exception as e:
+            return self._json({"error": "fetch_failed", "detail": str(e)[:80]}, 502)
+        m = re.search(r"ytInitialData\s*=\s*({.*?})\s*;\s*</script>", html, re.S)
+        if not m:
+            return self._json({"error": "parse_failed"}, 502)
+        try:
+            data = json.loads(m.group(1))
+        except Exception:
+            return self._json({"error": "parse_failed"}, 502)
+
+        def walk(o):
+            if isinstance(o, dict):
+                v = o.get("videoRenderer")
+                if isinstance(v, dict) and v.get("videoId"):
+                    runs = (v.get("title") or {}).get("runs") or [{}]
+                    yield v["videoId"], (runs[0].get("text") or "")
+                for x in o.values():
+                    yield from walk(x)
+            elif isinstance(o, list):
+                for x in o:
+                    yield from walk(x)
+
+        best = None
+        for i, (vid, title) in enumerate(walk(data)):
+            if subject not in title:
+                continue                                   # 과목이 안 맞으면 후보에서 제외
+            sc = 0
+            if year in title or (year[2:] + "년") in title: sc += 4   # '2026년' / '26년' 둘 다 인정
+            if f"{rnd}회" in title: sc += 3
+            if "고졸" in title: sc += 2
+            if "중졸" in title or "초졸" in title: sc -= 6
+            sc -= i * 0.01                                  # 동점이면 검색 상위 우선
+            if best is None or sc > best[0]:
+                best = (sc, vid, title)
+        if not best or best[0] < 7:                         # 연도·회차가 둘 다 맞아야 확정
+            _YT_CACHE[ck] = (time.time(), None)
+            return self._json({"video": None, "query": query})
+        out = {"id": best[1], "title": best[2], "score": round(best[0], 2)}
+        _YT_CACHE[ck] = (time.time(), out)
+        return self._json({"video": out, "query": query})
 
     def _attempt_batch(self, b):
         """여러 문항을 한 요청·한 커밋으로 채점. (기존: 문항마다 요청 → 25문항이면 왕복 25회)"""

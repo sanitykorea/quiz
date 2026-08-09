@@ -135,7 +135,7 @@ const S = {
   recommend:null, mock:null, askImg:{busy:false,text:'',q:''}, similar:null,
   today:null, checkExam:{}, cq:null, eye:null, focusHist:null,
   adminTab:'questions', adminMsg:'', muted:false,
-  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null, cram:null, grading:false,
+  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null, cram:null, grading:false, video:null,
 };
 const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 4점/문항
 let _barrierActive = null;
@@ -569,6 +569,7 @@ function app(){
     <main style="max-width:1180px;margin:0 auto;padding:26px 20px 90px;">${view}${eyePip()}</main>
     <button id="toTop" onclick="scrollTo({top:0,behavior:'smooth'})" title="맨 위로" aria-label="맨 위로">↑</button>
     ${cmdkView()}
+    ${videoView()}
   </div>`;
 }
 
@@ -587,11 +588,58 @@ const CRAM_PHASES=[
   {id:'p2', label:'2단계', tone:'var(--gold)', rounds:[['2024년도','1차시험'],['2024년도','2차시험'],['2023년도','1차시험'],['2023년도','2차시험']],
    note:'같은 순서(영상 → 기출 → 암기)를 그대로 반복해요.'},
   {id:'p3', label:'3단계 · 시간 남으면', tone:'var(--blue)', rounds:[['2022년도','1차시험'],['2022년도','2차시험'],['2021년도','1차시험'],['2021년도','2차시험']],
-   note:'기출이 아직 등록 안 된 회차예요 — 영상만 보거나 관리소에서 PDF를 올리면 풀 수 있어요.'},
+   note:'여기까지 하면 빈틈이 거의 없어요. 같은 순서로 마무리.'},
 ];
 const CRAM_SUBJ=['국어','수학','사회','과학','한국사','도덕'];   // 영어는 면제
 function cramKey(y,r,s,step){ return `${y}#${r}#${s}#${step}`; }
+// ---- 인앱 강의 영상 ----
+async function cramPlay(y,r,s){
+  S.video={loading:true, y, r, s};
+  cramSet(cramKey(y,r,s,'v'), true);                    // 열면 ①영상 체크 (다시 봐도 해제되지 않음)
+  const yy=String(y).replace(/\D/g,'').slice(0,4);
+  const rr=(String(r).match(/\d/)||['1'])[0];
+  const d=await api(`/api/yt?subject=${encodeURIComponent(s)}&year=${yy}&round=${rr}`);
+  if(!S.video) return;                                   // 그새 닫았으면 무시
+  S.video={y, r, s, video:(d&&d.video)||null, failed:!(d&&d.video)};
+  render();
+}
+function videoView(){
+  const v=S.video; if(!v) return '';
+  const yy=String(v.y).replace('년도',''), rr=String(v.r).replace('시험','');
+  const searchUrl=ytLink(v.y,v.r,v.s);
+  const body = v.loading
+    ? `<div style="padding:52px 20px;text-align:center;color:var(--gold);">
+        <div style="font-size:30px;animation:floaty 2.4s ease-in-out infinite;">📺</div>
+        <div style="margin-top:10px;font-size:14px;font-weight:700;">강의 영상을 찾는 중…</div>
+        <div style="margin-top:4px;font-size:12px;color:var(--text3);">채널에서 ${h(yy)} ${h(rr)} ${h(v.s)} 강의를 찾고 있어요 (몇 초 걸려요)</div></div>`
+    : v.video
+    ? `<div style="position:relative;width:100%;padding-top:56.25%;background:#000;">
+         <iframe src="https://www.youtube.com/embed/${h(v.video.id)}?rel=0&modestbranding=1&playsinline=1"
+           title="${h(v.video.title)}" allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen"
+           allowfullscreen referrerpolicy="strict-origin-when-cross-origin"
+           style="position:absolute;inset:0;width:100%;height:100%;border:0;"></iframe></div>
+       <div style="padding:13px 16px;font-size:13px;color:var(--text2);line-height:1.6;">
+         ${h(v.video.title)}
+         <div style="margin-top:7px;font-size:12px;color:var(--text3);">📄 개념 PDF는 이 영상의 <b>더보기란</b>에 있어요 —
+           <a href="https://www.youtube.com/watch?v=${h(v.video.id)}" target="_blank" rel="noopener" style="color:var(--gold);">유튜브에서 열기 ↗</a></div></div>`
+    : `<div style="padding:40px 22px;text-align:center;">
+        <div style="font-size:30px;">🔍</div>
+        <div style="margin-top:9px;font-size:14.5px;font-weight:700;">이 회차 강의를 자동으로 찾지 못했어요</div>
+        <div style="margin-top:5px;font-size:12.5px;color:var(--text2);">채널에서 직접 찾아볼 수 있어요.</div>
+        <a href="${searchUrl}" target="_blank" rel="noopener" style="display:inline-block;margin-top:14px;padding:10px 20px;border-radius:11px;border:1px solid var(--danger-b);background:rgba(255,84,104,.14);color:var(--danger-b);font-weight:800;font-size:13.5px;text-decoration:none;">▶ 유튜브에서 검색 열기</a></div>`;
+  return `<div id="vidModal" data-act="vidbg" style="position:fixed;inset:0;z-index:220;background:rgba(4,7,13,.8);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:20px;">
+    <div onclick="event.stopPropagation()" style="width:100%;max-width:880px;background:var(--panel);border:1px solid var(--gold-d);border-radius:16px;overflow:hidden;box-shadow:0 26px 70px rgba(0,0,0,.6);">
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 15px;border-bottom:1px solid var(--border);">
+        <span style="font-size:12.5px;font-weight:800;color:var(--gold);">📺 ${h(yy)} ${h(rr)} · ${h(v.s)}</span>
+        <button data-act="vidclose" style="margin-left:auto;padding:6px 13px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-size:12.5px;cursor:pointer;">닫기 ✕</button></div>
+      ${body}</div></div>`;
+}
 function cramDone(k){ return !!(S.cram&&S.cram.done&&S.cram.done[k]); }
+function cramSet(k,v){
+  S.cram=S.cram||{done:{},open:{}}; S.cram.done=S.cram.done||{};
+  if(v) S.cram.done[k]=1; else delete S.cram.done[k];
+  persist(); render();
+}
 function cramToggle(k){
   S.cram=S.cram||{done:{},open:{}};
   S.cram.done=S.cram.done||{};
@@ -605,6 +653,7 @@ function cramCell(y,r,s){
   const total=p?(p.total||0):0, solved=p?(p.solved||0):0;
   const quizDone = !!(p && total && solved>=total);
   return {paper:p, total, solved, correct:p?(p.correct||0):0, quizDone,
+          passes:p?(p.passes||0):0, avgPct:p?(p.avg_pct||0):0,
           vDone:cramDone(cramKey(y,r,s,'v')), mDone:cramDone(cramKey(y,r,s,'m'))};
 }
 function cramStats(){
@@ -641,8 +690,8 @@ function vCram(){
         const wrongN=((S.wrongData&&S.wrongData.wrong)||[]).filter(w=>w.subject===s&&w.year===y&&w.exam_round===r).length;
         const btn=(on,txt,act,arg,tone)=>`<button data-act="${act}" data-arg="${arg}" style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;padding:9px 6px;border-radius:9px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid ${on?'rgba(46,230,166,.55)':'var(--border)'};background:${on?'rgba(20,117,92,.18)':'var(--panel2)'};color:${on?'var(--accent-b)':(tone||'var(--text2)')};">${on?'✅':''}${txt}</button>`;
         const quizTxt = !c.paper ? '기출 없음'
-          : c.quizDone ? `기출 ${c.correct}/${c.total}`
-          : c.solved ? `기출 ${c.solved}/${c.total}` : '기출 풀기';
+          : c.quizDone ? `기출 ${c.correct}/${c.total}${c.passes>1?` · ${c.passes}회독 평균 ${c.avgPct}%`:''}`
+          : c.solved ? `기출 ${c.solved}/${c.total} 진행중` : '기출 풀기';
         return `<div style="display:flex;gap:6px;align-items:center;padding:5px 0;">
           <span style="width:44px;flex:0 0 auto;font-size:13px;font-weight:800;">${s}</span>
           ${btn(c.vDone,'📺 영상','cramvid',`${y}|${r}|${s}`)}
@@ -674,7 +723,7 @@ function vCram(){
       <div style="flex:1;min-width:170px;">
         <div style="font-size:11.5px;color:var(--text3);">지금 할 일</div>
         <div style="font-size:15.5px;font-weight:800;color:var(--gold);">${h(nx.y.replace('년도',''))} ${h(nx.r.replace('시험',''))} · ${h(nx.s)} — ${h(nx.label)}</div></div>
-      ${nx.step==='v'?`<a href="${ytLink(nx.y,nx.r,nx.s)}" target="_blank" rel="noopener" style="padding:10px 18px;border-radius:11px;border:1px solid var(--danger-b);background:rgba(255,84,104,.14);color:var(--danger-b);font-weight:800;font-size:13.5px;text-decoration:none;">▶ 영상 열기</a>`
+      ${nx.step==='v'?`<button data-act="cramvid" data-arg="${nx.y}|${nx.r}|${nx.s}" style="padding:10px 18px;border-radius:11px;border:1px solid var(--danger-b);background:rgba(255,84,104,.14);color:var(--danger-b);font-weight:800;font-size:13.5px;cursor:pointer;">▶ 영상 보기</button>`
         :nx.step==='q'?`<button data-act="cramquiz" data-arg="${(cramPaper(nx.y,nx.r,nx.s)||{}).id}" style="padding:10px 18px;border-radius:11px;border:1px solid var(--gold-d);background:rgba(255,224,102,.16);color:var(--gold);font-weight:800;font-size:13.5px;cursor:pointer;">✏️ 바로 풀기</button>`
         :`<button data-act="crammem" data-arg="${nx.y}|${nx.r}|${nx.s}" style="padding:10px 18px;border-radius:11px;border:1px solid var(--danger-b);background:rgba(255,84,104,.14);color:var(--danger-b);font-weight:800;font-size:13.5px;cursor:pointer;">🧠 오답 개념 보기</button>`}
     </div>`
@@ -1417,8 +1466,8 @@ function vBank(){
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:9px;">${shown.length?shown.map(x=>{
       const done=x.solved>0, sel=q&&q.id===x.id;
-      const rate=done?Math.round(x.correct/x.solved*100):0;
-      return `<button data-act="qpick" data-arg="${x.id}" style="padding:7px 12px;border-radius:999px;font-size:12.5px;cursor:pointer;border:1px solid ${sel?'var(--gold-d)':(done?'var(--border)':'rgba(46,230,166,.5)')};background:${sel?'rgba(255,224,102,.14)':(done?'var(--panel2)':'rgba(20,117,92,.12)')};color:${sel?'var(--gold)':(done?'var(--text3)':'var(--accent-b)')};">${done?'':'🆕 '}${h(x.subject)} · ${h(x.year)} ${h(x.exam_round)}${done?` <span style="opacity:.8;">· ${rate}%</span>`:''}</button>`;
+      const rate=done?Math.min(100,Math.round(x.correct/Math.max(1,x.solved)*100)):0;
+      return `<button data-act="qpick" data-arg="${x.id}" style="padding:7px 12px;border-radius:999px;font-size:12.5px;cursor:pointer;border:1px solid ${sel?'var(--gold-d)':(done?'var(--border)':'rgba(46,230,166,.5)')};background:${sel?'rgba(255,224,102,.14)':(done?'var(--panel2)':'rgba(20,117,92,.12)')};color:${sel?'var(--gold)':(done?'var(--text3)':'var(--accent-b)')};">${done?'':'🆕 '}${h(x.subject)} · ${h(x.year)} ${h(x.exam_round)}${done?` <span style="opacity:.8;">· ${rate}%${x.passes>1?` · ${x.passes}회독`:''}</span>`:''}</button>`;
     }).join(''):'<span style="color:var(--text3);font-size:13px;">검색 결과가 없어요.</span>'}</div>` : '';
   const paper = q ? `<div style="margin-top:16px;">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;"><span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(q.subject)}</span><span style="font-size:13px;color:var(--text2);">${h(q.year)} · ${h(q.exam_round)} · ${h(q.level)}</span>
@@ -1447,7 +1496,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809f · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809g · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -3260,9 +3309,9 @@ const ACTS = {
   hdrmenu:()=>{ S.hdrMenu=!S.hdrMenu; render(); },
   cramopen:key=>{ S.cram=S.cram||{done:{},open:{}}; S.cram.open=S.cram.open||{};
     const cur=S.cram.open[key]; S.cram.open[key] = (cur===undefined) ? false : !cur; persist(); render(); },
-  cramvid:arg=>{ const[y,r,s]=arg.split('|');
-    window.open(ytLink(y,r,s),'_blank','noopener');
-    cramToggle(cramKey(y,r,s,'v')); },
+  cramvid:arg=>{ const[y,r,s]=arg.split('|'); cramPlay(y,r,s); },
+  vidclose:()=>{ S.video=null; render(); },
+  vidbg:(a,el)=>{ if(el&&el.id==='vidModal'){ S.video=null; render(); } },
   cramquiz:async id=>{ S.tab='bank'; await pickQuestionById(+id); render(); scrollTop(); },
   crammem:async arg=>{ const[y,r,s]=arg.split('|');
     cramToggle(cramKey(y,r,s,'m'));
@@ -3362,6 +3411,7 @@ document.addEventListener('keydown', e=>{
   if(e.metaKey||e.ctrlKey||e.altKey) return;
 
   if(e.key==='Escape'){
+    if(S.video){ S.video=null; render(); return; }
     if(S.hdrMenu){ S.hdrMenu=false; render(); return; }
     if(S.flash){ S.flash=null; render(); return; }
     if(S.sheet){ S.sheet=null; render(); return; }

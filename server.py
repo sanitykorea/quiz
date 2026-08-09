@@ -999,10 +999,14 @@ class H(http.server.BaseHTTPRequestHandler):
             # 회차별 풀이 현황(푼 문항수·맞은수) → 미풀이 기출을 목록에서 바로 구분
             prog = {r["qid"]: (r["n"], r["ok"]) for r in c.execute(
                 "SELECT question_id qid, COUNT(DISTINCT qnum) n, SUM(correct) ok FROM attempts WHERE source='quiz' GROUP BY question_id")}
+            # 회차별 총 문항수(정답키 기준) → 진도율 계산용
+            tot = {r["qid"]: r["n"] for r in c.execute(
+                "SELECT question_id qid, COUNT(*) n FROM qkey GROUP BY question_id")}
             for r in rows:
                 n, ok = prog.get(r["id"], (0, 0))
                 r["solved"] = n
                 r["correct"] = ok or 0
+                r["total"] = tot.get(r["id"], 0)
         c.close()
         return self._json({"questions": rows})
 

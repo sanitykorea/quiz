@@ -135,7 +135,7 @@ const S = {
   recommend:null, mock:null, askImg:{busy:false,text:'',q:''}, similar:null,
   today:null, checkExam:{}, cq:null, eye:null, focusHist:null,
   adminTab:'questions', adminMsg:'', muted:false,
-  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null,
+  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null, cram:null,
 };
 const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 4점/문항
 let _barrierActive = null;
@@ -184,6 +184,7 @@ function persist(){
       eyeCfg: S.eye ? {mouthX:S.eye.mouthX, mouthY:S.eye.mouthY, voiceURI:S.eye.voiceURI, pitch:S.eye.pitch, rate:S.eye.rate, interval:S.eye.interval, useScreen:S.eye.useScreen, muteTTS:S.eye.muteTTS} : undefined,
       cq: (S.cq && !S.cq.loading) ? {subject:S.cq.subject, topic:S.cq.topic, items:S.cq.items, idx:S.cq.idx, pick:S.cq.pick, score:S.cq.score, answered:S.cq.answered, fromWrong:S.cq.fromWrong, showImg:S.cq.showImg} : undefined,
       examItems: S.examItems || undefined,
+      cram: S.cram || undefined,
       // 풀던 회차 이어서 하기(새로고침·앱 종료 대비)
       bank: (S.qCurrent && S.quizItems.length) ? {qid:S.qCurrent.id, idx:S.quizIdx, marks:S.quizMarks,
               picks:S.picks, graded:S.graded, mode:S.bankMode,
@@ -230,6 +231,7 @@ async function openApp(){
   if(saved.eyeCfg){ Object.assign(eyeInit(), saved.eyeCfg); }   // 입 위치·목소리 설정 복원
   if(saved.cq && saved.cq.items && saved.cq.items.length) S.cq = saved.cq;   // 집중 연습 진행 상황 복원
   if(saved.examItems && saved.examItems.length) S.examItems = saved.examItems;
+  if(saved.cram) S.cram = saved.cram;
   if(saved.bank && saved.bank.qid) S.resumeBank = saved.bank;   // 문제은행 '이어서 풀기' 제안용
   S.messages = (saved.messages&&saved.messages.length) ? saved.messages
     : [{role:'assistant', text:'수영! 《지식의 탑》에 잘 왔어 ⚔️ 나는 너의 수호령이야.\n오늘 첫 퀘스트부터 같이 정해볼까? 아래 스펠을 눌러도 좋아.'}];
@@ -522,10 +524,10 @@ function gate(){
 
 function app(){
   const rbtn=on=>`display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:5px 9px;border-radius:8px;cursor:pointer;border:1px solid ${on?'rgba(46,230,166,.5)':'var(--border)'};background:${on?'rgba(20,117,92,.18)':'transparent'};color:${on?'var(--text3)':'var(--text)'};text-decoration:${on?'line-through':'none'};`;
-  const tabs=[['camp','⛺','베이스캠프'],['tower','⚔️','수련의 탑'],['guild','📜','전직소'],['summon','🧚','수호령 소환'],['eye','🔮','수호령의 눈'],['bank','📚','문제은행'],['exam','🎯','실전 채점'],['wrong','📕','오답노트']];
+  const tabs=[['camp','⛺','베이스캠프'],['cram','⚡','벼락치기'],['tower','⚔️','수련의 탑'],['guild','📜','전직소'],['summon','🧚','수호령 소환'],['eye','🔮','수호령의 눈'],['bank','📚','문제은행'],['exam','🎯','실전 채점'],['wrong','📕','오답노트']];
   if(S.isAdmin) tabs.push(['admin','🛠','관리소']);
   const nav=tabs.map(([id,ic,lb])=>`<button data-act="tab" data-arg="${id}" style="position:relative;background:none;border:none;padding:14px 16px 13px;cursor:pointer;white-space:nowrap;color:${id===S.tab?'var(--gold)':'var(--text2)'};font-size:15px;font-weight:700;transition:color .15s;"><span style="margin-right:6px;">${ic}</span>${lb}<div style="position:absolute;left:12px;right:12px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--accent-b);box-shadow:0 0 12px var(--accent-b);opacity:${id===S.tab?1:0};transition:opacity .2s;"></div></button>`).join('');
-  const view = {camp:vCamp,tower:vTower,guild:vGuild,summon:vSummon,eye:vEye,bank:vBank,exam:vExam,wrong:vWrong,admin:vAdmin}[S.tab]();
+  const view = {camp:vCamp,cram:vCram,tower:vTower,guild:vGuild,summon:vSummon,eye:vEye,bank:vBank,exam:vExam,wrong:vWrong,admin:vAdmin}[S.tab]();
   const iconBtn='width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:16px;cursor:pointer;flex:0 0 auto;';
   return `<div>
     <header style="position:sticky;top:0;z-index:30;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);background:var(--header);border-bottom:1px solid var(--border);">
@@ -569,11 +571,138 @@ function app(){
   </div>`;
 }
 
+// ========== ⚡ 벼락치기 모드 (영상 → 기출 → 개념 암기, 회차군별 반복) ==========
+const YT_CH='https://www.youtube.com/@blackgosimaster';
+// 영상 ID를 임의로 만들지 않고 채널 내 검색으로 연결 → 링크가 깨지지 않음
+const ytLink=(year,round,subject)=>{
+  const y=String(year).replace('년도','').trim();          // 2026
+  const r=String(round).replace('시험','').trim();          // 1차
+  const n=(r.match(/\d/)||['1'])[0];                        // 1
+  return `${YT_CH}/search?query=${encodeURIComponent(`${y} ${n}회 ${subject}`)}`;
+};
+const CRAM_PHASES=[
+  {id:'p1', label:'1단계 · 최우선', tone:'var(--danger-b)', rounds:[['2026년도','1차시험'],['2025년도','1차시험'],['2025년도','2차시험']],
+   note:'가장 최근 3회차 — 출제 경향이 제일 가까워요. 여기부터.'},
+  {id:'p2', label:'2단계', tone:'var(--gold)', rounds:[['2024년도','1차시험'],['2024년도','2차시험'],['2023년도','1차시험'],['2023년도','2차시험']],
+   note:'같은 순서(영상 → 기출 → 암기)를 그대로 반복해요.'},
+  {id:'p3', label:'3단계 · 시간 남으면', tone:'var(--blue)', rounds:[['2022년도','1차시험'],['2022년도','2차시험'],['2021년도','1차시험'],['2021년도','2차시험']],
+   note:'기출이 아직 등록 안 된 회차예요 — 영상만 보거나 관리소에서 PDF를 올리면 풀 수 있어요.'},
+];
+const CRAM_SUBJ=['국어','수학','사회','과학','한국사','도덕'];   // 영어는 면제
+function cramKey(y,r,s,step){ return `${y}#${r}#${s}#${step}`; }
+function cramDone(k){ return !!(S.cram&&S.cram.done&&S.cram.done[k]); }
+function cramToggle(k){
+  S.cram=S.cram||{done:{},open:{}};
+  S.cram.done=S.cram.done||{};
+  if(S.cram.done[k]) delete S.cram.done[k]; else S.cram.done[k]=1;
+  persist(); render();
+}
+function cramPaper(y,r,s){ return (S.qList||[]).find(x=>x.year===y&&x.exam_round===r&&x.subject===s); }
+// 회차·과목의 3단계 상태 (기출은 실제 풀이 기록에서 자동 판정)
+function cramCell(y,r,s){
+  const p=cramPaper(y,r,s);
+  const total=p?(p.total||0):0, solved=p?(p.solved||0):0;
+  const quizDone = !!(p && total && solved>=total);
+  return {paper:p, total, solved, correct:p?(p.correct||0):0, quizDone,
+          vDone:cramDone(cramKey(y,r,s,'v')), mDone:cramDone(cramKey(y,r,s,'m'))};
+}
+function cramStats(){
+  let done=0, all=0;
+  CRAM_PHASES.forEach(ph=>ph.rounds.forEach(([y,r])=>CRAM_SUBJ.forEach(s=>{
+    const c=cramCell(y,r,s);
+    all+=3; done += (c.vDone?1:0) + (c.quizDone?1:0) + (c.mDone?1:0);
+  })));
+  return {done, all, pct: all?Math.round(done/all*100):0};
+}
+// 다음에 할 일 하나를 콕 집어준다
+function cramNext(){
+  for(const ph of CRAM_PHASES) for(const [y,r] of ph.rounds) for(const s of CRAM_SUBJ){
+    const c=cramCell(y,r,s);
+    if(!c.vDone) return {y,r,s,step:'v',label:'영상 보기',ph};
+    if(!c.quizDone && c.paper) return {y,r,s,step:'q',label:'기출 풀기',ph};
+    if(!c.mDone) return {y,r,s,step:'m',label:'틀린 개념 암기',ph};
+  }
+  return null;
+}
+function vCram(){
+  const st=cramStats(), nx=cramNext();
+  const openMap=(S.cram&&S.cram.open)||{};
+  const phases=CRAM_PHASES.map(ph=>{
+    const rounds=ph.rounds.map(([y,r])=>{
+      const key=`${y}#${r}`;
+      const cells=CRAM_SUBJ.map(s=>cramCell(y,r,s));
+      const rDone=cells.reduce((a,c)=>a+(c.vDone?1:0)+(c.quizDone?1:0)+(c.mDone?1:0),0);
+      const rAll=CRAM_SUBJ.length*3;
+      const hasPaper=cells.some(c=>c.paper);
+      const open = openMap[key]!==undefined ? openMap[key] : (ph.id==='p1' && ph.rounds[0][0]===y && ph.rounds[0][1]===r);
+      const rows=CRAM_SUBJ.map(s=>{
+        const c=cramCell(y,r,s);
+        const wrongN=((S.wrongData&&S.wrongData.wrong)||[]).filter(w=>w.subject===s&&w.year===y&&w.exam_round===r).length;
+        const btn=(on,txt,act,arg,tone)=>`<button data-act="${act}" data-arg="${arg}" style="flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;padding:9px 6px;border-radius:9px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid ${on?'rgba(46,230,166,.55)':'var(--border)'};background:${on?'rgba(20,117,92,.18)':'var(--panel2)'};color:${on?'var(--accent-b)':(tone||'var(--text2)')};">${on?'✅':''}${txt}</button>`;
+        const quizTxt = !c.paper ? '기출 없음'
+          : c.quizDone ? `기출 ${c.correct}/${c.total}`
+          : c.solved ? `기출 ${c.solved}/${c.total}` : '기출 풀기';
+        return `<div style="display:flex;gap:6px;align-items:center;padding:5px 0;">
+          <span style="width:44px;flex:0 0 auto;font-size:13px;font-weight:800;">${s}</span>
+          ${btn(c.vDone,'📺 영상','cramvid',`${y}|${r}|${s}`)}
+          ${c.paper
+            ? `<button data-act="cramquiz" data-arg="${c.paper.id}" style="flex:1.3;min-width:0;padding:9px 6px;border-radius:9px;cursor:pointer;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid ${c.quizDone?'rgba(46,230,166,.55)':'var(--gold-d)'};background:${c.quizDone?'rgba(20,117,92,.18)':'rgba(255,224,102,.1)'};color:${c.quizDone?'var(--accent-b)':'var(--gold)'};">${c.quizDone?'✅ ':'✏️ '}${quizTxt}</button>`
+            : `<span style="flex:1.3;min-width:0;padding:9px 6px;border-radius:9px;border:1px dashed var(--border);color:var(--text3);font-size:11.5px;text-align:center;">기출 미등록</span>`}
+          ${btn(c.mDone, wrongN?`🧠 오답 ${wrongN}`:'🧠 암기','crammem',`${y}|${r}|${s}`, wrongN?'var(--danger-b)':'var(--text2)')}
+        </div>`;
+      }).join('');
+      return `<div style="border:1px solid ${rDone>=rAll?'rgba(46,230,166,.5)':'var(--border)'};border-radius:12px;margin-bottom:8px;background:var(--panel);overflow:hidden;">
+        <button data-act="cramopen" data-arg="${key}" style="width:100%;display:flex;align-items:center;gap:9px;padding:11px 13px;background:${rDone>=rAll?'rgba(20,117,92,.12)':'var(--panel2)'};border:none;color:var(--text);cursor:pointer;text-align:left;">
+          <span style="font-size:13px;">${open?'▾':'▸'}</span>
+          <b style="font-size:14px;flex:1;">${h(y.replace('년도',''))} ${h(r.replace('시험',''))}${rDone>=rAll?' 🏆':''}</b>
+          <span style="font-size:11.5px;color:var(--text3);">${rDone}/${rAll}</span>
+          <span style="width:64px;height:5px;border-radius:99px;background:var(--panel);border:1px solid var(--border);overflow:hidden;flex:0 0 auto;"><span style="display:block;height:100%;width:${rDone/rAll*100}%;background:linear-gradient(90deg,#14755C,#2ee6a6);"></span></span>
+        </button>
+        ${open?`<div style="padding:6px 13px 12px;">${rows}
+          ${hasPaper?'':`<div style="margin-top:6px;font-size:11.5px;color:var(--text3);">이 회차 기출 PDF를 <b>관리소</b>에서 올리면 바로 풀 수 있어요.</div>`}</div>`:''}
+      </div>`;
+    }).join('');
+    return `<section style="margin-bottom:20px;">
+      <div style="display:flex;align-items:baseline;gap:9px;margin-bottom:4px;flex-wrap:wrap;">
+        <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:${ph.tone};letter-spacing:1px;">${h(ph.label)}</span></div>
+      <div style="font-size:12.5px;color:var(--text2);margin-bottom:9px;">${h(ph.note)}</div>
+      ${rounds}</section>`;
+  }).join('');
+  const nextCard = nx ? `<div style="border:1px solid var(--gold-d);border-radius:14px;padding:15px 17px;background:rgba(255,224,102,.1);margin-bottom:18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      <span style="font-size:24px;">${nx.step==='v'?'📺':nx.step==='q'?'✏️':'🧠'}</span>
+      <div style="flex:1;min-width:170px;">
+        <div style="font-size:11.5px;color:var(--text3);">지금 할 일</div>
+        <div style="font-size:15.5px;font-weight:800;color:var(--gold);">${h(nx.y.replace('년도',''))} ${h(nx.r.replace('시험',''))} · ${h(nx.s)} — ${h(nx.label)}</div></div>
+      ${nx.step==='v'?`<a href="${ytLink(nx.y,nx.r,nx.s)}" target="_blank" rel="noopener" style="padding:10px 18px;border-radius:11px;border:1px solid var(--danger-b);background:rgba(255,84,104,.14);color:var(--danger-b);font-weight:800;font-size:13.5px;text-decoration:none;">▶ 영상 열기</a>`
+        :nx.step==='q'?`<button data-act="cramquiz" data-arg="${(cramPaper(nx.y,nx.r,nx.s)||{}).id}" style="padding:10px 18px;border-radius:11px;border:1px solid var(--gold-d);background:rgba(255,224,102,.16);color:var(--gold);font-weight:800;font-size:13.5px;cursor:pointer;">✏️ 바로 풀기</button>`
+        :`<button data-act="crammem" data-arg="${nx.y}|${nx.r}|${nx.s}" style="padding:10px 18px;border-radius:11px;border:1px solid var(--danger-b);background:rgba(255,84,104,.14);color:var(--danger-b);font-weight:800;font-size:13.5px;cursor:pointer;">🧠 오답 개념 보기</button>`}
+    </div>`
+    : `<div style="border:1px solid rgba(46,230,166,.5);border-radius:14px;padding:20px;background:rgba(20,117,92,.14);margin-bottom:18px;text-align:center;">
+        <div style="font-size:30px;">🏆</div><div style="font-size:16px;font-weight:900;color:var(--accent-b);margin-top:4px;">전 과정 완주! 이제 오답노트만 반복하면 돼요.</div></div>`;
+  return `<div>
+    <div style="margin-bottom:14px;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--danger-b);letter-spacing:1px;">CRAM MODE · 벼락치기</div>
+      <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">⚡ 벼락치기 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 영상 → 기출 → 개념 암기를 회차마다 반복</span></h2>
+      <p style="margin:6px 0 0;color:var(--text2);font-size:13px;">새로운 걸 더 보는 것보다 <b>아는 걸 확실히 내 것으로</b> 만드는 게 빨라요. ②기출은 실제 풀이 기록에서 자동으로 체크돼요.</p></div>
+    <div style="border:1px solid var(--border);border-radius:14px;padding:14px 16px;background:var(--panel);margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:7px;">
+        <span style="color:var(--text2);">전체 진행률</span>
+        <span style="font-weight:900;color:var(--gold);font-size:16px;">${st.done} <span style="font-size:12px;color:var(--text3);">/ ${st.all} 단계 · ${st.pct}%</span></span></div>
+      <div style="height:9px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;"><div style="height:100%;width:${st.pct}%;background:linear-gradient(90deg,#14755C,#2ee6a6,#ffe066);transition:width .4s;"></div></div>
+      <div style="margin-top:9px;font-size:11.5px;color:var(--text3);">📺 영상은 <b>검정고시마스터</b> 채널의 해당 과목·회차 검색으로 열려요 · 개념 PDF는 그 영상 <b>더보기란</b>에 있어요.</div>
+    </div>
+    ${nextCard}
+    ${phases}
+    <div style="margin-top:6px;padding:13px 15px;border-radius:12px;border:1px solid var(--gold-d);background:rgba(255,224,102,.07);font-size:13px;color:var(--text);">
+      ⭐ <b style="color:var(--gold);">핵심은 반복과 암기</b> — 새로운 내용을 많이 보기보다, 아는 내용을 확실히 내 것으로 만드는 게 합격의 가장 빠른 길이에요.</div>
+  </div>`;
+}
 // ========== 커맨드 팔레트 (Ctrl/⌘+K) ==========
 function cmdList(){
   const go=t=>()=>{ closeCmdk(); ACTS.tab(t); };
   const c=[
     {ic:'⛺', name:'베이스캠프', hint:'오늘의 퀘스트·리포트', run:go('camp')},
+    {ic:'⚡', name:'벼락치기', hint:'영상→기출→암기 반복 진도표', run:go('cram')},
     {ic:'📚', name:'문제은행', hint:'기출 풀기', run:go('bank')},
     {ic:'📕', name:'오답노트', hint:'틀린 문제 모음', run:go('wrong')},
     {ic:'🎯', name:'실전 채점', hint:'시험 당일 즉석 채점', run:go('exam')},
@@ -1317,7 +1446,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809c · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809d · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -3045,6 +3174,7 @@ const ACTS = {
   sleep:()=>patch({sleepDone:!S.sleepDone}), wake:()=>patch({wakeDone:!S.wakeDone}),
   tab:async id=>{ S.tab=id; S.adminMsg=''; S.hdrMenu=false; render();
     if(id==='bank'&&!S.qFacets.subject.length){await loadFacets();render();}
+    if(id==='cram'){ if(!S.qList.length){ S.qFilter={}; await loadQuestions(false); } if(!S.wrongData) await loadWrong(); render(); }
     if(id==='wrong'){await loadWrong(); await loadDiag(false);}
     if(id==='admin'){await adminReload();}
     if(id==='exam'){ if(!S.qFacets.subject.length)await loadFacets(); await loadExamRecords(); if(!S.diag)await loadDiag(false); render(); }
@@ -3122,6 +3252,15 @@ const ACTS = {
   wrongdec:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'dec');},
   wrongremove:arg=>{const[id,qn]=arg.split('|'); wrongAdjust(id,qn,'remove');},
   hdrmenu:()=>{ S.hdrMenu=!S.hdrMenu; render(); },
+  cramopen:key=>{ S.cram=S.cram||{done:{},open:{}}; S.cram.open=S.cram.open||{};
+    const cur=S.cram.open[key]; S.cram.open[key] = (cur===undefined) ? false : !cur; persist(); render(); },
+  cramvid:arg=>{ const[y,r,s]=arg.split('|');
+    window.open(ytLink(y,r,s),'_blank','noopener');
+    cramToggle(cramKey(y,r,s,'v')); },
+  cramquiz:async id=>{ S.tab='bank'; await pickQuestionById(+id); render(); scrollTop(); },
+  crammem:async arg=>{ const[y,r,s]=arg.split('|');
+    cramToggle(cramKey(y,r,s,'m'));
+    S.tab='wrong'; await loadWrong(); S.wrongSubjFilter=s; render(); scrollTo({top:0}); },
   resumebank:async()=>{ const rb=S.resumeBank; if(!rb) return;
     await pickQuestionById(rb.qid);
     S.quizMarks=rb.marks||{}; S.picks=rb.picks||{}; S.graded=!!rb.graded;

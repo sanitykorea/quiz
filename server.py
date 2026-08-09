@@ -285,6 +285,15 @@ _CIRC = "①②③④⑤"
 def _pua_ratio(s):
     return sum(1 for c in s if '' <= c <= '') / max(1, len(s))
 
+def _split_circ(ln):
+    """한 줄을 '첫 선지기호 앞'(발문)과 '기호부터'(선지)로 분리. 기호가 없으면 (원문, '')."""
+    pos = [ln.find(ch) for ch in _CIRC if ch in ln]
+    if not pos:
+        return ln, ''
+    cut = min(pos)
+    return ln[:cut].strip(), ln[cut:]
+
+
 def parse_items(raw):
     lines = [ln.rstrip() for ln in (raw or "").split('\n') if not _NOISE.match(ln.strip())]
     items, passages, i, expected, cur, n = [], [], 0, 1, None, 0
@@ -306,27 +315,69 @@ def parse_items(raw):
                 buf.append(lines[i]); i += 1
             passages.append((a, b, '\n'.join(buf).strip())); continue
         if mq and int(mq.group(1)) == expected and expected <= 30:
-            flush(); cur = {'qnum': expected, 's': [mq.group(2)] if mq.group(2) else [], 'c': []}
+            flush()
+            # 2단 조판 PDF에선 '17. 발문 ①선지'가 한 줄로 추출되기도 함 → ① 앞뒤를 갈라 담는다
+            pre, ch = _split_circ(mq.group(2) or '')
+            cur = {'qnum': expected, 's': [pre] if pre else [], 'c': [ch] if ch else []}
             expected += 1; i += 1; continue
         if cur is not None:
-            (cur['c'] if (any(x in ln for x in _CIRC) or cur['c']) else cur['s']).append(ln)
+            if cur['c']:
+                cur['c'].append(ln)                      # 이미 선지 구간 → 여러 줄 선지 이어붙이기
+            else:
+                pre, ch = _split_circ(ln)
+                if ch:
+                    if pre:
+                        cur['s'].append(pre)             # ① 앞의 발문 꼬리가 버려지지 않도록
+                    cur['c'].append(ch)
+                else:
+                    cur['s'].append(ln)
         i += 1
     flush()
     def split_ch(t):
-        p = re.split(r'([①②③④⑤])', t); out = []
+        """선지 분리. 지문 속 조항 기호('헌법 제37조 ②')가 선지로 잡히는 걸 걸러내고,
+        걸러낸 텍스트는 버리지 않고 발문으로 돌려준다."""
+        p = re.split(r'([①②③④⑤])', t)
+        out = []
         for k in range(1, len(p), 2):
-            out.append({"n": _CIRC.index(p[k]) + 1, "text": (p[k + 1] if k + 1 < len(p) else '').strip()})
-        return out
+            out.append({"n": _CIRC.index(p[k]) + 1, "text": (p[k + 1] if k + 1 < len(p) else '').strip(),
+                        "mark": p[k]})
+        # 1부터 오름차순으로 4개 이상 이어지는 '마지막' 구간만 진짜 선지로 본다
+        best = None
+        for i, ch in enumerate(out):
+            if ch["n"] != 1:
+                continue
+            run = [ch]
+            for nxt in out[i + 1:]:
+                if nxt["n"] == run[-1]["n"] + 1:
+                    run.append(nxt)
+                else:
+                    break
+            if len(run) >= 4:
+                best = (i, len(run))
+        if best is None:
+            for c in out:
+                c.pop("mark", None)
+            return out, ''
+        i, ln_ = best
+        dropped = ' '.join((c["mark"] + c["text"]).strip() for c in out[:i]).strip()
+        keep = out[i:i + ln_]
+        for c in keep:
+            c.pop("mark", None)
+        return keep, dropped
     out = []
     for it in items:
         stem = '\n'.join(it['s']).strip()
-        choices = split_ch(' '.join(it['c']))
+        choices, dropped = split_ch(' '.join(it['c']))
+        if dropped:
+            stem = (stem + '\n' + dropped).strip()      # 조항 본문 등이 유실되지 않도록
         if not choices:
             choices = [{"n": k, "text": ""} for k in range(1, 5)]
         passage = next((t for a, b, t in passages if a <= it['qnum'] <= b), '')
         blob = stem + ' '.join(x["text"] for x in choices)
+        # 선지 텍스트가 거의 비어 있으면 표/그림에 의존하는 문항 → 원본 이미지로 보여줘야 풀 수 있음
+        layout_only = sum(1 for x in choices if x["text"]) <= 1
         out.append({"qnum": it['qnum'], "stem": stem, "choices": choices,
-                    "passage": passage, "image": _pua_ratio(blob) > 0.15})
+                    "passage": passage, "image": _pua_ratio(blob) > 0.15 or layout_only})
     return out
 
 

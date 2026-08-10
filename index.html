@@ -229,8 +229,37 @@ function persist(){
 function patch(o){ Object.assign(S,o); persist(); render(); }
 
 // ---------- boot ----------
+// 서버가 잠들어 있으면(무료 플랜 15분 idle) 첫 응답이 수십 초 걸림 → 빈 화면 대신 진행 상황 표시
+function bootScreen(sec){
+  $.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;">
+    <div style="max-width:340px;">
+      <div style="width:96px;height:96px;border-radius:50%;margin:0 auto 20px;background:radial-gradient(circle at 34% 30%, #2ee6a6, #14755C 46%, #0a3b2e 82%);animation:orbGlow 2.2s ease-in-out infinite, floaty 4s ease-in-out infinite;display:flex;align-items:center;justify-content:center;font-size:42px;">🏰</div>
+      <div style="font-family:'Press Start 2P',monospace;font-size:9px;letter-spacing:2px;color:var(--gold);">TOWER OF KNOWLEDGE</div>
+      <div style="margin-top:14px;font-size:15px;font-weight:800;color:var(--text);">탑을 깨우는 중…</div>
+      <div style="margin-top:6px;font-size:12.5px;color:var(--text2);line-height:1.7;">
+        서버가 잠들어 있어 처음 열 때 조금 걸려요.<br>${sec}초 경과 · 보통 30~60초면 열려요</div>
+      <div style="margin-top:16px;height:5px;border-radius:99px;background:var(--panel2);border:1px solid var(--border);overflow:hidden;">
+        <div style="height:100%;width:${Math.min(96, sec/60*100)}%;background:linear-gradient(90deg,#14755C,#2ee6a6,#ffe066);transition:width .9s linear;"></div></div>
+      ${sec>=75?`<div style="margin-top:14px;font-size:12px;color:var(--pink);">오래 걸리네요 — <button onclick="location.reload()" style="padding:6px 13px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text2);font-size:12px;cursor:pointer;">새로고침</button></div>`:''}
+    </div></div>`;
+}
 async function boot(){
-  const s = await api('/api/session');
+  let sec=0, shown=false;
+  const t=setInterval(()=>{ sec++; if(sec>=2){ shown=true; bootScreen(sec); } }, 1000);
+  let s=null;
+  for(let i=0;i<3 && !(s&&s.ok);i++){                 // 콜드 스타트로 첫 요청이 실패할 수 있어 재시도
+    s = await api('/api/session');
+    if(!s.ok) await new Promise(r=>setTimeout(r, 2500));
+  }
+  clearInterval(t);
+  if(!s || !s.ok){
+    $.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;">
+      <div><div style="font-size:38px;">📡</div>
+      <div style="margin-top:10px;font-size:15px;font-weight:800;">서버에 연결하지 못했어요</div>
+      <div style="margin-top:6px;font-size:13px;color:var(--text2);">잠시 후 다시 시도해주세요.</div>
+      <button onclick="location.reload()" style="margin-top:16px;padding:10px 20px;border-radius:11px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다시 시도</button></div></div>`;
+    return;
+  }
   S.setup = !!s.setup; S.isAdmin = !!s.isAdmin; S.ai = s.ai || null;
   if(s.authed){ await openApp(); }
   else { S.gateMode = s.setup ? 'setup' : 'locked'; render(); }
@@ -1740,7 +1769,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0810c · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0810d · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">

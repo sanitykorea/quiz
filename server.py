@@ -291,6 +291,33 @@ _CIRC = "①②③④⑤"
 def _pua_ratio(s):
     return sum(1 for c in s if '' <= c <= '') / max(1, len(s))
 
+# 독자가 볼 수 없는 대상을 가리키는 지시어로 시작 → 그림을 못 보면 아무 정보가 없는 문장
+_DEIXIS = re.compile(r'^\s*(해당|위의|위\s|본\s|이\s|그\s|이것|그것|여기서)')
+_STRIP = re.compile(r'[\s·:=＝()\[\]"\'“”‘’.,]')
+
+
+def _vacuous(text, concept):
+    """'해당 화석이 번성한 시기는 중생대임' 같은 동어반복(정보 0) 문장 걸러내기."""
+    t = (text or "").strip()
+    if len(t) < 4:
+        return True
+    # ① 지시어로 시작하면 무엇을 가리키는지 알 수 없음 → 카드 단독으로는 쓸모 없음
+    if _DEIXIS.match(t):
+        return True
+    body = _STRIP.sub('', t)
+    cc = _STRIP.sub('', concept or "")
+    # ② 개념 이름을 거의 그대로 되풀이
+    if cc and len(cc) >= 3 and (body == cc or (len(body) <= len(cc) + 6 and cc in body)):
+        return True
+    # ③ 'A = B' 인데 B가 A나 개념명에 이미 들어있음
+    m = re.match(r'^(.{2,24})\s*[=＝]\s*(.{1,24})$', t)
+    if m:
+        left, right = _STRIP.sub('', m.group(1)), _STRIP.sub('', m.group(2))
+        if right and (right in left or (cc and right in cc) or (cc and left in cc)):
+            return True
+    return False
+
+
 def _split_circ(ln):
     """한 줄을 '첫 선지기호 앞'(발문)과 '기호부터'(선지)로 분리. 기호가 없으면 (원문, '')."""
     pos = [ln.find(ch) for ch in _CIRC if ch in ln]
@@ -426,7 +453,8 @@ def _qstarts(path):
         return _qstarts_cache[path]
     import fitz
     doc = fitz.open(path)
-    qh = re.compile(r'^\s*(\d{1,2})\.\s')
+    # '16.' 처럼 번호만 있고 발문이 다음 줄로 넘어간 경우도 문항 시작으로 인정
+    qh = re.compile(r'^\s*(\d{1,2})\.(\s|$)')
     ph = re.compile(r'^\s*\[\d{1,2}\s*[~～]')      # 지문 헤더 [a~b]
     starts = {}; pbreaks = []
     for pno in range(len(doc)):
@@ -614,7 +642,12 @@ def render_qimage(row, qnum):
         return out
     starts = _qstarts(path)
     if qnum not in starts:
-        return None
+        # 미리 계산해둔 pdfmeta 캐시가 오래돼 이 문항 좌표가 빠져 있을 수 있음 → 한 번만 다시 스캔
+        _qstarts_cache.pop(path, None)
+        _pbreaks_cache.pop(path, None)
+        starts = _qstarts(path)
+        if qnum not in starts:
+            return None
     import fitz
     doc = fitz.open(path)
     pbreaks = _pbreaks_cache.get(path)
@@ -1173,11 +1206,39 @@ class H(http.server.BaseHTTPRequestHandler):
 
     @staticmethod
     def _garbled(s):
-        """수식·심볼 폰트가 깨져 추출된 발문인지 판정 (수학 문항에서 흔함)."""
+        """PDF에서 글꼴이 깨져 추출된 발문인지 판정 (수학 수식 · 중세국어 옛한글 등)."""
         if not s:
             return True
+        n = len(s)
         bad = sum(1 for ch in s if "À" <= ch <= "ɏ" or ch in "˘˙˚˛˜˝ˆˇ")
-        return bad >= 4 and bad / max(1, len(s)) > 0.06
+        if bad >= 4 and bad / max(1, n) > 0.06:
+            return True
+        # 중세국어: 옛한글 글리프가 가운뎃점·중복 음절로 뭉개져 나옴
+        dots = s.count("·") + s.count("ㆍ") + s.count("‧") + s.count("・")
+        if n >= 30 and dots / n > 0.08:
+            return True
+        jamo = sum(1 for ch in s if "ᄀ" <= ch <= "ᇿ" or "㄰" <= ch <= "㆏"
+                   or "ꥠ" <= ch <= "꥿" or "ힰ" <= ch <= "퟿")
+        if n >= 20 and jamo / max(1, n) > 0.12:
+            return True
+        return False
+
+    # 표·그림·보기에 의존해 텍스트만으론 못 푸는 문항
+    _NEEDS_IMG = re.compile(r'그림|도표|그래프|지도|삽화|사진|다음\s*표|아래\s*표|위의?\s*표|표에서|표의\s|<표>|\[표\]|'
+                            r'〈보기〉|<보기>|\[보기\]|【보기】|다음\s*자료|자료를\s*보고|다음\s*대화|대화에서')
+
+    @classmethod
+    def _needs_image(cls, subject, stem, choices_text, answer_text):
+        if subject == "수학":
+            return True
+        if cls._garbled(stem) or cls._garbled(answer_text):
+            return True
+        if cls._NEEDS_IMG.search(stem or "") or cls._NEEDS_IMG.search(choices_text or ""):
+            return True
+        # 정답이 A~E·갑을병정·학생 N 처럼 표/그림 안에서만 의미를 갖는 경우
+        if re.fullmatch(r'[A-E]|[가-힣]?\s*[A-E]|갑|을|병|정|학생\s*\d|[㉠-㉺]', (answer_text or "").strip()):
+            return True
+        return False
 
     def _final_sheet(self):
         """최종 요약 시트: 남은 오답 전부를 발문·내 답·정답까지 붙여 과목별로 한 번에 반환(시험 전날 1장 훑기용)."""
@@ -1201,7 +1262,8 @@ class H(http.server.BaseHTTPRequestHandler):
             stem = (it.get("stem") or "").replace("\n", " ").strip()[:150]
             ans_t, cho_t = chs.get(w["answer"], "")[:60], chs.get(w["chosen"], "")[:60]
             # 수학은 수식이 텍스트로 안 나오므로 항상 원본 이미지, 그 외엔 깨졌을 때만
-            img = w["subject"] == "수학" or self._garbled(stem) or self._garbled(ans_t)
+            ch_txt = " ".join(ch.get("text", "") for ch in it.get("choices", []))
+            img = bool(it.get("image")) or self._needs_image(w["subject"], stem, ch_txt, ans_t)
             by_subject.setdefault(w["subject"], []).append({
                 "question_id": qid, "qnum": w["qnum"], "year": w["year"], "exam_round": w["exam_round"],
                 "stem": stem, "img": img,
@@ -1548,12 +1610,17 @@ class H(http.server.BaseHTTPRequestHandler):
             key = c.execute("SELECT answer FROM qkey WHERE question_id=? AND qnum=?", (qid, w["qnum"])).fetchone()
             ans = key["answer"] if key else None
             picked = [int(x) for x in (w["chosens"] or "").split(",") if x.strip().isdigit()]
+            ans_t = (ch.get(ans) or "")[:44]
+            ch_txt = " ".join(ch.values())
             items.append({
                 "subject": w["subject"], "qid": qid, "qnum": w["qnum"],
                 "round": f'{str(w["year"])[:4]} {str(w["exam_round"])[:2]}',
                 "stem": stem, "wrong_n": w["wrong_n"],
                 "still": (qid, w["qnum"]) in still,
-                "answer_text": (ch.get(ans) or "")[:44],
+                "answer_text": ans_t,
+                # 표·그림에 의존하면 발문 텍스트만으론 내용을 알 수 없음 → AI가 지어내지 않도록 표시
+                "visual": bool(it.get("image")) or self._needs_image(w["subject"], stem, ch_txt, ans_t),
+                "choices_text": ch_txt[:120],
                 "wrong_text": " / ".join((ch.get(p) or "").strip()[:30] for p in picked if p and p != ans)[:70],
             })
         c.close()
@@ -1562,20 +1629,31 @@ class H(http.server.BaseHTTPRequestHandler):
         lines = []
         for i, it in enumerate(items):
             mark = "지금도 틀림" if it["still"] else "지금은 맞힘"
-            lines.append(f'#{i+1} [{it["subject"]}·{it["round"]}] {it["stem"]}\n'
+            vis = " ※표·그림 문항이라 발문만으로는 내용을 알 수 없음" if it["visual"] else ""
+            lines.append(f'#{i+1} [{it["subject"]}·{it["round"]}] {it["stem"]}{vis}\n'
+                         f'   선택지: {it["choices_text"] or "-"}\n'
                          f'   └ {it["wrong_n"]}회 틀림({mark}) · 내가 고른 오답: {it["wrong_text"] or "-"} · 정답: {it["answer_text"] or "-"}')
         prompt = (
             "아래는 검정고시 수험생이 지금까지 '한 번이라도 틀린' 문항들입니다. 내일이 시험이라 개념 총정리가 필요합니다.\n"
-            "발문·학생이 고른 오답·정답을 근거로, 같은 개념끼리 묶어 '개념 복습 카드'를 만들어 주세요.\n\n"
-            "규칙:\n"
-            "- 2문항 이상 묶이거나 2회 이상 틀린 개념만 카드로 만드세요. 과목당 최대 4개, 전체 최대 12개.\n"
+            "발문·선택지·학생이 고른 오답·정답을 근거로, 같은 개념끼리 묶어 '개념 복습 카드'를 만들어 주세요.\n\n"
+            "가장 중요한 규칙 — 내용 없는 문장 금지:\n"
+            "- '해당 화석이 번성한 시기는 중생대임', '이 시기의 대표 화석은 중생대의 화석임' 처럼 "
+            "질문을 그대로 되풀이하는 동어반복은 절대 쓰지 마세요. 정보가 0입니다.\n"
+            "- 각 core 항목은 그 자체로 검증 가능한 사실이어야 합니다. "
+            "(나쁜 예: '해당 화석은 중생대에 번성함' / 좋은 예: '암모나이트·공룡은 중생대 표준 화석')\n"
+            "- '※표·그림 문항' 표시가 있으면 그림 내용을 알 수 없으므로, 그 문항에서 구체적 사실을 추측하지 마세요.\n"
+            "- 그런 문항만으로 이루어진 개념은 아예 카드로 만들지 마세요.\n"
+            "- 선택지에 실제로 등장한 용어(예: 삼엽충·암모나이트·매머드)를 근거로 쓸 수 있으면 그것을 쓰세요.\n"
+            "- 확실하지 않은 수치·연도·인명은 지어내지 말고, 쓸 내용이 없으면 그 카드를 만들지 마세요.\n\n"
+            "그 밖의 규칙:\n"
+            "- 2문항 이상 묶이거나 2회 이상 틀린 개념만. 과목당 최대 4개, 전체 최대 12개.\n"
             "- 'wrong_n'이 크거나 '지금도 틀림'인 것을 우선하세요.\n"
-            "- 주어진 문항에서 실제로 확인되는 내용만 쓰고, 확실하지 않은 수치·연도·인명은 지어내지 마세요.\n"
             "- 학생이 고른 오답을 보고 '무엇과 무엇을 혼동했는지'를 콕 집어 주세요.\n\n"
             "각 카드는 JSON 객체로:\n"
             '{"subject":"과목","concept":"개념 이름(15자 이내)","wrong_n":총 틀린 횟수,'
-            '"confuse":"무엇과 무엇을 헷갈렸는지 한 문장","core":["꼭 알아야 할 핵심 2~4개(각 40자 이내)"],'
-            '"trap":"시험에서 파는 함정 한 문장","memorize":"시험장에서 이것만 기억(30자 이내)","indices":[해당 #번호]}\n'
+            '"confuse":"무엇과 무엇을 헷갈렸는지 한 문장","core":["구체적 사실 2~4개(각 40자 이내)"],'
+            '"trap":"시험에서 파는 함정 한 문장","memorize":"시험장에서 이것만 기억(30자 이내)",'
+            '"needs_original":true/false(그림·표를 직접 봐야 하면 true),"indices":[해당 #번호]}\n'
             "JSON 배열만 출력하세요. 다른 설명 금지.\n\n" + "\n".join(lines))
         try:
             txt = ai_complete("당신은 검정고시 학습 코치입니다. 주어진 근거 안에서만, 정확하고 간결하게 개념을 정리합니다.",
@@ -1594,17 +1672,24 @@ class H(http.server.BaseHTTPRequestHandler):
             refs = [{"question_id": items[i - 1]["qid"], "qnum": items[i - 1]["qnum"],
                      "round": items[i - 1]["round"], "stem": items[i - 1]["stem"][:60],
                      "still": items[i - 1]["still"]} for i in idxs]
-            core = [str(x)[:70] for x in (cl.get("core") or [])][:4]
+            concept = str(cl.get("concept", ""))[:24]
+            core = [c for c in (str(x)[:70] for x in (cl.get("core") or [])) if not _vacuous(c, concept)][:4]
             if not core:
-                continue
+                continue                                   # 알맹이가 없으면 카드 자체를 버림
+            mem = str(cl.get("memorize", ""))[:60]
+            if _vacuous(mem, concept):
+                mem = ""
+            # 근거가 전부 표·그림 문항이면 원본을 봐야 한다고 표시
+            vis_only = bool(idxs) and all(items[i - 1]["visual"] for i in idxs)
             out.append({
                 "subject": str(cl.get("subject", ""))[:8],
-                "concept": str(cl.get("concept", ""))[:24],
+                "concept": concept,
                 "wrong_n": cl.get("wrong_n") or sum(items[i - 1]["wrong_n"] for i in idxs),
                 "confuse": str(cl.get("confuse", ""))[:120],
                 "core": core,
                 "trap": str(cl.get("trap", ""))[:120],
-                "memorize": str(cl.get("memorize", ""))[:60],
+                "memorize": mem,
+                "needs_original": bool(cl.get("needs_original")) or vis_only,
                 "still": any(r["still"] for r in refs),
                 "refs": refs[:6],
             })

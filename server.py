@@ -423,6 +423,7 @@ def rebuild_qkey(c):
 
 
 # ---- 이미지 문항: 원본 PDF에서 문항 단위로 잘라 이미지 제공 ----
+_CR_CACHE = {}          # 개념 총정리 결과 캐시 (오답 상태가 그대로면 재호출 안 함)
 _YT_CACHE = {}
 _YTD_CACHE = {}         # 영상 설명란 자료 링크 캐시 {videoId: (ts, files)}          # 유튜브 강의 영상 조회 캐시 {과목|연도|회차: (ts, video)}
 _qstarts_cache = {}
@@ -721,7 +722,7 @@ def ai_provider():
     return "gemini" if gemini_key() else None
 
 def _gemini(system, messages, max_tokens, key):
-    model = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
     contents = [{"role": ("model" if m["role"] == "assistant" else "user"),
                  "parts": [{"text": m["content"]}]} for m in messages]
     body = json.dumps({
@@ -731,13 +732,26 @@ def _gemini(system, messages, max_tokens, key):
         "generationConfig": {"maxOutputTokens": int(max_tokens) + 3500, "thinkingConfig": {"thinkingBudget": 512}},
     }).encode()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={urllib.parse.quote(key)}"
-    req = urllib.request.Request(url, data=body, headers={"content-type": "application/json"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        out = json.load(resp)
-    cands = out.get("candidates", [])
-    if not cands:
-        return ""
-    return "".join(p.get("text", "") for p in cands[0].get("content", {}).get("parts", []))
+    # 분당 요청 제한(429)에 걸리면 잠시 쉬었다 재시도 — 시험 당일 한 번의 실패로 못 쓰는 일이 없도록
+    last = None
+    for wait in (0, 6, 14):
+        if wait:
+            time.sleep(wait)
+        try:
+            req = urllib.request.Request(url, data=body, headers={"content-type": "application/json"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                out = json.load(resp)
+            cands = out.get("candidates", [])
+            if not cands:
+                return ""
+            return "".join(p.get("text", "") for p in cands[0].get("content", {}).get("parts", []))
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code not in (429, 500, 502, 503, 504):
+                raise
+        except Exception as e:
+            last = e
+    raise last
 
 def ai_complete(system, messages, max_tokens=700):
     gk = gemini_key()
@@ -894,7 +908,7 @@ class H(http.server.BaseHTTPRequestHandler):
         if p == "/api/conceptreview":
             if self._guard():
                 return
-            return self._concept_review()
+            return self._concept_review(force=q.get("force") == "1")
         if p == "/api/yt":
             if self._guard():
                 return
@@ -1577,7 +1591,7 @@ class H(http.server.BaseHTTPRequestHandler):
                             "hasPdf": has_pdf, "passage": (it.get("passage") or "")[:400]})
         return self._json({"items": out, "subject": subject, "count": len(out)})
 
-    def _concept_review(self):
+    def _concept_review(self, force=False):
         """시험 전날 개념 총정리 — '한 번이라도 틀린 적 있는' 모든 문항(지금은 맞히는 것 포함)을
         개념 단위로 묶고, 실제 발문·내가 고른 오답·정답을 근거로 개념 설명을 만든다."""
         c = db()
@@ -1592,6 +1606,10 @@ class H(http.server.BaseHTTPRequestHandler):
         total_wrong_ever = len(rows)
         if not rows:
             c.close(); return self._json({"clusters": [], "empty": True})
+        # 오답 구성이 그대로면 이미 만든 결과를 재사용 (AI 호출 절약 · 레이트 리밋 회피)
+        sig = hashlib.sha1(repr([(r["question_id"], r["qnum"], r["wrong_n"]) for r in rows]).encode()).hexdigest()
+        if not force and _CR_CACHE.get("sig") == sig and _CR_CACHE.get("data"):
+            c.close(); return self._json({**_CR_CACHE["data"], "cached": True})
         # 지금도 틀리는지(최신 시도 기준) → 우선순위 가중치
         still = {(r["question_id"], r["qnum"]) for r in c.execute("""
             SELECT a.question_id, a.qnum FROM attempts a
@@ -1768,7 +1786,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 "refs": refs[:6],
             })
         out.sort(key=lambda x: (-(1 if x["still"] else 0), -(x["wrong_n"] or 0)))
-        return self._json({"clusters": out, "scanned": len(items), "total_wrong_ever": total_wrong_ever})
+        data = {"clusters": out, "scanned": len(items), "total_wrong_ever": total_wrong_ever}
+        if out:
+            _CR_CACHE["sig"], _CR_CACHE["data"] = sig, data
+        return self._json(data)
 
     def _weakspots(self):
         """오답노트 기반 반복 취약 유형 분석(AI) — 과목별로 자주 틀리는 개념을 묶어 검색 키워드까지 제시."""

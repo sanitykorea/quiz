@@ -1589,6 +1589,7 @@ class H(http.server.BaseHTTPRequestHandler):
               FROM attempts WHERE correct=0
              GROUP BY question_id, qnum
              ORDER BY wrong_n DESC, last_ts DESC""").fetchall()
+        total_wrong_ever = len(rows)
         if not rows:
             c.close(); return self._json({"clusters": [], "empty": True})
         # 지금도 틀리는지(최신 시도 기준) → 우선순위 가중치
@@ -1596,14 +1597,45 @@ class H(http.server.BaseHTTPRequestHandler):
             SELECT a.question_id, a.qnum FROM attempts a
             JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
               ON a.id=l.mi WHERE a.correct=0""")}
+        # 맞혔지만 오래 고민한 문항 = 흔들리는 개념. 체류시간은 직전 문항과의 시각 차로 추정.
+        # (즉시채점은 문항마다 ts가 따로 찍히지만, 한번에 채점은 전부 같은 ts라 추정 불가 → 자동 제외)
+        slow = []
+        try:
+            drows = c.execute("""
+                WITH d AS (
+                  SELECT id, question_id, qnum, subject, year, exam_round, correct, ts,
+                         ts - LAG(ts) OVER (PARTITION BY question_id ORDER BY id) dwell
+                    FROM attempts WHERE source='quiz')
+                SELECT d.* FROM d
+                JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz'
+                       GROUP BY question_id,qnum) l ON d.id=l.mi
+                WHERE d.dwell IS NOT NULL AND d.dwell > 0 AND d.dwell <= 300""").fetchall()
+            vals = sorted(r["dwell"] for r in drows)
+            if len(vals) >= 8:
+                med = vals[len(vals) // 2]
+                cut = max(40, med * 2)                     # 평소의 2배 이상 걸린 것만
+                ever_wrong_keys = {(r["question_id"], r["qnum"]) for r in rows}
+                slow = [r for r in drows
+                        if r["correct"] == 1 and r["dwell"] >= cut
+                        and (r["question_id"], r["qnum"]) not in ever_wrong_keys]
+                slow.sort(key=lambda r: -r["dwell"])
+                slow = slow[:25]
+        except Exception:
+            slow = []                                      # 윈도우 함수 미지원 등은 조용히 건너뜀
+        # 지금도 틀리는 것 → 여러 번 틀린 것 → 최근 순. 잘리더라도 덜 중요한 것부터 잘리도록.
+        rows = sorted(rows, key=lambda w: (
+            0 if (w["question_id"], w["qnum"]) in still else 1,
+            -(w["wrong_n"] or 0), -(w["last_ts"] or 0)))
+        MAX_ITEMS = 220                                        # 전체를 넣되 과도한 프롬프트만 방지
+        brief = len(rows) > 90                                 # 많으면 항목당 텍스트를 줄여 전부 담는다
         pages, items = {}, []
-        for w in rows[:70]:                                   # 토큰 한도 내에서 자주 틀린 순
+        for w in rows[:MAX_ITEMS]:
             qid = w["question_id"]
             if qid not in pages:
                 pr = c.execute("SELECT raw_text FROM questions WHERE id=?", (qid,)).fetchone()
                 pages[qid] = {it["qnum"]: it for it in parse_items(pr["raw_text"])} if pr else {}
             it = pages[qid].get(w["qnum"], {})
-            stem = (it.get("stem") or "").replace("\n", " ").strip()[:110]
+            stem = (it.get("stem") or "").replace("\n", " ").strip()[:80 if brief else 110]
             if not stem:
                 continue
             ch = {x.get("n"): (x.get("text") or "") for x in it.get("choices", [])}
@@ -1620,19 +1652,58 @@ class H(http.server.BaseHTTPRequestHandler):
                 "answer_text": ans_t,
                 # 표·그림에 의존하면 발문 텍스트만으론 내용을 알 수 없음 → AI가 지어내지 않도록 표시
                 "visual": bool(it.get("image")) or self._needs_image(w["subject"], stem, ch_txt, ans_t),
-                "choices_text": ch_txt[:120],
+                "choices_text": ch_txt[:60] if brief else ch_txt[:120],
                 "wrong_text": " / ".join((ch.get(p) or "").strip()[:30] for p in picked if p and p != ans)[:70],
+            })
+        for w in slow:
+            qid = w["question_id"]
+            if qid not in pages:
+                pr = c.execute("SELECT raw_text FROM questions WHERE id=?", (qid,)).fetchone()
+                pages[qid] = {it["qnum"]: it for it in parse_items(pr["raw_text"])} if pr else {}
+            it = pages[qid].get(w["qnum"], {})
+            stem = (it.get("stem") or "").replace("\n", " ").strip()[:80 if brief else 110]
+            if not stem:
+                continue
+            ch = {x.get("n"): (x.get("text") or "") for x in it.get("choices", [])}
+            key = c.execute("SELECT answer FROM qkey WHERE question_id=? AND qnum=?", (qid, w["qnum"])).fetchone()
+            ans_t = (ch.get(key["answer"]) or "")[:44] if key else ""
+            ch_txt = " ".join(ch.values())
+            items.append({
+                "subject": w["subject"], "qid": qid, "qnum": w["qnum"],
+                "round": f'{str(w["year"])[:4]} {str(w["exam_round"])[:2]}',
+                "stem": stem, "wrong_n": 0, "still": False, "slow_sec": w["dwell"],
+                "answer_text": ans_t,
+                "visual": bool(it.get("image")) or self._needs_image(w["subject"], stem, ch_txt, ans_t),
+                "choices_text": ch_txt[:60] if brief else ch_txt[:120],
+                "wrong_text": "",
             })
         c.close()
         if len(items) < 2:
             return self._json({"clusters": [], "empty": True})
-        lines = []
-        for i, it in enumerate(items):
-            mark = "지금도 틀림" if it["still"] else "지금은 맞힘"
+        # 두 그룹을 나눠 보여줘야 AI가 '지금은 맞힘' 쪽도 빠뜨리지 않음
+        def fmt(i, it):
             vis = " ※표·그림 문항이라 발문만으로는 내용을 알 수 없음" if it["visual"] else ""
-            lines.append(f'#{i+1} [{it["subject"]}·{it["round"]}] {it["stem"]}{vis}\n'
-                         f'   선택지: {it["choices_text"] or "-"}\n'
-                         f'   └ {it["wrong_n"]}회 틀림({mark}) · 내가 고른 오답: {it["wrong_text"] or "-"} · 정답: {it["answer_text"] or "-"}')
+            return (f'#{i+1} [{it["subject"]}·{it["round"]}] {it["stem"]}{vis}\n'
+                    f'   선택지: {it["choices_text"] or "-"}\n'
+                    f'   └ {it["wrong_n"]}회 틀림 · 내가 고른 오답: {it["wrong_text"] or "-"} · 정답: {it["answer_text"] or "-"}')
+        grp_a = [fmt(i, it) for i, it in enumerate(items) if it["still"]]
+        grp_b = [fmt(i, it) for i, it in enumerate(items) if not it["still"] and not it.get("slow_sec")]
+        grp_c = [f'#{i+1} [{it["subject"]}·{it["round"]}] {it["stem"]}\n'
+                 f'   선택지: {it["choices_text"] or "-"}\n'
+                 f'   └ 맞혔지만 {it["slow_sec"]}초 걸림 · 정답: {it["answer_text"] or "-"}'
+                 for i, it in enumerate(items) if it.get("slow_sec")]
+        lines = []
+        if grp_a:
+            lines.append(f"[A. 지금도 틀리는 문항 — {len(grp_a)}개]")
+            lines += grp_a
+        if grp_b:
+            lines.append(f"\n[B. 예전에 틀렸다가 지금은 맞히는 문항 — {len(grp_b)}개]")
+            lines.append("(이미 고쳤지만 한 번 틀린 개념이라 시험에서 또 흔들릴 수 있음 — 반드시 함께 정리)")
+            lines += grp_b
+        if grp_c:
+            lines.append(f"\n[C. 맞혔지만 유난히 오래 걸린 문항 — {len(grp_c)}개]")
+            lines.append("(정답은 골랐지만 확신이 없어 오래 망설인 것 — 개념이 덜 잡혔다는 신호)")
+            lines += grp_c
         prompt = (
             "아래는 검정고시 수험생이 지금까지 '한 번이라도 틀린' 문항들입니다. 내일이 시험이라 개념 총정리가 필요합니다.\n"
             "발문·선택지·학생이 고른 오답·정답을 근거로, 같은 개념끼리 묶어 '개념 복습 카드'를 만들어 주세요.\n\n"
@@ -1645,9 +1716,12 @@ class H(http.server.BaseHTTPRequestHandler):
             "- 그런 문항만으로 이루어진 개념은 아예 카드로 만들지 마세요.\n"
             "- 선택지에 실제로 등장한 용어(예: 삼엽충·암모나이트·매머드)를 근거로 쓸 수 있으면 그것을 쓰세요.\n"
             "- 확실하지 않은 수치·연도·인명은 지어내지 말고, 쓸 내용이 없으면 그 카드를 만들지 마세요.\n\n"
-            "그 밖의 규칙:\n"
-            "- 2문항 이상 묶이거나 2회 이상 틀린 개념만. 과목당 최대 4개, 전체 최대 12개.\n"
-            "- 'wrong_n'이 크거나 '지금도 틀림'인 것을 우선하세요.\n"
+            "구성 규칙 — A와 B를 모두 다뤄야 함:\n"
+            "- 목록은 [A] 지금도 틀리는 문항과 [B] 예전에 틀렸다가 지금은 맞히는 문항으로 나뉩니다.\n"
+            "- 카드의 최소 3분의 1은 [B]·[C] 문항으로 만드세요. B나 C만으로 이루어진 카드도 포함하세요.\n"
+            "  (한 번 틀린 개념은 시험에서 다시 흔들리기 쉬우므로 복습 대상입니다.)\n"
+            "- 전체 12~16개 카드, 과목당 최대 5개. 한 문항짜리라도 중요하면 카드로 만들어도 됩니다.\n"
+            "- A를 앞쪽에, B를 뒤쪽에 배치하세요.\n"
             "- 학생이 고른 오답을 보고 '무엇과 무엇을 혼동했는지'를 콕 집어 주세요.\n\n"
             "각 카드는 JSON 객체로:\n"
             '{"subject":"과목","concept":"개념 이름(15자 이내)","wrong_n":총 틀린 횟수,'
@@ -1694,7 +1768,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 "refs": refs[:6],
             })
         out.sort(key=lambda x: (-(1 if x["still"] else 0), -(x["wrong_n"] or 0)))
-        return self._json({"clusters": out, "scanned": len(items)})
+        return self._json({"clusters": out, "scanned": len(items), "total_wrong_ever": total_wrong_ever})
 
     def _weakspots(self):
         """오답노트 기반 반복 취약 유형 분석(AI) — 과목별로 자주 틀리는 개념을 묶어 검색 키워드까지 제시."""

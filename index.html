@@ -168,7 +168,7 @@ const S = {
   recommend:null, mock:null, askImg:{busy:false,text:'',q:''}, similar:null,
   today:null, checkExam:{}, cq:null, eye:null, focusHist:null,
   adminTab:'questions', adminMsg:'', muted:false,
-  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null, cram:null, grading:false, video:null, review:null, replay:null,
+  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null, cram:null, grading:false, video:null, review:null, replay:null, reviewSkip:{},
 };
 const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 4점/문항
 let _barrierActive = null;
@@ -217,6 +217,7 @@ function persist(){
       eyeCfg: S.eye ? {mouthX:S.eye.mouthX, mouthY:S.eye.mouthY, voiceURI:S.eye.voiceURI, pitch:S.eye.pitch, rate:S.eye.rate, interval:S.eye.interval, useScreen:S.eye.useScreen, muteTTS:S.eye.muteTTS} : undefined,
       cq: (S.cq && !S.cq.loading) ? {subject:S.cq.subject, topic:S.cq.topic, items:S.cq.items, idx:S.cq.idx, pick:S.cq.pick, score:S.cq.score, answered:S.cq.answered, fromWrong:S.cq.fromWrong, showImg:S.cq.showImg} : undefined,
       examItems: S.examItems || undefined,
+      reviewSkip: Object.keys(S.reviewSkip||{}).length?S.reviewSkip:undefined,
       cram: S.cram || undefined,
       // 풀던 회차 이어서 하기(새로고침·앱 종료 대비)
       bank: (S.qCurrent && S.quizItems.length) ? {qid:S.qCurrent.id, idx:S.quizIdx, marks:S.quizMarks,
@@ -293,6 +294,7 @@ async function openApp(){
   if(saved.eyeCfg){ Object.assign(eyeInit(), saved.eyeCfg); }   // 입 위치·목소리 설정 복원
   if(saved.cq && saved.cq.items && saved.cq.items.length) S.cq = saved.cq;   // 집중 연습 진행 상황 복원
   if(saved.examItems && saved.examItems.length) S.examItems = saved.examItems;
+  if(saved.reviewSkip) S.reviewSkip = saved.reviewSkip;
   if(saved.cram) S.cram = saved.cram;
   if(saved.bank && saved.bank.qid) S.resumeBank = saved.bank;   // 문제은행 '이어서 풀기' 제안용
   S.messages = (saved.messages&&saved.messages.length) ? saved.messages
@@ -1377,10 +1379,11 @@ function replayView(){
   </div>`;
 }
 // ========== 🧠 개념 총정리 (한 번이라도 틀린 전체 이력 기반) ==========
+const revKey = c => (c.subject||'')+'|'+(c.concept||'');
 async function loadConceptReview(){
   S.review={loading:true}; render(); scrollTo({top:0});
   const r=await api('/api/conceptreview');
-  S.review = r.clusters ? {clusters:r.clusters, scanned:r.scanned, empty:r.empty}
+  S.review = r.clusters ? {clusters:r.clusters, scanned:r.scanned, total_wrong_ever:r.total_wrong_ever, empty:r.empty}
     : {error: r.error==='no-ai' ? '🧚 수호령 미연결 (GEMINI_API_KEY 필요)'
         : r.offline ? '📡 연결이 끊겼어요' : '분석에 실패했어요. 잠시 후 다시 시도해주세요.'};
   render();
@@ -1396,13 +1399,17 @@ function reviewCard(){
   const cls=v.clusters||[];
   if(!cls.length) return `<div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--panel);margin-bottom:18px;font-size:13.5px;color:var(--text2);">
     아직 묶을 만한 오답 이력이 적어요. 기출을 조금 더 풀고 다시 눌러보세요.</div>`;
-  const cards=cls.map((c,i)=>`<div style="border:1px solid ${c.still?'var(--danger-b)':'var(--pinkbd)'};border-radius:15px;padding:16px 17px;background:linear-gradient(180deg,${c.still?'rgba(255,84,104,.09)':'var(--tintP)'},var(--panel2));margin-bottom:11px;">
+  const cards=cls.map((c,i)=>{ const sk=!!S.reviewSkip[revKey(c)];
+    return `<div style="border:1px solid ${sk?'var(--border)':(c.still?'var(--danger-b)':'var(--pinkbd)')};border-radius:15px;padding:16px 17px;background:${sk?'var(--panel2)':`linear-gradient(180deg,${c.still?'rgba(255,84,104,.09)':'var(--tintP)'},var(--panel2))`};margin-bottom:11px;${sk?'opacity:.5;':''}">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
       <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(c.subject)}</span>
       <b style="font-size:16.5px;">${h(c.concept)}</b>
       <span style="font-size:11.5px;color:var(--danger-b);font-weight:700;">${c.wrong_n}회 틀림</span>
       ${c.still?'<span style="font-size:11px;font-weight:800;color:#fff;background:var(--danger);padding:3px 8px;border-radius:7px;">지금도 틀림</span>'
-               :'<span style="font-size:11px;color:var(--accent-b);border:1px solid rgba(46,230,166,.5);padding:2px 8px;border-radius:7px;">지금은 맞힘</span>'}</div>
+               :(c.wrong_n?'<span style="font-size:11px;color:var(--accent-b);border:1px solid rgba(46,230,166,.5);padding:2px 8px;border-radius:7px;">지금은 맞힘</span>'
+                          :'<span style="font-size:11px;color:var(--blue);border:1px solid var(--bluebd);padding:2px 8px;border-radius:7px;">오래 고민함</span>')}
+      <button data-act="revskip" data-arg="${h(revKey(c))}" style="margin-left:auto;padding:5px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:${sk?'var(--accent-b)':'var(--text3)'};font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;">${sk?'↩ 되돌리기':'✕ 아는 개념'}</button></div>
+    ${sk?`<div style="font-size:12.5px;color:var(--text3);">인쇄에서 제외됨</div>`:`
     ${c.needs_original?`<div style="font-size:12.5px;color:var(--blue);background:var(--tintB);border:1px solid var(--bluebd);border-radius:10px;padding:8px 11px;margin-bottom:9px;">🖼 이 개념은 <b>표·그림을 직접 봐야</b> 정확히 알 수 있어요 — 아래 근거 문항에서 원본을 확인하세요.</div>`:''}
     ${c.confuse?`<div style="font-size:13px;color:var(--orange);background:var(--tintO);border:1px solid var(--orangebd);border-radius:10px;padding:9px 12px;margin-bottom:9px;">🔀 <b>헷갈린 지점</b> — ${h(c.confuse)}</div>`:''}
     <div style="display:grid;gap:5px;margin-bottom:9px;">${(c.core||[]).map(x=>`<div style="display:flex;gap:8px;font-size:14px;line-height:1.65;"><span style="color:var(--accent-b);flex:0 0 auto;">✔</span><span>${h(x)}</span></div>`).join('')}</div>
@@ -1410,18 +1417,23 @@ function reviewCard(){
     ${c.memorize?`<div style="font-size:14px;font-weight:800;color:var(--gold);background:rgba(255,224,102,.12);border:1px solid var(--gold-d);border-radius:10px;padding:10px 12px;">📌 ${h(c.memorize)}</div>`:''}
     ${(c.refs||[]).length?`<details style="margin-top:9px;"><summary style="cursor:pointer;font-size:11.5px;color:var(--text3);">이 개념에서 틀린 문항 ${c.refs.length}개</summary>
       <div style="margin-top:6px;display:grid;gap:5px;">${c.refs.map(r=>`<button data-act="gosimilar" data-arg="${r.question_id}|${r.qnum}" style="display:flex;gap:8px;align-items:baseline;text-align:left;padding:7px 10px;border-radius:9px;border:1px solid var(--border);background:var(--panel);color:var(--text2);font-size:12px;cursor:pointer;">
-        <span style="flex:0 0 auto;color:var(--text3);">${h(r.round)} ${r.qnum}번</span><span style="flex:1;">${h(r.stem)}</span>${r.still?'<span style="color:var(--danger-b);flex:0 0 auto;">●</span>':''}</button>`).join('')}</div></details>`:''}
-  </div>`).join('');
+        <span style="flex:0 0 auto;color:var(--text3);">${h(r.round)} ${r.qnum}번</span><span style="flex:1;">${h(r.stem)}</span>${r.still?'<span style="color:var(--danger-b);flex:0 0 auto;">●</span>':''}</button>`).join('')}</div></details>`:''}`}
+  </div>`; }).join('');
   return `<div class="reviewRoot" style="margin-bottom:18px;">
     <div class="noPrint" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--pink);letter-spacing:1px;">CONCEPT REVIEW · 개념 총정리</div>
-        <div style="font-size:12.5px;color:var(--text2);margin-top:5px;">한 번이라도 틀린 <b>${v.scanned}문항</b>을 개념 <b>${cls.length}개</b>로 묶었어요 · <span style="color:var(--danger-b);">지금도 틀리는 것부터</span></div></div>
-      <div style="display:flex;gap:7px;">
+        <div style="font-size:12.5px;color:var(--text2);margin-top:5px;">한 번이라도 틀린 <b>${v.total_wrong_ever||v.scanned}문항</b>${(v.total_wrong_ever&&v.total_wrong_ever>v.scanned)?` <span style="color:var(--text3)">(상위 ${v.scanned}개 분석)</span>`:''}을 개념 <b>${cls.length}개</b>로 묶었어요<br>
+          <span style="color:var(--danger-b);">지금도 틀리는 것</span> 먼저, <span style="color:var(--accent-b);">고쳐서 맞힌 것</span>도 함께 정리했어요 — 한 번 틀린 개념은 또 흔들리니까요.</div></div>
+      <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;">
+        ${(function(){var n=cls.filter(function(c){return S.reviewSkip[revKey(c)];}).length;
+          return n?`<span style="font-size:12px;color:var(--text3);">${n}개 제외됨 · 인쇄 ${cls.length-n}개</span>
+            <button data-act="revskipclear" style="padding:6px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:11.5px;cursor:pointer;">전체 되돌리기</button>`:
+            `<span style="font-size:12px;color:var(--text3);">아는 개념은 ✕로 빼고 인쇄하세요</span>`;})()}
         <button data-act="reviewprint" style="padding:7px 13px;border-radius:9px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer;">🖨 인쇄 (과목별 A4 가로)</button>
         <button data-act="review" style="padding:7px 13px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">↻ 다시 분석</button></div></div>
     <div class="noPrint">${cards}
       <div style="font-size:11.5px;color:var(--text3);">※ 내가 실제로 틀린 문항의 발문·오답·정답을 근거로 수호령이 정리한 내용이에요. 헷갈리면 원문 문항을 같이 확인하세요.</div></div>
-    ${reviewPrintable(cls)}
+    ${reviewPrintable(cls.filter(c=>!S.reviewSkip[revKey(c)]))}
   </div>`;
 }
 // 인쇄 전용 레이아웃 — 과목별로 한 페이지, A4 가로 2단
@@ -1769,7 +1781,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0810d · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0810e · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -3615,6 +3627,8 @@ const ACTS = {
     else toast('그 섹션은 지금 없어요','bad'); },
   goreviewwrong:async()=>{ S.tab='wrong'; await loadWrong(); await loadDiag(false); render(); scrollTo({top:0}); },
   review:()=>loadConceptReview(),
+  revskip:k=>{ if(S.reviewSkip[k]) delete S.reviewSkip[k]; else S.reviewSkip[k]=1; persist(); render(); },
+  revskipclear:()=>{ S.reviewSkip={}; persist(); render(); },
   replay:()=>replayStart(), rpnext:()=>replayNav(1), rpclose:()=>{ S.replay=null; render(); },
   flash:()=>flashStart(), flashreveal:()=>flashReveal(),
   flashyes:()=>flashMark(true), flashno:()=>flashMark(false),

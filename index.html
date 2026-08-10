@@ -2073,8 +2073,22 @@ async function loadExamKeys(){
   S.examMsg=n?'':'이 회차의 정답키가 없어요. 관리소에서 정답 PDF를 먼저 업로드하세요.';
   render();
 }
+// 입력한 답 개수를 실시간 표시. 개수가 맞아야 문항 번호가 안 밀린다.
+function examCount(subj){
+  const el=$.querySelector(`[data-examin="${subj}"]`), ct=$.querySelector(`[data-examct="${subj}"]`);
+  if(!el||!ct) return 0;
+  const n=+el.getAttribute('data-n'), got=((el.value||'').match(/[1-5]/g)||[]).length;
+  ct.textContent = got===n ? `✅ ${got}/${n} 입력 완료` : `${got}/${n} 입력${got>n?' · 너무 많아요':''}`;
+  ct.style.color = got===n ? 'var(--accent-b)' : (got>n ? 'var(--danger-b)' : 'var(--text3)');
+  return got;
+}
 function gradeExam(){
   if(!S.examKeys || S.examReveal) return;
+  // 개수가 모자라면 그 뒤 답이 전부 한 칸씩 밀려 채점된다 → 당일에 치명적이라 먼저 확인
+  const bad=EXAM_SUBJECTS.filter(s=>S.examKeys[s]).map(s=>{
+    const n=Object.keys(S.examKeys[s]).length, got=((S.examInputs[s]||'').match(/[1-5]/g)||[]).length;
+    return got===n?null:`${s} ${got}/${n}`; }).filter(Boolean);
+  if(bad.length && !confirm(`답 개수가 안 맞는 과목이 있어요.\n\n${bad.join('\n')}\n\n이대로 채점하면 번호가 밀릴 수 있어요. 그래도 채점할까요?`)) return;
   const detail={}; let sum=0, cnt=0;
   for(const subj of EXAM_SUBJECTS){
     const key=S.examKeys[subj]; if(!key) continue;
@@ -2202,16 +2216,18 @@ async function saveExam(){
 }
 function vExam(){
   const facetSel=(name,label)=>{const opts=['<option value="">'+label+'</option>'].concat((S.qFacets[name]||[]).map(v=>`<option value="${h(v)}" ${S.examSel[name]===v?'selected':''}>${h(v)}</option>`)).join('');
-    return `<select data-exam="${name}" style="padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:14px;">${opts}</select>`;};
-  const inp='width:100%;padding:11px 13px;border-radius:10px;border:1px solid var(--border);background:var(--inset);color:var(--text);font-size:15px;letter-spacing:2px;font-family:monospace;';
+    return `<select data-exam="${name}" style="padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:16px;">${opts}</select>`;};
+  // font-size 16px 미만이면 iOS 사파리가 입력창 탭할 때 화면을 확대해버림 → 16px 고정, 대신 자간을 줄여 더 많이 보이게
+  const inp='width:100%;padding:11px 13px;border-radius:10px;border:1px solid var(--border);background:var(--inset);color:var(--text);font-size:16px;letter-spacing:1px;font-family:monospace;';
   const keys=S.examKeys||{};
   const subjRows=EXAM_SUBJECTS.filter(s=>keys[s]).map(subj=>{
     const n=Object.keys(keys[subj]).length;
     const d=S.examScore&&S.examScore.detail[subj];
     return `<div style="margin-bottom:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><span style="font-weight:800;font-size:15px;">${subj} <span style="font-size:12px;color:var(--text3);font-weight:600;">· ${n}문항 · ${PTS(subj)}점</span></span>
-        ${d?`<span style="font-size:13.5px;font-weight:800;color:${d.wrong?'var(--danger-b)':'var(--accent-b)'};">${d.correct}/${d.total} · ${d.score}점 ${d.wrong?`· 틀림 ${d.wrongList.join(',')}`:'· 만점 🎉'}</span>`:''}</div>
-      <input data-examin="${subj}" value="${h(S.examInputs[subj]||'')}" placeholder="내 답 ${n}개 입력 (예: 1 3 2 4 …)" style="${inp}"></div>`;
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px;"><span style="font-weight:800;font-size:15px;">${subj} <span style="font-size:12px;color:var(--text3);font-weight:600;">· ${n}문항 · ${PTS(subj)}점</span></span>
+        ${d?`<span style="font-size:13.5px;font-weight:800;word-break:break-all;color:${d.wrong?'var(--danger-b)':'var(--accent-b)'};">${d.correct}/${d.total} · ${d.score}점 ${d.wrong?`· 틀림 ${d.wrongList.join(',')}`:'· 만점 🎉'}</span>`:''}</div>
+      <input data-examin="${subj}" data-n="${n}" value="${h(S.examInputs[subj]||'')}" inputmode="numeric" pattern="[0-9 ]*" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="next" placeholder="내 답 ${n}개 입력 (예: 1 3 2 4 …)" style="${inp}">
+      <div data-examct="${subj}" style="margin-top:4px;font-size:12px;color:var(--text3);min-height:16px;"></div></div>`;
   }).join('');
   const gradeArea = Object.keys(keys).filter(k=>k!=='영어'&&keys[k]).length ? `
     <div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--panel);margin-top:14px;">
@@ -3643,7 +3659,12 @@ function bindInputs(){
   const uf=document.getElementById('up_file'); if(uf) uf.onchange=()=>{ _upFiles=[...uf.files]; };  // 선택 즉시 저장 → 재렌더에도 안 날아감
   const wf=document.getElementById('wn_file'); if(wf) wf.onchange=()=>{ _wnFile=wf.files[0]||null; };
   $.querySelectorAll('[data-exam]').forEach(el=>{ el.onchange=()=>{ S.examSel[el.getAttribute('data-exam')]=el.value; }; });
-  $.querySelectorAll('[data-examin]').forEach(el=>{ el.oninput=()=>{ S.examInputs[el.getAttribute('data-examin')]=el.value; }; });
+  // 답 입력: 재렌더 없이(포커스 유지) 진행 카운터만 갱신 — 모바일에서 몇 번째까지 썼는지 안 보이는 문제
+  $.querySelectorAll('[data-examin]').forEach(el=>{
+    const subj=el.getAttribute('data-examin');
+    const upd=()=>{ S.examInputs[subj]=el.value; examCount(subj); };
+    el.oninput=upd; upd();
+  });
   const af=document.getElementById('ask_file'); if(af) af.onchange=()=>{ _askFile=af.files[0]||null; };
   const avf=document.getElementById('avatarFile'); if(avf) avf.onchange=()=>{ if(avf.files[0]) uploadAvatar(avf.files[0]); };
   ['avatarBox','pipBox','avatarPrev'].forEach(id=>{ const cv=document.getElementById(id);

@@ -138,7 +138,7 @@ const S = {
   recommend:null, mock:null, askImg:{busy:false,text:'',q:''}, similar:null,
   today:null, checkExam:{}, cq:null, eye:null, focusHist:null,
   adminTab:'questions', adminMsg:'', muted:false,
-  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null, cram:null, grading:false, video:null, review:null,
+  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null, cram:null, grading:false, video:null, review:null, replay:null,
 };
 const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 4점/문항
 let _barrierActive = null;
@@ -573,6 +573,7 @@ function app(){
     <button id="toTop" onclick="scrollTo({top:0,behavior:'smooth'})" title="맨 위로" aria-label="맨 위로">↑</button>
     ${cmdkView()}
     ${videoView()}
+    ${replayView()}
   </div>`;
 }
 
@@ -789,6 +790,7 @@ function cmdList(){
     {ic:'🧮', name:'점수 시뮬레이터', hint:'몇 개 더 맞히면 어디까지 열리나', run:()=>{ closeCmdk(); ACTS.tab('exam').then(()=>{
         const el=[...document.querySelectorAll('div')].find(d=>d.innerText&&d.innerText.startsWith('SCORE SIMULATOR'));
         if(el) scrollTo({top:el.getBoundingClientRect().top+scrollY-110, behavior:'smooth'}); }); }},
+    {ic:'🎞', name:'나의 기록 리플레이', hint:'지금까지의 여정 되돌아보기', run:()=>{ closeCmdk(); replayStart(); }},
     {ic:'🧠', name:'개념 총정리', hint:'여태 틀린 걸 개념으로 묶어 학습', run:()=>{ closeCmdk(); S.tab='wrong'; loadWrong().then(loadConceptReview); }},
     {ic:'⚡', name:'빠른 복습', hint:'오답 발문만 초고속 회상', run:()=>{ closeCmdk(); S.tab='wrong'; loadWrong().then(flashStart); }},
     {ic:'📄', name:'최종 요약 시트', hint:'내 오답 전부 한 장에', run:()=>{ closeCmdk(); S.tab='wrong'; loadSheet(); }},
@@ -891,6 +893,13 @@ function vCamp(){
   const totalPct=Math.min(100,total/360*100);
   return `<div style="display:grid;gap:22px;">
     ${jumpBar([['letters','💌','편지'],['quest','🎯','오늘의 퀘스트'],['report','🧠','리포트'],['alloc','⏱','시간 배분'],['plan','🗓','플랜'],['quests','⛺','일일 퀘스트'],['stats','📊','통계']])}
+    <button data-act="replay" style="width:100%;display:flex;align-items:center;gap:13px;padding:16px 18px;border-radius:16px;cursor:pointer;text-align:left;color:#fff;border:1px solid rgba(255,224,102,.45);background:radial-gradient(120% 160% at 15% 20%, #2b1b52 0%, #14213d 55%, #0a1020 100%);box-shadow:0 12px 34px rgba(0,0,0,.4);">
+      <span style="font-size:30px;">🎞</span>
+      <span style="flex:1;min-width:0;">
+        <span style="display:block;font-family:'Press Start 2P',monospace;font-size:9px;letter-spacing:1.5px;color:rgba(255,224,102,.9);">MY REPLAY</span>
+        <span style="display:block;font-size:16.5px;font-weight:900;margin-top:5px;">나의 기록 리플레이</span>
+        <span style="display:block;font-size:12.5px;color:rgba(255,255,255,.65);margin-top:3px;">여기까지 온 길, 한 장씩 되돌아보기</span></span>
+      <span style="font-size:19px;color:#FFE066;">▶</span></button>
     ${sec('letters',letterCard())}${sec('final',finalCheckCard())}${sec('quest',recommendCard()+todayCard())}${sec('report',reportCard()+recapCard())}${sec('alloc',timeAllocCard())}${sec('plan',planCard())}<section id="sec-quests">
     <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">DAILY QUESTS</div>
@@ -1219,6 +1228,93 @@ function perfectDefenseCard(){
       <span style="font-size:12.5px;color:var(--danger-b);font-weight:700;">남은 오답 ${s.n}개</span>
       <span style="font-size:12px;color:var(--text3);">${s.rounds.size}개 회차에 흩어짐</span>
       <button data-act="perfectstart" data-arg="${h(s.subject)}" style="margin-left:auto;padding:7px 14px;border-radius:999px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-size:12.5px;font-weight:700;cursor:pointer;">🛡 통합 방어전 시작</button></div>`).join('')}</div>
+  </div>`;
+}
+// ========== 🎞 리플레이 (지금까지의 기록 되돌아보기) ==========
+const RP_BG=[
+  'radial-gradient(120% 90% at 20% 10%, #1b3b6f 0%, #0a1226 60%, #06090f 100%)',
+  'radial-gradient(120% 90% at 80% 15%, #14755C 0%, #0a2b24 60%, #06090f 100%)',
+  'radial-gradient(120% 90% at 15% 85%, #7a4a12 0%, #2a1a08 60%, #06090f 100%)',
+  'radial-gradient(120% 90% at 85% 80%, #5a2a6b 0%, #23102b 60%, #06090f 100%)',
+  'radial-gradient(120% 90% at 50% 12%, #8a2436 0%, #2b0d14 60%, #06090f 100%)',
+  'radial-gradient(120% 90% at 25% 25%, #1f5f8a 0%, #0b2333 60%, #06090f 100%)',
+  'radial-gradient(120% 90% at 70% 70%, #c9a227 0%, #4a3708 55%, #06090f 100%)',
+];
+function fmtHM(m){ m=Math.round(m||0); const h=Math.floor(m/60); return h? `${h}<span style="font-size:.42em;">시간</span> ${m%60}<span style="font-size:.42em;">분</span>` : `${m}<span style="font-size:.42em;">분</span>`; }
+function rpSlides(d){
+  const s=[], big='font-size:64px;font-weight:900;line-height:1;letter-spacing:-2px;';
+  const sub='font-size:15px;color:rgba(255,255,255,.72);margin-top:14px;line-height:1.7;';
+  const cap='font-family:\'Press Start 2P\',monospace;font-size:9px;letter-spacing:2px;color:rgba(255,255,255,.55);';
+  s.push({t:`<div style="${cap}">TOWER OF KNOWLEDGE</div>
+    <div style="font-family:'Cinzel',serif;font-size:34px;font-weight:900;color:#FFE066;margin:16px 0 6px;">나의 기록</div>
+    <div style="${sub}">시험 하루 전.<br>여기까지 온 길을 한번 돌아볼까?</div>
+    <div style="margin-top:26px;font-size:13px;color:rgba(255,255,255,.5);">탭해서 넘기기 →</div>`});
+  if(d.since_days) s.push({t:`<div style="${cap}">THE JOURNEY</div>
+    <div style="${big}margin-top:18px;color:#8ab4ff;">${d.since_days}<span style="font-size:.36em;">일</span></div>
+    <div style="${sub}">처음 기록을 남긴 게 <b style="color:#fff;">${h(d.first_day||'')}</b>.<br>그날부터 오늘까지 ${d.since_days}일을 함께 왔어.</div>`});
+  if(d.minutes) s.push({t:`<div style="${cap}">TOTAL STUDY</div>
+    <div style="${big}margin-top:18px;color:#2ee6a6;">${fmtHM(d.minutes)}</div>
+    <div style="${sub}"><b style="color:#fff;">${d.days}일</b> 동안 쌓아올린 시간이야.<br>${d.best_streak>1?`가장 길게는 <b style="color:#FFE066;">${d.best_streak}일 연속</b>으로 이어갔어.`:''}</div>`});
+  if(d.top_subject) s.push({t:`<div style="${cap}">MOST STUDIED</div>
+    <div style="font-size:44px;font-weight:900;margin-top:16px;color:#ffb673;">${h(d.top_subject.name)}</div>
+    <div style="font-size:20px;color:rgba(255,255,255,.85);margin-top:6px;">${fmtHM(d.top_subject.minutes)}</div>
+    <div style="margin-top:20px;display:grid;gap:7px;text-align:left;">${d.top_subject.all.filter(x=>x[1]>0).map((x,i)=>{
+      const mx=d.top_subject.all[0][1]||1;
+      return `<div style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:rgba(255,255,255,.8);">
+        <span style="width:92px;flex:0 0 auto;">${i===0?'🥇 ':''}${h(x[0])}</span>
+        <span style="flex:1;height:9px;border-radius:99px;background:rgba(255,255,255,.13);overflow:hidden;"><span style="display:block;height:100%;width:${x[1]/mx*100}%;background:linear-gradient(90deg,#ffb673,#FFE066);"></span></span>
+        <span style="width:56px;text-align:right;">${Math.round(x[1]/60)}시간</span></div>`;}).join('')}</div>`});
+  if(d.attempts) s.push({t:`<div style="${cap}">QUESTIONS SOLVED</div>
+    <div style="${big}margin-top:18px;color:#e6a0f2;">${d.attempts}<span style="font-size:.36em;">문항</span></div>
+    <div style="${sub}">기출 <b style="color:#fff;">${d.rounds}회차</b>를 풀어내며<br>평균 <b style="color:#2ee6a6;">${d.acc}%</b>를 맞혔어.</div>`});
+  if(d.ever_wrong) s.push({t:`<div style="${cap}">COMEBACK</div>
+    <div style="${big}margin-top:18px;color:#FFE066;">${d.recovered}<span style="font-size:.36em;">개</span></div>
+    <div style="${sub}">틀렸던 <b style="color:#fff;">${d.ever_wrong}문항</b> 중<br><b style="color:#FFE066;">${d.recovered}개</b>를 다시 풀어 내 것으로 만들었어.<br>${d.ever_wrong?`되찾은 비율 <b style="color:#2ee6a6;">${Math.round(d.recovered/d.ever_wrong*100)}%</b>`:''}</div>`});
+  if(d.boss&&d.boss.miss>0) s.push({t:`<div style="${cap}">TOUGHEST ONE</div>
+    <div style="font-size:52px;margin-top:14px;">🗿</div>
+    <div style="font-size:26px;font-weight:900;margin-top:10px;color:#ff8093;">${h(d.boss.subject)} ${d.boss.qnum}번</div>
+    <div style="${sub}">가장 오래 붙잡았던 문항.<br><b style="color:#fff;">${d.boss.miss}번</b> 틀리고도 놓지 않았지.</div>`});
+  if(d.peak_hour!=null) s.push({t:`<div style="${cap}">YOUR RHYTHM</div>
+    <div style="${big}margin-top:18px;color:#9ab6ff;">${String(d.peak_hour).padStart(2,'0')}<span style="font-size:.36em;">시</span></div>
+    <div style="${sub}">가장 많이 문제를 푼 시간대.<br>${d.night>d.morning?'밤에 더 집중이 잘 되는 편이었어 🌙':'아침에 더 잘 달렸어 ☀️'}</div>`});
+  if(d.focus_min) s.push({t:`<div style="${cap}">WITH THE GUARDIAN</div>
+    <div style="${big}margin-top:18px;color:#2ee6a6;">${fmtHM(d.focus_min)}</div>
+    <div style="${sub}">수호령의 눈을 켜고 <b style="color:#fff;">${d.focus_sessions}번</b>,<br>같이 공부한 시간이야.</div>`});
+  s.push({t:`<div style="${cap}">TOMORROW</div>
+    <div style="font-size:52px;margin-top:12px;">⚔️</div>
+    <div style="font-family:'Cinzel',serif;font-size:28px;font-weight:900;color:#FFE066;margin-top:12px;">내일이야</div>
+    <div style="${sub}">이 기록 전부가 네 실력이야.<br>새로 넣을 건 없어. 잘 자고, 그대로 가면 돼.</div>
+    <div style="margin-top:22px;font-size:13px;color:rgba(255,255,255,.55);">— 수호령</div>`});
+  return s;
+}
+async function replayStart(){
+  S.replay={loading:true}; render();
+  const d=await api('/api/replay');
+  if(!d || d.error || d.offline){ S.replay=null; toast('기록을 불러오지 못했어요','bad'); render(); return; }
+  const slides=rpSlides(d);
+  S.replay={data:d, slides, i:0};
+  render();
+}
+function replayNav(step){
+  const r=S.replay; if(!r||!r.slides) return;
+  const n=r.i+step;
+  if(n<0) return;
+  if(n>=r.slides.length){ S.replay=null; render(); return; }
+  r.i=n; render();
+}
+function replayView(){
+  const r=S.replay; if(!r) return '';
+  if(r.loading) return `<div style="position:fixed;inset:0;z-index:240;background:#06090f;display:flex;align-items:center;justify-content:center;color:#FFE066;font-size:15px;">
+    <span style="animation:blink 1s infinite;">🎞</span>&nbsp; 기록을 모으는 중…</div>`;
+  const cur=r.slides[r.i];
+  const bars=r.slides.map((_,i)=>`<span style="flex:1;height:3px;border-radius:99px;background:${i<r.i?'rgba(255,255,255,.85)':i===r.i?'rgba(255,255,255,.85)':'rgba(255,255,255,.22)'};"></span>`).join('');
+  return `<div id="rpWrap" data-act="rpnext" style="position:fixed;inset:0;z-index:240;background:${RP_BG[r.i%RP_BG.length]};color:#fff;display:flex;flex-direction:column;cursor:pointer;user-select:none;">
+    <div style="display:flex;gap:4px;padding:14px 16px 0;">${bars}</div>
+    <button data-act="rpclose" style="position:absolute;top:30px;right:16px;z-index:2;width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.3);background:rgba(0,0,0,.28);color:#fff;font-size:15px;cursor:pointer;">✕</button>
+    <div key="${r.i}" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px 26px 70px;animation:fadeUp .5s ease both;">
+      <div style="max-width:430px;width:100%;">${cur.t}</div></div>
+    <div style="position:absolute;left:0;right:0;bottom:18px;text-align:center;font-size:11.5px;color:rgba(255,255,255,.45);">
+      ${r.i+1} / ${r.slides.length} · 탭하면 다음 ${r.i>0?'· ←로 이전':''}</div>
   </div>`;
 }
 // ========== 🧠 개념 총정리 (한 번이라도 틀린 전체 이력 기반) ==========
@@ -1566,7 +1662,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0809i · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0810a · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -3411,6 +3507,7 @@ const ACTS = {
     else toast('그 섹션은 지금 없어요','bad'); },
   goreviewwrong:async()=>{ S.tab='wrong'; await loadWrong(); await loadDiag(false); render(); scrollTo({top:0}); },
   review:()=>loadConceptReview(),
+  replay:()=>replayStart(), rpnext:()=>replayNav(1), rpclose:()=>{ S.replay=null; render(); },
   flash:()=>flashStart(), flashreveal:()=>flashReveal(),
   flashyes:()=>flashMark(true), flashno:()=>flashMark(false),
   flashretry:()=>flashRetryUnsure(), flashclose:()=>{ S.flash=null; render(); },
@@ -3481,9 +3578,15 @@ document.addEventListener('keydown', e=>{
   }
   if(isTyping(e)) return;
   if(S.gateMode!=='open') return;
+  if(S.replay && !S.replay.loading){
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='Enter'){ e.preventDefault(); replayNav(1); return; }
+    if(e.key==='ArrowLeft'){ e.preventDefault(); replayNav(-1); return; }
+    return;
+  }
   if(e.metaKey||e.ctrlKey||e.altKey) return;
 
   if(e.key==='Escape'){
+    if(S.replay){ S.replay=null; render(); return; }
     if(S.video){ S.video=null; render(); return; }
     if(S.hdrMenu){ S.hdrMenu=false; render(); return; }
     if(S.flash){ S.flash=null; render(); return; }

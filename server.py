@@ -874,6 +874,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._final_sheet()
+        if p == "/api/replay":
+            if self._guard():
+                return
+            return self._replay()
         if p == "/api/recap":
             if self._guard():
                 return
@@ -1675,6 +1679,83 @@ class H(http.server.BaseHTTPRequestHandler):
         return self._json({"study_days": days, "total_minutes": round(total_min),
                            "total_attempts": len(rows), "total_correct": sum(r["correct"] for r in rows),
                            "recovered": recovered, "ever_wrong": ever_wrong})
+
+    def _replay(self):
+        """지금까지의 기록 전체를 되돌아보는 리플레이용 통계 묶음."""
+        c = db()
+        g = lambda q, *a: c.execute(q, a).fetchone()
+        days = g("SELECT COUNT(DISTINCT date) n FROM study_log WHERE (math+sci+kor+nc2)>0")["n"] or 0
+        mins = g("SELECT SUM(math+sci+kor+nc2) s FROM study_log")["s"] or 0
+        subj_min = g("SELECT SUM(math) m,SUM(sci) s,SUM(kor) k,SUM(nc2) n FROM study_log") or {}
+        best_day = g("""SELECT date, (math+sci+kor+nc2) t FROM study_log
+                        WHERE t>0 ORDER BY t DESC LIMIT 1""")
+        first = g("SELECT MIN(date) d FROM study_log WHERE (math+sci+kor+nc2)>0")["d"]
+        att = c.execute("SELECT question_id,qnum,subject,correct,ts FROM attempts WHERE source='quiz' ORDER BY ts").fetchall()
+        rounds_done = g("SELECT COUNT(DISTINCT question_id) n FROM attempts WHERE source='quiz'")["n"] or 0
+        # 과목별 정답률
+        by_sub = {}
+        for r in c.execute("""SELECT a.subject s, COUNT(*) n, SUM(a.correct) ok FROM attempts a
+                              JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+                                ON a.id=l.mi GROUP BY a.subject"""):
+            by_sub[r["s"]] = {"n": r["n"], "ok": r["ok"] or 0,
+                              "pct": round((r["ok"] or 0) / r["n"] * 100) if r["n"] else 0}
+        # 시간대 분포 (언제 공부했나)
+        hours = {r["h"]: r["n"] for r in c.execute(
+            "SELECT CAST(strftime('%H', ts,'unixepoch','localtime') AS INT) h, COUNT(*) n "
+            "FROM attempts WHERE source='quiz' GROUP BY h")}
+        # 가장 오래 붙잡은 문항
+        boss = g("""SELECT question_id qid, qnum, subject, COUNT(*) tries,
+                           SUM(CASE WHEN correct=0 THEN 1 ELSE 0 END) miss
+                      FROM attempts GROUP BY question_id,qnum
+                     ORDER BY miss DESC, tries DESC LIMIT 1""")
+        focus = g("SELECT SUM(focused_sec) f, COUNT(*) n, SUM(distract_cnt) d FROM focus_log")
+        exams = [dict(r) for r in c.execute("SELECT date,avg FROM exam_results ORDER BY ts")]
+        study_days = [r["date"] for r in c.execute(
+            "SELECT date FROM study_log WHERE (math+sci+kor+nc2)>0 ORDER BY date")]
+        c.close()
+        # 되찾은 오답 · 최장 연속일
+        groups = {}
+        for r in att:
+            groups.setdefault((r["question_id"], r["qnum"]), []).append(r["correct"])
+        ever_wrong = sum(1 for v in groups.values() if 0 in v)
+        recovered = sum(1 for v in groups.values() if 0 in v and v[-1] == 1)
+        import datetime as _dt
+        streak = best_streak = 0
+        prev = None
+        for d in study_days:
+            try:
+                cur = _dt.date.fromisoformat(d)
+            except ValueError:
+                continue
+            streak = streak + 1 if (prev and (cur - prev).days == 1) else 1
+            best_streak = max(best_streak, streak)
+            prev = cur
+        night = sum(n for h, n in hours.items() if h is not None and (h >= 22 or h < 4))
+        morning = sum(n for h, n in hours.items() if h is not None and 5 <= h < 11)
+        total_att = len(att)
+        peak_h = max(hours.items(), key=lambda x: x[1])[0] if hours else None
+        subj_kr = {"m": "수학", "s": "과학", "k": "국어", "n": "사회·한국사·도덕"}
+        top_subject = None
+        if subj_min:
+            pairs = [(subj_kr[k], round(subj_min[k] or 0)) for k in ("m", "s", "k", "n")]
+            pairs.sort(key=lambda x: -x[1])
+            if pairs and pairs[0][1] > 0:
+                top_subject = {"name": pairs[0][0], "minutes": pairs[0][1], "all": pairs}
+        return self._json({
+            "days": days, "minutes": round(mins), "first_day": first,
+            "since_days": (_dt.date.today() - _dt.date.fromisoformat(first)).days + 1 if first else 0,
+            "best_day": dict(best_day) if best_day else None,
+            "best_streak": best_streak,
+            "attempts": total_att, "correct": sum(r["correct"] for r in att),
+            "acc": round(sum(r["correct"] for r in att) / total_att * 100) if total_att else 0,
+            "rounds": rounds_done, "by_subject": by_sub, "top_subject": top_subject,
+            "ever_wrong": ever_wrong, "recovered": recovered,
+            "boss": dict(boss) if boss and boss["tries"] else None,
+            "night": night, "morning": morning, "peak_hour": peak_h,
+            "focus_min": round((focus["f"] or 0) / 60) if focus else 0,
+            "focus_sessions": (focus["n"] or 0) if focus else 0,
+            "exams": exams,
+        })
 
     def _result_letter(self, b):
         """실전 채점 결과를 받아 그 자리에서 수호령이 반응 편지를 씀(AI). 실패 시 프론트가 고정 편지로 대체."""

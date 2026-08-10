@@ -79,12 +79,39 @@
   kbd{ font-family:ui-monospace,monospace; font-size:11px; border:1px solid var(--border); border-bottom-width:2px; border-radius:5px; padding:1px 5px; color:var(--text3); background:var(--panel2); }
   /* ---- 연결 끊김 배너 ---- */
   #netBanner{ position:fixed; left:50%; transform:translateX(-50%); bottom:16px; z-index:250; padding:11px 20px; border-radius:999px; font-size:13.5px; font-weight:700; color:#fff; background:linear-gradient(180deg,#ff8093,#d43148); box-shadow:0 12px 32px rgba(0,0,0,.45); animation:popIn .3s cubic-bezier(.34,1.56,.64,1); max-width:92vw; text-align:center; }
+  .printOnly{ display:none; }
   /* ---- 인쇄: 최종 요약 시트만 흑백으로 깔끔하게 ---- */
   @media print{
-    header, nav, .noPrint, #toTop, #cmdk, #eyePip{ display:none !important; }
+    header, nav, .noPrint, #toTop, #cmdk, #eyePip, #vidModal, #rpWrap, #netBanner{ display:none !important; }
     #root{ background:#fff !important; color:#000 !important; }
     main{ padding:0 !important; max-width:none !important; }
-    #root > div > main > div > *:not(#sheetWrap){ display:none !important; }
+    #root:not(.printReview) > div > main > div > *:not(#sheetWrap){ display:none !important; }
+    /* ---- 개념 총정리: 과목별 1페이지 · A4 가로 2단 ---- */
+    #root.printReview .printOnly{ display:block !important; }
+    #root.printReview main > div > *{ display:none !important; }
+    #root.printReview main > div > .reviewRoot{ display:block !important; }
+    #root.printReview #reviewPrint{ display:block !important; color:#000; }
+    .rvPage{ break-after:page; page-break-after:always; }
+    .rvPage:last-child{ break-after:auto; page-break-after:auto; }
+    .rvHead{ border-bottom:2.5px solid #111; padding-bottom:5px; margin-bottom:9px;
+             display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+    .rvHead h1{ margin:0; font-size:20pt; font-weight:900; letter-spacing:-.5px; }
+    .rvHead span{ font-size:8.5pt; color:#555; }
+    .rvGrid{ column-count:2; column-gap:9mm; }
+    .rvCard{ break-inside:avoid; page-break-inside:avoid; border:1px solid #bbb; border-radius:4px;
+             padding:7px 9px 8px; margin:0 0 5mm; background:#fff; }
+    .rvCard h2{ margin:0 0 4px; font-size:12.5pt; font-weight:800; display:flex;
+                align-items:baseline; gap:6px; flex-wrap:wrap; }
+    .rvCnt{ font-size:8pt; font-weight:600; color:#a11; border:1px solid #d99; border-radius:3px; padding:0 4px; }
+    .rvConf{ margin:0 0 5px; font-size:9.5pt; line-height:1.5; color:#333; }
+    .rvConf b, .rvTrap b{ font-size:8pt; background:#eee; border-radius:3px; padding:1px 4px; margin-right:4px; }
+    .rvCore{ margin:0 0 5px; padding-left:15px; }
+    .rvCore li{ font-size:10.5pt; line-height:1.55; margin-bottom:2px; }
+    .rvTrap{ margin:0 0 5px; font-size:9.5pt; line-height:1.5; color:#333; }
+    .rvMem{ margin:0 0 4px; font-size:11pt; font-weight:800; border:1.5px solid #111;
+            border-radius:4px; padding:5px 8px; }
+    .rvMem::before{ content:'기억 '; font-size:8pt; font-weight:700; color:#666; }
+    .rvRefs{ margin:0; font-size:8pt; color:#777; }
     #sheetWrap{ border:none !important; padding:0 !important; background:#fff !important; box-shadow:none !important; }
     #sheetWrap *{ color:#000 !important; background:transparent !important; }
     #sheetWrap h3{ color:#000 !important; border-color:#000 !important; }
@@ -1352,14 +1379,59 @@ function reviewCard(){
       <div style="margin-top:6px;display:grid;gap:5px;">${c.refs.map(r=>`<button data-act="gosimilar" data-arg="${r.question_id}|${r.qnum}" style="display:flex;gap:8px;align-items:baseline;text-align:left;padding:7px 10px;border-radius:9px;border:1px solid var(--border);background:var(--panel);color:var(--text2);font-size:12px;cursor:pointer;">
         <span style="flex:0 0 auto;color:var(--text3);">${h(r.round)} ${r.qnum}번</span><span style="flex:1;">${h(r.stem)}</span>${r.still?'<span style="color:var(--danger-b);flex:0 0 auto;">●</span>':''}</button>`).join('')}</div></details>`:''}
   </div>`).join('');
-  return `<div style="margin-bottom:18px;">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+  return `<div class="reviewRoot" style="margin-bottom:18px;">
+    <div class="noPrint" style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--pink);letter-spacing:1px;">CONCEPT REVIEW · 개념 총정리</div>
         <div style="font-size:12.5px;color:var(--text2);margin-top:5px;">한 번이라도 틀린 <b>${v.scanned}문항</b>을 개념 <b>${cls.length}개</b>로 묶었어요 · <span style="color:var(--danger-b);">지금도 틀리는 것부터</span></div></div>
-      <button data-act="review" style="padding:7px 13px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">↻ 다시 분석</button></div>
-    ${cards}
-    <div style="font-size:11.5px;color:var(--text3);">※ 내가 실제로 틀린 문항의 발문·오답·정답을 근거로 수호령이 정리한 내용이에요. 헷갈리면 원문 문항을 같이 확인하세요.</div>
+      <div style="display:flex;gap:7px;">
+        <button data-act="reviewprint" style="padding:7px 13px;border-radius:9px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer;">🖨 인쇄 (과목별 A4 가로)</button>
+        <button data-act="review" style="padding:7px 13px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">↻ 다시 분석</button></div></div>
+    <div class="noPrint">${cards}
+      <div style="font-size:11.5px;color:var(--text3);">※ 내가 실제로 틀린 문항의 발문·오답·정답을 근거로 수호령이 정리한 내용이에요. 헷갈리면 원문 문항을 같이 확인하세요.</div></div>
+    ${reviewPrintable(cls)}
   </div>`;
+}
+// 인쇄 전용 레이아웃 — 과목별로 한 페이지, A4 가로 2단
+function reviewPrintable(cls){
+  const bySub={};
+  cls.forEach(c=>{ (bySub[c.subject||'기타']=bySub[c.subject||'기타']||[]).push(c); });
+  const order=['과학','도덕','수학','국어','한국사','사회'];
+  const subs=Object.keys(bySub).sort((a,b)=>{
+    const ia=order.indexOf(a), ib=order.indexOf(b);
+    return (ia<0?99:ia)-(ib<0?99:ib);
+  });
+  const today=ymd(new Date());
+  return `<div id="reviewPrint" class="printOnly">${subs.map(sub=>{
+    const list=bySub[sub];
+    return `<section class="rvPage">
+      <div class="rvHead">
+        <h1>${h(sub)} · 개념 총정리</h1>
+        <span>내가 틀린 개념 ${list.length}개 · ${h(today)} · 지식의 탑</span></div>
+      <div class="rvGrid">${list.map(c=>`<article class="rvCard">
+        <h2>${h(c.concept)}<span class="rvCnt">${c.wrong_n}회 틀림${c.still?' · 아직 헷갈림':''}</span></h2>
+        ${c.confuse?`<p class="rvConf"><b>헷갈린 지점</b> ${h(c.confuse)}</p>`:''}
+        <ul class="rvCore">${(c.core||[]).map(x=>`<li>${h(x)}</li>`).join('')}</ul>
+        ${c.trap?`<p class="rvTrap"><b>함정</b> ${h(c.trap)}</p>`:''}
+        ${c.memorize?`<p class="rvMem">${h(c.memorize)}</p>`:''}
+        ${(c.refs||[]).length?`<p class="rvRefs">근거 문항 · ${c.refs.map(r=>h(r.round)+' '+r.qnum+'번').join(' / ')}</p>`:''}
+      </article>`).join('')}</div>
+    </section>`;
+  }).join('')}</div>`;
+}
+function reviewPrint(){
+  const root=document.getElementById('root');
+  // A4 가로 페이지 설정을 인쇄 순간에만 주입 (요약 시트 인쇄에는 영향 없음)
+  const st=document.createElement('style');
+  st.id='rvPageStyle';
+  st.textContent='@page{ size: A4 landscape; margin: 11mm; }';
+  document.head.appendChild(st);
+  root.classList.add('printReview');
+  const done=()=>{ root.classList.remove('printReview'); const e=document.getElementById('rvPageStyle'); if(e) e.remove(); };
+  const mq=window.matchMedia('print');
+  const onch=m=>{ if(!m.matches){ done(); mq.removeListener(onch); } };
+  try{ mq.addListener(onch); }catch(e){}
+  window.addEventListener('afterprint', done, {once:true});
+  setTimeout(()=>{ window.print(); setTimeout(done, 1500); }, 60);
 }
 // ========== 최종 요약 시트 (오답 전부 한 장에 · 인쇄 가능) ==========
 async function loadSheet(){
@@ -1662,7 +1734,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0810a · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0810b · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -3494,7 +3566,8 @@ const ACTS = {
   cmdk:()=>openCmdk(), cmdkrun:i=>cmdkRun(+i), cmdkbg:(a,el)=>{ if(el&&el.id==='cmdk') closeCmdk(); },
   banksearch:()=>{},
   sheet:()=>loadSheet(), sheetclose:()=>{ S.sheet=null; render(); },
-  sheetprint:()=>window.print(),
+  sheetprint:()=>{ var r=document.getElementById('root'); r.classList.remove('printReview'); window.print(); },
+  reviewprint:()=>reviewPrint(),
   qjump:n=>{ const i=S.quizItems.findIndex(x=>x.qnum===+n); if(i>=0){ S.quizIdx=i; persist(); render(); scrollTop(); } },
   retrywrong:async()=>{ await loadWrong(); await loadDiag(false); render(); },
   simadj:arg=>{ const[subj,d]=arg.split(':'); const sim=simInit();

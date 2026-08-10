@@ -1382,7 +1382,8 @@ function replayView(){
 const revKey = c => (c.subject||'')+'|'+(c.concept||'');
 async function loadConceptReview(){
   S.review={loading:true}; render(); scrollTo({top:0});
-  const r=await api('/api/conceptreview');
+  const r=await api('/api/conceptreview'+(S.reviewForce?'?force=1':''));
+  S.reviewForce=false;
   S.review = r.clusters ? {clusters:r.clusters, scanned:r.scanned, total_wrong_ever:r.total_wrong_ever, empty:r.empty}
     : {error: r.error==='no-ai' ? '🧚 수호령 미연결 (GEMINI_API_KEY 필요)'
         : r.offline ? '📡 연결이 끊겼어요' : '분석에 실패했어요. 잠시 후 다시 시도해주세요.'};
@@ -1395,7 +1396,7 @@ function reviewCard(){
     <div style="margin-top:9px;font-size:14.5px;font-weight:800;color:var(--pink);">지금까지 틀린 걸 전부 모아 개념으로 묶는 중…</div>
     <div style="margin-top:4px;font-size:12px;color:var(--text3);">30초 정도 걸려요</div></div>`;
   if(v.error) return `<div style="border:1px solid var(--pinkbd);border-radius:14px;padding:16px;background:var(--tintP);margin-bottom:18px;font-size:13.5px;color:var(--pink);">
-    ${h(v.error)} <button data-act="review" style="margin-left:8px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">다시 시도</button></div>`;
+    ${h(v.error)} <button data-act="reviewforce" style="margin-left:8px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">다시 시도</button></div>`;
   const cls=v.clusters||[];
   if(!cls.length) return `<div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--panel);margin-bottom:18px;font-size:13.5px;color:var(--text2);">
     아직 묶을 만한 오답 이력이 적어요. 기출을 조금 더 풀고 다시 눌러보세요.</div>`;
@@ -1430,7 +1431,7 @@ function reviewCard(){
             <button data-act="revskipclear" style="padding:6px 11px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:11.5px;cursor:pointer;">전체 되돌리기</button>`:
             `<span style="font-size:12px;color:var(--text3);">아는 개념은 ✕로 빼고 인쇄하세요</span>`;})()}
         <button data-act="reviewprint" style="padding:7px 13px;border-radius:9px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:12.5px;font-weight:700;cursor:pointer;">🖨 인쇄 (과목별 A4 가로)</button>
-        <button data-act="review" style="padding:7px 13px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">↻ 다시 분석</button></div></div>
+        <button data-act="reviewforce" style="padding:7px 13px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">↻ 다시 분석</button></div></div>
     <div class="noPrint">${cards}
       <div style="font-size:11.5px;color:var(--text3);">※ 내가 실제로 틀린 문항의 발문·오답·정답을 근거로 수호령이 정리한 내용이에요. 헷갈리면 원문 문항을 같이 확인하세요.</div></div>
     ${reviewPrintable(cls.filter(c=>!S.reviewSkip[revKey(c)]))}
@@ -1781,7 +1782,7 @@ function uploadCard(){
   const opt=(arr,cur)=>arr.map(v=>`<option value="${h(v)}" ${cur===v?'selected':''}>${h(v)}</option>`).join('');
   const inp='padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;';
   return `<div style="border:1px dashed rgba(46,230,166,.5);border-radius:14px;padding:16px;background:rgba(20,117,92,.06);margin-bottom:18px;">
-    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0810e · 파일명 자동인식</span></div>
+    <div style="font-weight:800;margin-bottom:4px;color:var(--accent-b);">📤 기출/정답 PDF 업로드 <span style="font-size:10px;color:var(--text3);font-weight:600;">빌드 0810f · 파일명 자동인식</span></div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">PDF를 올리면 파일명 규격화·저장·텍스트 추출·문항 등록이 자동으로 돼요. (정답 PDF는 채점용 정답키 생성)</div>
     <div style="font-size:12px;color:var(--accent-b);margin-bottom:12px;">📁 <b>여러 개 한 번에</b> 선택 가능 — 파일명에 <b>연도·회차·과정·과목</b>이 들어있으면(예: <code>2024 1회 고졸 국어</code>) 아래 칸 없이 <b>자동 인식</b>돼요. 정답표는 과목 없이도 회차 전체에 반영. (인식 안 되는 1개는 아래 칸으로)</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -3627,6 +3628,7 @@ const ACTS = {
     else toast('그 섹션은 지금 없어요','bad'); },
   goreviewwrong:async()=>{ S.tab='wrong'; await loadWrong(); await loadDiag(false); render(); scrollTo({top:0}); },
   review:()=>loadConceptReview(),
+  reviewforce:()=>{ S.reviewForce=true; loadConceptReview(); },
   revskip:k=>{ if(S.reviewSkip[k]) delete S.reviewSkip[k]; else S.reviewSkip[k]=1; persist(); render(); },
   revskipclear:()=>{ S.reviewSkip={}; persist(); render(); },
   replay:()=>replayStart(), rpnext:()=>replayNav(1), rpclose:()=>{ S.replay=null; render(); },

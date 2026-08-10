@@ -908,7 +908,7 @@ class H(http.server.BaseHTTPRequestHandler):
         if p == "/api/conceptreview":
             if self._guard():
                 return
-            return self._concept_review(force=q.get("force") == "1")
+            return self._concept_review(force=q.get("force") == "1", raw=q.get("raw") == "1")
         if p == "/api/yt":
             if self._guard():
                 return
@@ -1591,7 +1591,7 @@ class H(http.server.BaseHTTPRequestHandler):
                             "hasPdf": has_pdf, "passage": (it.get("passage") or "")[:400]})
         return self._json({"items": out, "subject": subject, "count": len(out)})
 
-    def _concept_review(self, force=False):
+    def _concept_review(self, force=False, raw=False):
         """시험 전날 개념 총정리 — '한 번이라도 틀린 적 있는' 모든 문항(지금은 맞히는 것 포함)을
         개념 단위로 묶고, 실제 발문·내가 고른 오답·정답을 근거로 개념 설명을 만든다."""
         c = db()
@@ -1608,7 +1608,7 @@ class H(http.server.BaseHTTPRequestHandler):
             c.close(); return self._json({"clusters": [], "empty": True})
         # 오답 구성이 그대로면 이미 만든 결과를 재사용 (AI 호출 절약 · 레이트 리밋 회피)
         sig = hashlib.sha1(repr([(r["question_id"], r["qnum"], r["wrong_n"]) for r in rows]).encode()).hexdigest()
-        if not force and _CR_CACHE.get("sig") == sig and _CR_CACHE.get("data"):
+        if not force and not raw and _CR_CACHE.get("sig") == sig and _CR_CACHE.get("data"):
             c.close(); return self._json({**_CR_CACHE["data"], "cached": True})
         # 지금도 틀리는지(최신 시도 기준) → 우선순위 가중치
         still = {(r["question_id"], r["qnum"]) for r in c.execute("""
@@ -1722,6 +1722,9 @@ class H(http.server.BaseHTTPRequestHandler):
             lines.append(f"\n[C. 맞혔지만 유난히 오래 걸린 문항 — {len(grp_c)}개]")
             lines.append("(정답은 골랐지만 확신이 없어 오래 망설인 것 — 개념이 덜 잡혔다는 신호)")
             lines += grp_c
+        if raw:
+            return self._json({"raw": True, "total_wrong_ever": total_wrong_ever,
+                               "count": len(items), "items": items})
         prompt = (
             "아래는 검정고시 수험생이 지금까지 '한 번이라도 틀린' 문항들입니다. 내일이 시험이라 개념 총정리가 필요합니다.\n"
             "발문·선택지·학생이 고른 오답·정답을 근거로, 같은 개념끼리 묶어 '개념 복습 카드'를 만들어 주세요.\n\n"

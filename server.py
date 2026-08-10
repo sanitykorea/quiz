@@ -858,6 +858,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._weakspots()
+        if p == "/api/conceptreview":
+            if self._guard():
+                return
+            return self._concept_review()
         if p == "/api/yt":
             if self._guard():
                 return
@@ -1506,6 +1510,102 @@ class H(http.server.BaseHTTPRequestHandler):
                             "answer": ans, "year": r["year"], "exam_round": r["exam_round"],
                             "hasPdf": has_pdf, "passage": (it.get("passage") or "")[:400]})
         return self._json({"items": out, "subject": subject, "count": len(out)})
+
+    def _concept_review(self):
+        """시험 전날 개념 총정리 — '한 번이라도 틀린 적 있는' 모든 문항(지금은 맞히는 것 포함)을
+        개념 단위로 묶고, 실제 발문·내가 고른 오답·정답을 근거로 개념 설명을 만든다."""
+        c = db()
+        # 최신 시도만 보는 오답노트와 달리, 전체 이력에서 틀린 기록을 모두 센다
+        rows = c.execute("""
+            SELECT question_id, qnum, subject, year, exam_round,
+                   COUNT(*) wrong_n, MAX(ts) last_ts,
+                   GROUP_CONCAT(DISTINCT chosen) chosens
+              FROM attempts WHERE correct=0
+             GROUP BY question_id, qnum
+             ORDER BY wrong_n DESC, last_ts DESC""").fetchall()
+        if not rows:
+            c.close(); return self._json({"clusters": [], "empty": True})
+        # 지금도 틀리는지(최신 시도 기준) → 우선순위 가중치
+        still = {(r["question_id"], r["qnum"]) for r in c.execute("""
+            SELECT a.question_id, a.qnum FROM attempts a
+            JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts WHERE source='quiz' GROUP BY question_id,qnum) l
+              ON a.id=l.mi WHERE a.correct=0""")}
+        pages, items = {}, []
+        for w in rows[:70]:                                   # 토큰 한도 내에서 자주 틀린 순
+            qid = w["question_id"]
+            if qid not in pages:
+                pr = c.execute("SELECT raw_text FROM questions WHERE id=?", (qid,)).fetchone()
+                pages[qid] = {it["qnum"]: it for it in parse_items(pr["raw_text"])} if pr else {}
+            it = pages[qid].get(w["qnum"], {})
+            stem = (it.get("stem") or "").replace("\n", " ").strip()[:110]
+            if not stem:
+                continue
+            ch = {x.get("n"): (x.get("text") or "") for x in it.get("choices", [])}
+            key = c.execute("SELECT answer FROM qkey WHERE question_id=? AND qnum=?", (qid, w["qnum"])).fetchone()
+            ans = key["answer"] if key else None
+            picked = [int(x) for x in (w["chosens"] or "").split(",") if x.strip().isdigit()]
+            items.append({
+                "subject": w["subject"], "qid": qid, "qnum": w["qnum"],
+                "round": f'{str(w["year"])[:4]} {str(w["exam_round"])[:2]}',
+                "stem": stem, "wrong_n": w["wrong_n"],
+                "still": (qid, w["qnum"]) in still,
+                "answer_text": (ch.get(ans) or "")[:44],
+                "wrong_text": " / ".join((ch.get(p) or "").strip()[:30] for p in picked if p and p != ans)[:70],
+            })
+        c.close()
+        if len(items) < 2:
+            return self._json({"clusters": [], "empty": True})
+        lines = []
+        for i, it in enumerate(items):
+            mark = "지금도 틀림" if it["still"] else "지금은 맞힘"
+            lines.append(f'#{i+1} [{it["subject"]}·{it["round"]}] {it["stem"]}\n'
+                         f'   └ {it["wrong_n"]}회 틀림({mark}) · 내가 고른 오답: {it["wrong_text"] or "-"} · 정답: {it["answer_text"] or "-"}')
+        prompt = (
+            "아래는 검정고시 수험생이 지금까지 '한 번이라도 틀린' 문항들입니다. 내일이 시험이라 개념 총정리가 필요합니다.\n"
+            "발문·학생이 고른 오답·정답을 근거로, 같은 개념끼리 묶어 '개념 복습 카드'를 만들어 주세요.\n\n"
+            "규칙:\n"
+            "- 2문항 이상 묶이거나 2회 이상 틀린 개념만 카드로 만드세요. 과목당 최대 4개, 전체 최대 12개.\n"
+            "- 'wrong_n'이 크거나 '지금도 틀림'인 것을 우선하세요.\n"
+            "- 주어진 문항에서 실제로 확인되는 내용만 쓰고, 확실하지 않은 수치·연도·인명은 지어내지 마세요.\n"
+            "- 학생이 고른 오답을 보고 '무엇과 무엇을 혼동했는지'를 콕 집어 주세요.\n\n"
+            "각 카드는 JSON 객체로:\n"
+            '{"subject":"과목","concept":"개념 이름(15자 이내)","wrong_n":총 틀린 횟수,'
+            '"confuse":"무엇과 무엇을 헷갈렸는지 한 문장","core":["꼭 알아야 할 핵심 2~4개(각 40자 이내)"],'
+            '"trap":"시험에서 파는 함정 한 문장","memorize":"시험장에서 이것만 기억(30자 이내)","indices":[해당 #번호]}\n'
+            "JSON 배열만 출력하세요. 다른 설명 금지.\n\n" + "\n".join(lines))
+        try:
+            txt = ai_complete("당신은 검정고시 학습 코치입니다. 주어진 근거 안에서만, 정확하고 간결하게 개념을 정리합니다.",
+                              [{"role": "user", "content": prompt}], 3000)
+        except Exception as e:
+            return self._json({"error": "ai_failed", "detail": str(e)[:120]}, 502)
+        if txt is None:
+            return self._json({"error": "no-ai"}, 503)
+        try:
+            arr = json.loads(re.sub(r'^```(?:json)?\s*|\s*```$', '', txt.strip()))
+        except Exception:
+            return self._json({"error": "ai_parse", "raw": txt[:300]}, 502)
+        out = []
+        for cl in (arr if isinstance(arr, list) else []):
+            idxs = [i for i in (cl.get("indices") or []) if isinstance(i, int) and 1 <= i <= len(items)]
+            refs = [{"question_id": items[i - 1]["qid"], "qnum": items[i - 1]["qnum"],
+                     "round": items[i - 1]["round"], "stem": items[i - 1]["stem"][:60],
+                     "still": items[i - 1]["still"]} for i in idxs]
+            core = [str(x)[:70] for x in (cl.get("core") or [])][:4]
+            if not core:
+                continue
+            out.append({
+                "subject": str(cl.get("subject", ""))[:8],
+                "concept": str(cl.get("concept", ""))[:24],
+                "wrong_n": cl.get("wrong_n") or sum(items[i - 1]["wrong_n"] for i in idxs),
+                "confuse": str(cl.get("confuse", ""))[:120],
+                "core": core,
+                "trap": str(cl.get("trap", ""))[:120],
+                "memorize": str(cl.get("memorize", ""))[:60],
+                "still": any(r["still"] for r in refs),
+                "refs": refs[:6],
+            })
+        out.sort(key=lambda x: (-(1 if x["still"] else 0), -(x["wrong_n"] or 0)))
+        return self._json({"clusters": out, "scanned": len(items)})
 
     def _weakspots(self):
         """오답노트 기반 반복 취약 유형 분석(AI) — 과목별로 자주 틀리는 개념을 묶어 검색 키워드까지 제시."""

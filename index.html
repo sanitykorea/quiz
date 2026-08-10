@@ -138,7 +138,7 @@ const S = {
   recommend:null, mock:null, askImg:{busy:false,text:'',q:''}, similar:null,
   today:null, checkExam:{}, cq:null, eye:null, focusHist:null,
   adminTab:'questions', adminMsg:'', muted:false,
-  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null, cram:null, grading:false, video:null,
+  hdrMenu:false, cmdk:null, sheet:null, sheetLoading:false, bankSearch:'', resumeBank:null, flash:null, sim:null, cram:null, grading:false, video:null, review:null,
 };
 const PTS=subj=>subj==='수학'?5:4;   // 배점: 수학 5점/문항, 나머지 4점/문항
 let _barrierActive = null;
@@ -789,6 +789,7 @@ function cmdList(){
     {ic:'🧮', name:'점수 시뮬레이터', hint:'몇 개 더 맞히면 어디까지 열리나', run:()=>{ closeCmdk(); ACTS.tab('exam').then(()=>{
         const el=[...document.querySelectorAll('div')].find(d=>d.innerText&&d.innerText.startsWith('SCORE SIMULATOR'));
         if(el) scrollTo({top:el.getBoundingClientRect().top+scrollY-110, behavior:'smooth'}); }); }},
+    {ic:'🧠', name:'개념 총정리', hint:'여태 틀린 걸 개념으로 묶어 학습', run:()=>{ closeCmdk(); S.tab='wrong'; loadWrong().then(loadConceptReview); }},
     {ic:'⚡', name:'빠른 복습', hint:'오답 발문만 초고속 회상', run:()=>{ closeCmdk(); S.tab='wrong'; loadWrong().then(flashStart); }},
     {ic:'📄', name:'최종 요약 시트', hint:'내 오답 전부 한 장에', run:()=>{ closeCmdk(); S.tab='wrong'; loadSheet(); }},
     {ic:'🔍', name:'취약 유형 분석', hint:'반복해서 틀리는 개념 찾기', run:()=>{ closeCmdk(); S.tab='wrong'; loadWrong().then(()=>loadWeakspots()); }},
@@ -1218,6 +1219,50 @@ function perfectDefenseCard(){
       <span style="font-size:12.5px;color:var(--danger-b);font-weight:700;">남은 오답 ${s.n}개</span>
       <span style="font-size:12px;color:var(--text3);">${s.rounds.size}개 회차에 흩어짐</span>
       <button data-act="perfectstart" data-arg="${h(s.subject)}" style="margin-left:auto;padding:7px 14px;border-radius:999px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-size:12.5px;font-weight:700;cursor:pointer;">🛡 통합 방어전 시작</button></div>`).join('')}</div>
+  </div>`;
+}
+// ========== 🧠 개념 총정리 (한 번이라도 틀린 전체 이력 기반) ==========
+async function loadConceptReview(){
+  S.review={loading:true}; render(); scrollTo({top:0});
+  const r=await api('/api/conceptreview');
+  S.review = r.clusters ? {clusters:r.clusters, scanned:r.scanned, empty:r.empty}
+    : {error: r.error==='no-ai' ? '🧚 수호령 미연결 (GEMINI_API_KEY 필요)'
+        : r.offline ? '📡 연결이 끊겼어요' : '분석에 실패했어요. 잠시 후 다시 시도해주세요.'};
+  render();
+}
+function reviewCard(){
+  const v=S.review; if(!v) return '';
+  if(v.loading) return `<div style="border:1px solid var(--pinkbd);border-radius:16px;padding:34px;text-align:center;background:var(--tintP);margin-bottom:18px;">
+    <div style="font-size:30px;animation:floaty 2.6s ease-in-out infinite;">🧠</div>
+    <div style="margin-top:9px;font-size:14.5px;font-weight:800;color:var(--pink);">지금까지 틀린 걸 전부 모아 개념으로 묶는 중…</div>
+    <div style="margin-top:4px;font-size:12px;color:var(--text3);">30초 정도 걸려요</div></div>`;
+  if(v.error) return `<div style="border:1px solid var(--pinkbd);border-radius:14px;padding:16px;background:var(--tintP);margin-bottom:18px;font-size:13.5px;color:var(--pink);">
+    ${h(v.error)} <button data-act="review" style="margin-left:8px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">다시 시도</button></div>`;
+  const cls=v.clusters||[];
+  if(!cls.length) return `<div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--panel);margin-bottom:18px;font-size:13.5px;color:var(--text2);">
+    아직 묶을 만한 오답 이력이 적어요. 기출을 조금 더 풀고 다시 눌러보세요.</div>`;
+  const cards=cls.map((c,i)=>`<div style="border:1px solid ${c.still?'var(--danger-b)':'var(--pinkbd)'};border-radius:15px;padding:16px 17px;background:linear-gradient(180deg,${c.still?'rgba(255,84,104,.09)':'var(--tintP)'},var(--panel2));margin-bottom:11px;">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+      <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(c.subject)}</span>
+      <b style="font-size:16.5px;">${h(c.concept)}</b>
+      <span style="font-size:11.5px;color:var(--danger-b);font-weight:700;">${c.wrong_n}회 틀림</span>
+      ${c.still?'<span style="font-size:11px;font-weight:800;color:#fff;background:var(--danger);padding:3px 8px;border-radius:7px;">지금도 틀림</span>'
+               :'<span style="font-size:11px;color:var(--accent-b);border:1px solid rgba(46,230,166,.5);padding:2px 8px;border-radius:7px;">지금은 맞힘</span>'}</div>
+    ${c.confuse?`<div style="font-size:13px;color:var(--orange);background:var(--tintO);border:1px solid var(--orangebd);border-radius:10px;padding:9px 12px;margin-bottom:9px;">🔀 <b>헷갈린 지점</b> — ${h(c.confuse)}</div>`:''}
+    <div style="display:grid;gap:5px;margin-bottom:9px;">${(c.core||[]).map(x=>`<div style="display:flex;gap:8px;font-size:14px;line-height:1.65;"><span style="color:var(--accent-b);flex:0 0 auto;">✔</span><span>${h(x)}</span></div>`).join('')}</div>
+    ${c.trap?`<div style="font-size:12.8px;color:var(--text2);border-left:3px solid var(--gold-d);padding:2px 0 2px 10px;margin-bottom:9px;">⚠️ ${h(c.trap)}</div>`:''}
+    ${c.memorize?`<div style="font-size:14px;font-weight:800;color:var(--gold);background:rgba(255,224,102,.12);border:1px solid var(--gold-d);border-radius:10px;padding:10px 12px;">📌 ${h(c.memorize)}</div>`:''}
+    ${(c.refs||[]).length?`<details style="margin-top:9px;"><summary style="cursor:pointer;font-size:11.5px;color:var(--text3);">이 개념에서 틀린 문항 ${c.refs.length}개</summary>
+      <div style="margin-top:6px;display:grid;gap:5px;">${c.refs.map(r=>`<button data-act="gosimilar" data-arg="${r.question_id}|${r.qnum}" style="display:flex;gap:8px;align-items:baseline;text-align:left;padding:7px 10px;border-radius:9px;border:1px solid var(--border);background:var(--panel);color:var(--text2);font-size:12px;cursor:pointer;">
+        <span style="flex:0 0 auto;color:var(--text3);">${h(r.round)} ${r.qnum}번</span><span style="flex:1;">${h(r.stem)}</span>${r.still?'<span style="color:var(--danger-b);flex:0 0 auto;">●</span>':''}</button>`).join('')}</div></details>`:''}
+  </div>`).join('');
+  return `<div style="margin-bottom:18px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+      <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--pink);letter-spacing:1px;">CONCEPT REVIEW · 개념 총정리</div>
+        <div style="font-size:12.5px;color:var(--text2);margin-top:5px;">한 번이라도 틀린 <b>${v.scanned}문항</b>을 개념 <b>${cls.length}개</b>로 묶었어요 · <span style="color:var(--danger-b);">지금도 틀리는 것부터</span></div></div>
+      <button data-act="review" style="padding:7px 13px;border-radius:9px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:12px;cursor:pointer;">↻ 다시 분석</button></div>
+    ${cards}
+    <div style="font-size:11.5px;color:var(--text3);">※ 내가 실제로 틀린 문항의 발문·오답·정답을 근거로 수호령이 정리한 내용이에요. 헷갈리면 원문 문항을 같이 확인하세요.</div>
   </div>`;
 }
 // ========== 최종 요약 시트 (오답 전부 한 장에 · 인쇄 가능) ==========
@@ -1760,10 +1805,12 @@ function vWrong(){
   return `<div><div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
       <div><div style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px;">WRONG-ANSWER LOG</div>
       <h2 style="margin:6px 0 0;font-size:22px;font-weight:800;">📕 오답노트 <span style="font-size:13px;color:var(--text2);font-weight:600;">· 틀린 문제 모음 (채점 ${d.answered||0}문항)</span></h2></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">${totalWrong?`<button data-act="flash" class="noWrapBtn" style="padding:8px 14px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.2);color:var(--gold);font-size:13px;font-weight:800;cursor:pointer;">⚡ 빠른 복습</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">${totalWrong?`<button data-act="review" class="noWrapBtn" style="padding:8px 14px;border-radius:10px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-size:13px;font-weight:800;cursor:pointer;">🧠 개념 총정리</button>
+      <button data-act="flash" class="noWrapBtn" style="padding:8px 14px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.2);color:var(--gold);font-size:13px;font-weight:800;cursor:pointer;">⚡ 빠른 복습</button>
       <button data-act="sheet" class="noWrapBtn" style="padding:8px 14px;border-radius:10px;border:1px solid var(--gold-d);background:rgba(255,224,102,.14);color:var(--gold);font-size:13px;font-weight:700;cursor:pointer;">📄 최종 요약 시트</button>
       <button data-act="wrongpdf" class="noWrapBtn" style="padding:8px 14px;border-radius:10px;border:1px solid var(--bluebd);background:var(--tintB);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;">🖨 오답 PDF 출력</button>
       <button data-act="wrongclear" class="noWrapBtn" style="padding:8px 14px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text3);font-size:13px;cursor:pointer;">기록 초기화</button>`:''}</div></div>
+    ${S.review?reviewCard():''}
     ${S.flash?flashView():''}
     ${(S.sheet||S.sheetLoading)?sheetView():''}
     ${S.wrongPdfMsg?`<div style="margin-bottom:12px;color:var(--blue);font-size:13px;">${h(S.wrongPdfMsg)}</div>`:''}
@@ -3363,6 +3410,7 @@ const ACTS = {
     if(el) scrollTo({top: el.getBoundingClientRect().top+scrollY-116, behavior:'smooth'});
     else toast('그 섹션은 지금 없어요','bad'); },
   goreviewwrong:async()=>{ S.tab='wrong'; await loadWrong(); await loadDiag(false); render(); scrollTo({top:0}); },
+  review:()=>loadConceptReview(),
   flash:()=>flashStart(), flashreveal:()=>flashReveal(),
   flashyes:()=>flashMark(true), flashno:()=>flashMark(false),
   flashretry:()=>flashRetryUnsure(), flashclose:()=>{ S.flash=null; render(); },

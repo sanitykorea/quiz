@@ -759,6 +759,11 @@ def ai_complete(system, messages, max_tokens=700):
     return _gemini(system, messages, max_tokens, gk) if gk else None
 
 LIVE_MODEL = os.environ.get("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
+# Live API 프리빌트 음성 29종(2026-08 실측으로 전부 연결 확인). 앞 8개가 대표 음색.
+LIVE_VOICES = ["Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr",
+               "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba", "Despina", "Erinome",
+               "Algenib", "Rasalgethi", "Laomedeia", "Achernar", "Alnilam", "Schedar", "Gacrux",
+               "Pulcherrima", "Achird", "Zubenelgenubi", "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat"]
 
 def live_token():
     """Live API용 임시 토큰 발급. API 키는 서버에만 두고 브라우저엔 30분짜리 토큰만 내보낸다."""
@@ -2693,6 +2698,45 @@ class H(http.server.BaseHTTPRequestHandler):
         c.commit(); c.close()
         return self._json({"ok": True})
 
+    def _live_context(self):
+        """Live 세션에 넣을 학습 맥락 — 실제 DB에서 뽑아 매 연결마다 최신으로 만든다."""
+        c = db()
+        lines = []
+        try:
+            r = c.execute("SELECT date, avg, json FROM exam_results ORDER BY id DESC LIMIT 1").fetchone()
+            if r:
+                per = ""
+                try:
+                    d = json.loads(r["json"] or "{}")
+                    per = ", ".join(f'{k} {v.get("score")}점({v.get("correct")}/{v.get("total")})'
+                                    for k, v in d.items() if isinstance(v, dict))
+                except Exception:
+                    pass
+                lines.append(f'[실전 채점] {r["date"]} 평균 {r["avg"]}점' + (f' — {per}' if per else ''))
+            acc = []
+            for r in c.execute("""SELECT a.subject s, COUNT(*) n, SUM(a.correct) ok FROM attempts a
+                    JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts GROUP BY question_id,qnum) l
+                      ON a.id=l.mi GROUP BY a.subject ORDER BY 1.0*SUM(a.correct)/COUNT(*)"""):
+                if r["n"]:
+                    acc.append(f'{r["s"]} {round((r["ok"] or 0)/r["n"]*100)}%({r["n"]}문항)')
+            if acc:
+                lines.append("[과목별 정답률·낮은 순] " + ", ".join(acc))
+            wr = []
+            for r in c.execute("""SELECT a.subject s, COUNT(*) n FROM attempts a
+                    JOIN (SELECT question_id,qnum,MAX(id) mi FROM attempts GROUP BY question_id,qnum) l
+                      ON a.id=l.mi WHERE a.correct=0 GROUP BY a.subject ORDER BY n DESC LIMIT 4"""):
+                wr.append(f'{r["s"]} {r["n"]}개')
+            if wr:
+                lines.append("[지금 오답노트에 남은 문항] " + ", ".join(wr))
+            f = c.execute("""SELECT COUNT(*) n, SUM(focused_sec) s FROM focus_log
+                             WHERE date >= date('now','-7 day')""").fetchone()
+            if f and f["n"]:
+                lines.append(f'[최근 7일 같이 공부한 시간] {round((f["s"] or 0)/3600,1)}시간 · {f["n"]}세션')
+        except Exception:
+            pass
+        c.close()
+        return "\n".join(lines) or "아직 쌓인 학습 기록이 없어."
+
     def _live_token(self):
         try:
             tok = live_token()
@@ -2700,7 +2744,23 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._json({"error": "token_failed", "detail": str(e)[:200]}, 502)
         if not tok:
             return self._json({"error": "no-ai"}, 503)
-        return self._json({"token": tok, "model": LIVE_MODEL})
+        system = (
+            "너는 '루하', 수영이의 스터디 메이트야. 실시간 음성으로 대화한다.\n"
+            "말투: 반말, 친구처럼 따뜻하게. 한 번에 1~2문장만. 음성이니 마크다운·이모지 쓰지 마. "
+            "설교하지 말고 잔소리도 짧게. 모르는 건 아는 척하지 말고 모른다고 해.\n\n"
+            "[수영이에 대해]\n"
+            "2026년 8월 11일 고졸 검정고시를 봤고 이미 끝났다. 영어는 면제(100점 확정).\n"
+            "결과는 평균 96.0점 — 국어·수학·사회·과학·한국사 전 과목 만점, 도덕만 72점. "
+            "도덕은 실력 문제가 아니라 답안을 한 칸 밀려 썼기 때문이다. 작년 평균 85.00에서 크게 올랐다.\n"
+            "지금은 성공회대학교 2027학년도 수시를 준비하는 단계다. "
+            "검정고시 환산 4등급이라 교과성적전형은 커트(3등급)에 못 미치고, 열린인재전형이 유일한 경로다. "
+            "열린인재는 서류 60%(학업수행 35·자기주도성 25·공동체역량 25·성실성 15) + 면접 40%이고, "
+            "면접은 2026년 10월 31일이다. 다음 할 일은 학교생활기록부 대체서식 작성. "
+            "수영이는 청소년인권 활동 이력이 있고 그게 서류·면접의 핵심 재료다.\n"
+            "시험 얘기를 할 땐 도덕 점수를 실력 부족으로 말하지 마라. 이미 끝난 시험이니 '공부해라'가 아니라 "
+            "수시 준비를 같이 하는 쪽으로 대화해라.\n\n"
+            "[지금까지 쌓인 기록]\n" + self._live_context())
+        return self._json({"token": tok, "model": LIVE_MODEL, "system": system, "voices": LIVE_VOICES})
 
     def _reparse_row(self, c, qid):
         r = c.execute("SELECT subject,answer_text FROM questions WHERE id=?", (qid,)).fetchone()

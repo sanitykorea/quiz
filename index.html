@@ -214,7 +214,7 @@ function persist(){
     const st={ day:ymd(new Date()), theme:S.theme, sleepDone:S.sleepDone, wakeDone:S.wakeDone,
       mins:S.mins, nc2Pick:S.nc2Pick, towerUnit:S.towerUnit, deckIdx:S.deckIdx, known:S.known,
       checklist:S.checklist, stance:S.stance, muted:S.muted, messages:(S.messages||[]).slice(-40),
-      eyeCfg: S.eye ? {mouthX:S.eye.mouthX, mouthY:S.eye.mouthY, voiceURI:S.eye.voiceURI, pitch:S.eye.pitch, rate:S.eye.rate, interval:S.eye.interval, useScreen:S.eye.useScreen, muteTTS:S.eye.muteTTS, live:S.eye.live} : undefined,
+      eyeCfg: S.eye ? {mouthX:S.eye.mouthX, mouthY:S.eye.mouthY, voiceURI:S.eye.voiceURI, pitch:S.eye.pitch, rate:S.eye.rate, interval:S.eye.interval, useScreen:S.eye.useScreen, muteTTS:S.eye.muteTTS, live:S.eye.live, voice:S.eye.voice} : undefined,
       cq: (S.cq && !S.cq.loading) ? {subject:S.cq.subject, topic:S.cq.topic, items:S.cq.items, idx:S.cq.idx, pick:S.cq.pick, score:S.cq.score, answered:S.cq.answered, fromWrong:S.cq.fromWrong, showImg:S.cq.showImg} : undefined,
       examItems: S.examItems || undefined,
       reviewSkip: Object.keys(S.reviewSkip||{}).length?S.reviewSkip:undefined,
@@ -2734,12 +2734,15 @@ function reattachEyeMedia(){
   const sc=document.getElementById('eyeScr');
   if(sc&&EYE.screen&&sc.srcObject!==EYE.screen){ sc.srcObject=EYE.screen; sc.play().catch(()=>{}); }
 }
-function eyeInit(){ if(!S.eye) S.eye={on:false,startAt:0,focusedSec:0,distract:0,checks:0,status:'',msg:'',log:[],useScreen:false,interval:60,busy:false,listening:false,muteTTS:false,input:'',pose:'stand',always:true,rate:1.0,pitch:0.85,voiceURI:'',live:true,liveState:''}; return S.eye; }
+function eyeInit(){ if(!S.eye) S.eye={on:false,startAt:0,focusedSec:0,distract:0,checks:0,status:'',msg:'',log:[],useScreen:false,interval:60,busy:false,listening:false,muteTTS:false,input:'',pose:'stand',always:true,rate:1.0,pitch:0.85,voiceURI:'',live:true,liveState:'',voice:'Puck',voiceAll:false}; return S.eye; }
 
 // ========== Gemini Live (실시간 음성 대화) ==========
 // 마이크 오디오를 그대로 스트리밍하고 음성으로 답을 받는다. STT→텍스트→TTS 왕복이 없어 훨씬 자연스럽고 빠름.
 // API 키는 서버에만 있고, 브라우저는 /api/live/token으로 받은 임시 토큰만 쓴다.
-const LIVE={ws:null, ctx:null, out:null, node:null, stream:null, head:0, srcs:[], gen:0, connecting:false};
+const LIVE={ws:null, ctx:null, out:null, node:null, stream:null, head:0, srcs:[], gen:0, connecting:false, voices:null};
+// 음색 설명은 Google이 공개한 대표 8종 기준. 나머지는 이름만 두고 직접 들어보고 고르면 된다.
+const VOICE_NOTE={Puck:'경쾌함',Charon:'차분함',Kore:'단단함',Fenrir:'활기참',Aoede:'산뜻함',Leda:'밝음',Orus:'단호함',Zephyr:'가벼움'};
+const VOICES_FALLBACK=['Puck','Charon','Kore','Fenrir','Aoede','Leda','Orus','Zephyr'];
 const LIVE_WORKLET=`class P extends AudioWorkletProcessor{
   process(inp){ const ch=inp[0]&&inp[0][0]; if(ch){ const b=new Int16Array(ch.length);
     for(let i=0;i<ch.length;i++){ const s=Math.max(-1,Math.min(1,ch[i])); b[i]=s<0?s*0x8000:s*0x7fff; }
@@ -2762,13 +2765,15 @@ async function liveConnect(){
     if(LIVE.ctx.state==='suspended') await LIVE.ctx.resume();
     LIVE.out=new (window.AudioContext||window.webkitAudioContext)({sampleRate:24000});
     if(LIVE.out.state==='suspended') await LIVE.out.resume();
+    if(t.voices&&t.voices.length) LIVE.voices=t.voices;
     const ws=new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(t.token)}`);
     LIVE.ws=ws; ws.binaryType='arraybuffer';
     const ready=new Promise((res,rej)=>{ ws.onopen=()=>{
         ws.send(JSON.stringify({setup:{model:'models/'+(t.model||'gemini-3.1-flash-live-preview'),
           generationConfig:{responseModalities:['AUDIO'],
-            speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Puck'}},languageCode:'ko-KR'}},
-          systemInstruction:{parts:[{text:LIVE_PROMPT()}]},
+            speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:e.voice||'Puck'}},languageCode:'ko-KR'}},
+          // 서버가 DB에서 뽑아 만든 학습 맥락(시험 결과·과목별 정답률·오답 현황 등)을 그대로 쓴다
+          systemInstruction:{parts:[{text:(t.system||LIVE_PROMPT())+LIVE_NOW()}]},
           inputAudioTranscription:{}, outputAudioTranscription:{}}}));
       };
       ws.onerror=()=>rej(new Error('연결 실패'));
@@ -2788,11 +2793,18 @@ async function liveConnect(){
     return false;
   }
 }
-function LIVE_PROMPT(){
-  const e=eyeInit();
-  return `너는 '루하', 수영이의 스터디 메이트야. 수영이는 고졸 검정고시를 막 끝내고 성공회대 수시를 준비하고 있어.
-말투는 반말, 친구처럼 따뜻하고 짧게. 한 번에 1~2문장만. 설교하지 말고, 잔소리도 짧게.
-지금 ${Math.round((e.focusedSec||0)/60)}분째 같이 있는 중이야. 한국어로만 말해.`;
+function LIVE_PROMPT(){   // 서버 컨텍스트를 못 받았을 때만 쓰는 최소 프롬프트
+  return `너는 '루하', 수영이의 스터디 메이트야. 반말로 짧게(1~2문장) 따뜻하게 말해. 한국어로만.`;
+}
+// 서버가 모르는 '지금 이 순간'만 클라이언트가 덧붙인다
+function LIVE_NOW(){
+  const e=eyeInit(); const n=new Date();
+  let s=`\n\n[지금]\n오늘은 ${n.getFullYear()}년 ${n.getMonth()+1}월 ${n.getDate()}일, ${n.getHours()}시 ${n.getMinutes()}분이야.`;
+  if(e.focusedSec) s+=` 이번 세션에서 ${Math.round(e.focusedSec/60)}분째 같이 있는 중.`;
+  if(e.activity) s+=` 화면에 보이는 상황은 '${e.activity}'.`;
+  const recent=(e.log||[]).slice(-6).map(x=>`${x.role==='user'?'수영':'나'}: ${x.text}`).join('\n');
+  if(recent) s+=`\n\n[조금 전 나눈 대화]\n${recent}`;
+  return s;
 }
 async function liveMic(){
   const blob=URL.createObjectURL(new Blob([LIVE_WORKLET],{type:'application/javascript'}));
@@ -3114,6 +3126,17 @@ function vEye(){
           ${e.liveState?`<span style="font-size:12px;font-weight:700;color:${/실패/.test(e.liveState)?'var(--danger-b)':(e.liveState==='연결됨'?'var(--accent-b)':'var(--text3)')};">${h(e.liveState)}</span>`:''}
           <button data-act="eyetest" style="padding:8px 13px;border-radius:9px;border:1px solid var(--pinkbd);background:var(--tintP);color:var(--pink);font-size:12.5px;font-weight:700;cursor:pointer;">미리 듣기</button></div>
         <div style="font-size:11.5px;color:var(--text3);margin-top:7px;line-height:1.6;">켜면 말이 끝나기를 기다리지 않고 <b>바로 대답</b>해요. 중간에 말을 끊어도 되고, 목소리도 훨씬 자연스러워요.<br>끄면 기기 내장 음성으로 대신해요.</div>
+        ${e.live?`<div style="margin-top:11px;padding-top:11px;border-top:1px solid var(--border);">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px;">
+            <span style="font-size:12.5px;font-weight:700;color:var(--text2);">🎙 루하 목소리</span>
+            <span style="font-size:11.5px;color:var(--text3);">고르면 바로 그 목소리로 인사해요</span></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${(LIVE.voices||VOICES_FALLBACK).slice(0, e.voiceAll?99:8).map(v=>{
+              const on=(e.voice||'Puck')===v;
+              return `<button data-act="eyevoice" data-arg="${v}" style="padding:7px 11px;border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid ${on?'var(--gold-d)':'var(--border)'};background:${on?'rgba(255,224,102,.18)':'var(--panel)'};color:${on?'var(--gold)':'var(--text2)'};">${v}${VOICE_NOTE[v]?`<span style="opacity:.65;font-weight:600;"> · ${VOICE_NOTE[v]}</span>`:''}</button>`;
+            }).join('')}
+            ${(LIVE.voices||VOICES_FALLBACK).length>8?`<button data-act="eyevoiceall" style="padding:7px 11px;border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;border:1px dashed var(--border);background:transparent;color:var(--text3);">${e.voiceAll?'접기':`+${(LIVE.voices||VOICES_FALLBACK).length-8}개 더`}</button>`:''}
+          </div></div>`:''}
       </div>
       ${e.live?'':`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
         <span style="font-size:12.5px;color:var(--text3);">🎙 목소리</span>
@@ -3751,11 +3774,20 @@ const ACTS = {
   piphide:()=>{ eyeInit().pipHidden=true; render(); },
   avatarclear:async()=>{ const e=eyeInit(); e.avatarImg=''; IMG.ready=false; IMG.el=null; await api('/api/avatar',{method:'POST',...jbody({data:''})}); render(); },
   eyepose:p=>setPose(p, ({sit:'앉았어~',stand:'일어섰어!',wave:'안녕! 👋',stretch:'으으- 시원해',cheer:'수영아 화이팅! 💪',dance:'신난다! 🎵'})[p]),
-  eyetest:()=>{ if(!liveSend('목소리 확인 중이야. 짧게 인사해줘.')) speak('안녕 수영아, 나는 루하야. 오늘도 같이 공부하자!'); },
+  eyetest:async()=>{ const e=eyeInit();
+    if(liveSend('목소리 확인 중이야. 짧게 인사해줘.')) return;
+    if(e.live && await liveConnect()){ liveSend('목소리 확인 중이야. 짧게 인사해줘.'); return; }
+    speak('안녕 수영아, 나는 루하야. 오늘도 같이 공부하자!'); },
   eyelive:()=>{ const e=eyeInit(); e.live=!e.live; e.liveState='';
     if(!e.live){ liveStop(); if(e.on&&e.always&&!e.muteMic) startRec(); }
     else if(e.on){ stopRec(); liveConnect(); }
     render(); },
+  // 목소리는 세션 시작 때 정해지므로, 바꾸면 세션을 새로 연결한다
+  eyevoice:async v=>{ const e=eyeInit(); if(e.voice===v) return;
+    e.voice=v; render();
+    if(liveOn()||LIVE.connecting){ liveStop(); if(await liveConnect()) liveSend(`목소리를 바꿨어. 짧게 인사해줘.`); }
+  },
+  eyevoiceall:()=>{ const e=eyeInit(); e.voiceAll=!e.voiceAll; render(); },
   eyedance:()=>{ const e=eyeInit(); e.dancing=true; avatarLoop(); clearTimeout(EYE.danceT); EYE.danceT=setTimeout(()=>{e.dancing=false;render();},8000); render(); }, eyemute:()=>{ const e=eyeInit(); e.muteTTS=!e.muteTTS; if(e.muteTTS)try{speechSynthesis.cancel();}catch(x){} render(); },
   finaldodeok:()=>{ S.tab='tower'; S.towerSubject='도덕'; S.dodeokMode='blank';
     (S.dodeok?Promise.resolve():loadDodeok()).then(()=>{ dodeokStart('blank'); render(); }); },

@@ -11,7 +11,7 @@
 실행:  python3 server.py          → http://127.0.0.1:8787
 자체검사: python3 server.py --selftest   / 기출 재동기화: python3 server.py --sync-questions
 """
-import http.server, socketserver, sqlite3, json, hashlib, secrets, os, time, urllib.request, urllib.error, urllib.parse, re, base64
+import http.server, socketserver, sqlite3, json, hashlib, secrets, os, time, urllib.request, urllib.error, urllib.parse, re, base64, datetime
 from http import cookies
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -757,6 +757,24 @@ def _gemini(system, messages, max_tokens, key):
 def ai_complete(system, messages, max_tokens=700):
     gk = gemini_key()
     return _gemini(system, messages, max_tokens, gk) if gk else None
+
+LIVE_MODEL = os.environ.get("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
+
+def live_token():
+    """Live API용 임시 토큰 발급. API 키는 서버에만 두고 브라우저엔 30분짜리 토큰만 내보낸다."""
+    key = gemini_key()
+    if not key:
+        return None
+    now = datetime.datetime.now(datetime.timezone.utc)
+    body = json.dumps({
+        "uses": 1,
+        "expireTime": (now + datetime.timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "newSessionExpireTime": (now + datetime.timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }).encode()
+    req = urllib.request.Request("https://generativelanguage.googleapis.com/v1beta/auth_tokens",
+                                 data=body, headers={"x-goog-api-key": key, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read().decode())["name"]
 
 def ai_vision(prompt, images_png, max_tokens=2000, as_json=True):
     """이미지(PNG 바이트 리스트) + 프롬프트 → Gemini 비전. JSON 문자열 반환."""
@@ -2183,6 +2201,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._result_letter(b)
+        if p == "/api/live/token":
+            if self._guard():
+                return
+            return self._live_token()
         if p == "/api/ai":
             if self._guard():
                 return
@@ -2670,6 +2692,15 @@ class H(http.server.BaseHTTPRequestHandler):
             self._reparse_row(c, rid)
         c.commit(); c.close()
         return self._json({"ok": True})
+
+    def _live_token(self):
+        try:
+            tok = live_token()
+        except Exception as e:
+            return self._json({"error": "token_failed", "detail": str(e)[:200]}, 502)
+        if not tok:
+            return self._json({"error": "no-ai"}, 503)
+        return self._json({"token": tok, "model": LIVE_MODEL})
 
     def _reparse_row(self, c, qid):
         r = c.execute("SELECT subject,answer_text FROM questions WHERE id=?", (qid,)).fetchone()

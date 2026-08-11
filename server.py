@@ -2708,8 +2708,11 @@ class H(http.server.BaseHTTPRequestHandler):
                 per = ""
                 try:
                     d = json.loads(r["json"] or "{}")
-                    per = ", ".join(f'{k} {v.get("score")}점({v.get("correct")}/{v.get("total")})'
-                                    for k, v in d.items() if isinstance(v, dict))
+                    def one(k, v):
+                        s = f'{k} {v.get("score")}점({v.get("correct")}/{v.get("total")})'
+                        wl = v.get("wrongList") or []
+                        return s + (f'[틀린 문항 {",".join(map(str, wl))}]' if wl else '')
+                    per = ", ".join(one(k, v) for k, v in d.items() if isinstance(v, dict))
                 except Exception:
                     pass
                 lines.append(f'[실전 채점] {r["date"]} 평균 {r["avg"]}점' + (f' — {per}' if per else ''))
@@ -2749,16 +2752,16 @@ class H(http.server.BaseHTTPRequestHandler):
             "말투: 반말, 친구처럼 따뜻하게. 한 번에 1~2문장만. 음성이니 마크다운·이모지 쓰지 마. "
             "설교하지 말고 잔소리도 짧게. 모르는 건 아는 척하지 말고 모른다고 해.\n\n"
             "[수영이에 대해]\n"
-            "2026년 8월 11일 고졸 검정고시를 봤고 이미 끝났다. 영어는 면제(100점 확정).\n"
-            "결과는 평균 96.0점 — 국어·수학·사회·과학·한국사 전 과목 만점, 도덕만 72점. "
-            "도덕은 실력 문제가 아니라 답안을 한 칸 밀려 썼기 때문이다. 작년 평균 85.00에서 크게 올랐다.\n"
+            "2026년 8월 11일 고졸 검정고시를 봤고 이미 끝났다. 영어는 면제(100점 확정). "
+            "작년 평균은 85.00이었다.\n"
+            "이번 점수는 아래 [지금까지 쌓인 기록]의 실전 채점 값을 그대로 써라. "
+            "기록에 없는 점수를 지어내지 말고, 어느 과목이 몇 점이었는지 헷갈리면 모른다고 해라.\n"
             "지금은 성공회대학교 2027학년도 수시를 준비하는 단계다. "
             "검정고시 환산 4등급이라 교과성적전형은 커트(3등급)에 못 미치고, 열린인재전형이 유일한 경로다. "
             "열린인재는 서류 60%(학업수행 35·자기주도성 25·공동체역량 25·성실성 15) + 면접 40%이고, "
             "면접은 2026년 10월 31일이다. 다음 할 일은 학교생활기록부 대체서식 작성. "
             "수영이는 청소년인권 활동 이력이 있고 그게 서류·면접의 핵심 재료다.\n"
-            "시험 얘기를 할 땐 도덕 점수를 실력 부족으로 말하지 마라. 이미 끝난 시험이니 '공부해라'가 아니라 "
-            "수시 준비를 같이 하는 쪽으로 대화해라.\n\n"
+            "이미 끝난 시험이니 '공부해라'가 아니라 수시 준비를 같이 하는 쪽으로 대화해라.\n\n"
             "[지금까지 쌓인 기록]\n" + self._live_context())
         return self._json({"token": tok, "model": LIVE_MODEL, "system": system, "voices": LIVE_VOICES})
 

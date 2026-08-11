@@ -248,6 +248,7 @@ def init_db():
 
 # ---- 정답표 파서: '○○ 정답표' 제목 앞뒤 '런'을 그 과목 정답으로 배정(과목/문항수 무관) ----
 _CDIGIT = {c: i + 1 for i, c in enumerate("①②③④⑤")}
+KEY_SUBJECTS = ("국어", "수학", "영어", "사회", "과학", "한국사", "도덕")
 
 def parse_key(answer_text, subject):
     if not answer_text:
@@ -2393,6 +2394,17 @@ class H(http.server.BaseHTTPRequestHandler):
             else:   # 과목 미지정 = 회차 전체 정답표 → 해당 회차 모든 과목 행에 반영
                 targets = [r["id"] for r in c.execute(
                     "SELECT id FROM questions WHERE year=? AND exam_round=? AND level=?", (year, rnd, level))]
+                if not targets:
+                    # 문제 PDF를 아직 안 올린 회차(예: 방금 치른 시험) → 정답표에 등장하는 과목으로 행을 새로 만든다.
+                    # 예전엔 여기서 조용히 0건 처리되고 ok:true가 나가 "정답키가 없어요"만 뜨는 원인이었음
+                    seen = []
+                    for m in re.finditer(r'([가-힣]{2,4})\s*정답표', text):
+                        s = m.group(1)
+                        if s in KEY_SUBJECTS and s not in seen:
+                            seen.append(s)
+                    targets = [c.execute(
+                        "INSERT INTO questions(year,exam_round,level,subject,answer_text) VALUES(?,?,?,?,?)",
+                        (year, rnd, level, s, text)).lastrowid for s in seen]
             for tid in targets:
                 c.execute("UPDATE questions SET answer_text=? WHERE id=?", (text, tid))
                 self._reparse_row(c, tid)   # 정답키 재생성
@@ -2400,6 +2412,10 @@ class H(http.server.BaseHTTPRequestHandler):
             nkeys = c.execute("SELECT COUNT(*) n FROM qkey WHERE question_id IN (%s)" %
                               (",".join("?" * len(targets)) or "NULL"), targets).fetchone()["n"] if targets else 0
             c.commit(); c.close()
+            if not nkeys:   # 성공했다고 표시해놓고 실제론 아무것도 안 들어가던 문제 → 원인을 알려준다
+                return self._json({"error": "no_key_parsed", "kind": kind, "chars": len(text),
+                                   "detail": ("PDF에서 '○○ 정답표' 형식을 못 찾았어요. 스캔 이미지 PDF면 텍스트가 없어 파싱이 안 돼요."
+                                              if not targets else "과목 행은 만들었지만 문항-정답 쌍을 못 읽었어요.")}, 422)
             return self._json({"ok": True, "kind": kind, "updated": len(targets), "chars": len(text), "keys": nkeys})
         nkeys = c.execute("SELECT COUNT(*) n FROM qkey WHERE question_id=?", (qid,)).fetchone()["n"]
         c.commit(); c.close()

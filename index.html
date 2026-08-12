@@ -163,7 +163,7 @@ const S = {
   examItems:null, examReveal:null, examLetter:null, examLetterLoading:false,
   examSel:{}, examKeys:null, examInputs:{}, examScore:null, examResults:[], examMsg:'',
   history:[],
-  towerSubject:'도덕', dodeok:null, towerConcept:{},
+  towerSubject:'한국사', dodeok:null, towerConcept:{}, showArch:false,
   dodeokMode:'read', dq:null, dodeokExam:null,
   recommend:null, mock:null, askImg:{busy:false,text:'',q:''}, similar:null,
   today:null, checkExam:{}, cq:null, eye:null, focusHist:null,
@@ -469,7 +469,15 @@ function toast(text, kind){
 }
 function quizNav(d){ const n=S.quizItems.length; if(!n) return; S.quizIdx=(S.quizIdx+d+n)%n; persist(); render(); scrollTop(); }
 function scrollTop(){ const el=document.getElementById('quizCard'); if(el) el.scrollIntoView({block:'start',behavior:'smooth'}); }
-async function loadWrong(){ const r=await api('/api/wrong'); if(!r.ok&&!r.wrong) { render(); return; } S.wrongData=r; S.wrongAnalysis=''; render(); }
+async function loadWrong(){ const r=await api('/api/wrong'); if(!r.ok&&!r.wrong) { render(); return; } S.wrongRaw=r; applyArch(); S.wrongAnalysis=''; render(); }
+// 보관한 과목을 데이터 들어오는 지점에서 한 번만 거른다 → 오답 목록·취약 유형·처방 등 하위 카드가 전부 따라온다
+function applyArch(){
+  const r=S.wrongRaw; if(!r){ S.wrongData=null; return; }
+  if(S.showArch){ S.wrongData=r; return; }
+  const wrong=(r.wrong||[]).filter(w=>!archived(w.subject));
+  const by={}; Object.entries(r.by_subject||{}).forEach(([s,n])=>{ if(!archived(s)) by[s]=n; });
+  S.wrongData=Object.assign({},r,{wrong, by_subject:by, repeat:wrong.filter(w=>w.repeat).length});
+}
 async function reviewWrong(qid, subject, year, round, qnum){
   S.tab='bank'; S.qFilter={subject, year, exam_round:round};
   if(!S.qFacets.subject.length) await loadFacets();
@@ -589,7 +597,9 @@ function gate(){
 
 function app(){
   const rbtn=on=>`display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:5px 9px;border-radius:8px;cursor:pointer;border:1px solid ${on?'rgba(46,230,166,.5)':'var(--border)'};background:${on?'rgba(20,117,92,.18)':'transparent'};color:${on?'var(--text3)':'var(--text)'};text-decoration:${on?'line-through':'none'};`;
-  const tabs=[['camp','⛺','베이스캠프'],['cram','⚡','벼락치기'],['tower','⚔️','수련의 탑'],['guild','📜','전직소'],['summon','🧚','수호령 소환'],['eye','🔮','수호령의 눈'],['bank','📚','문제은행'],['exam','🎯','실전 채점'],['wrong','📕','오답노트']];
+  // 시험이 끝나 쓸 일이 없는 탭(벼락치기)은 보관함을 펼칠 때만 나온다
+  const tabs=[['camp','⛺','베이스캠프'],['guild','📜','전직소'],['tower','⚔️','수련의 탑'],['bank','📚','문제은행'],['wrong','📕','오답노트'],['eye','🔮','수호령의 눈'],['summon','🧚','수호령 소환'],['exam','🎯','실전 채점']]
+    .concat(S.showArch?[['cram','⚡','벼락치기']]:[]);
   if(S.isAdmin) tabs.push(['admin','🛠','관리소']);
   const nav=tabs.map(([id,ic,lb])=>`<button data-act="tab" data-arg="${id}" style="position:relative;background:none;border:none;padding:14px 16px 13px;cursor:pointer;white-space:nowrap;color:${id===S.tab?'var(--gold)':'var(--text2)'};font-size:15px;font-weight:700;transition:color .15s;"><span style="margin-right:6px;">${ic}</span>${lb}<div style="position:absolute;left:12px;right:12px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--accent-b);box-shadow:0 0 12px var(--accent-b);opacity:${id===S.tab?1:0};transition:opacity .2s;"></div></button>`).join('');
   const view = {camp:vCamp,cram:vCram,tower:vTower,guild:vGuild,summon:vSummon,eye:vEye,bank:vBank,exam:vExam,wrong:vWrong,admin:vAdmin}[S.tab]();
@@ -656,6 +666,16 @@ const CRAM_PHASES=[
    note:'여기까지 하면 빈틈이 거의 없어요. 같은 순서로 마무리.'},
 ];
 const CRAM_SUBJ=['국어','수학','사회','과학','한국사','도덕'];   // 영어는 면제
+
+// ========== 보관함 ==========
+// 시험이 끝나 더 볼 일이 없는 과목은 접어둔다. 지우는 게 아니라 숨기는 것 — 보관함을 펼치면 그대로 다 있다.
+const KEEP_SUBJ=['한국사'];                                        // 지금 보는 과목
+const ARCH_SUBJ=['국어','수학','사회','과학','도덕','영어'];        // 보관한 과목
+function subjOn(){ return S.showArch ? KEEP_SUBJ.concat(ARCH_SUBJ) : KEEP_SUBJ.slice(); }
+function archived(s){ return !S.showArch && ARCH_SUBJ.includes(s); }
+function archChip(){
+  return `<button data-act="arch" style="padding:7px 13px;border-radius:999px;font-size:12.5px;font-weight:700;cursor:pointer;border:1px dashed var(--border);background:transparent;color:var(--text3);">${S.showArch?'🗄 보관함 접기':`🗄 보관함 (${ARCH_SUBJ.length}과목)`}</button>`;
+}
 function cramKey(y,r,s,step){ return `${y}#${r}#${s}#${step}`; }
 // ---- 인앱 강의 영상 ----
 async function cramPlay(y,r,s){
@@ -1592,7 +1612,7 @@ function weakspotCard(){
   }
   if(!w) return `<div style="border:1px dashed var(--orangebd);border-radius:14px;padding:15px;background:var(--tintO);margin-bottom:18px;">
     <div style="font-weight:800;color:var(--orange);margin-bottom:5px;">🔍 반복 취약 유형 분석</div>
-    <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;">틀린 문제들을 보고 <b>반복해서 틀리는 개념·유형</b>(예: 과학의 '충격량', 한국사의 '통일신라')을 찾아, 전체 기출에서 같은 유형만 모아 풀어볼 수 있어요.</div>
+    <div style="font-size:12.5px;color:var(--text2);margin-bottom:10px;">틀린 문제들을 보고 <b>반복해서 틀리는 개념·유형</b>(예: 한국사의 '통일신라', '일제강점기')을 찾아, 전체 기출에서 같은 유형만 모아 풀어볼 수 있어요.</div>
     <button data-act="weakspots" style="padding:11px 18px;border-radius:12px;border:1px solid var(--orangebd);background:var(--tintO);color:var(--orange);font-weight:800;font-size:14px;cursor:pointer;">🔍 취약 유형 분석받기</button></div>`;
   if(w.loading) return `<div style="margin-bottom:18px;font-size:13px;color:var(--orange);display:flex;align-items:center;gap:8px;"><span style="animation:blink 1s infinite;">🧚</span> 수호령이 반복되는 취약 유형을 분석하는 중...</div>`;
   if(w.error==='empty') return `<div style="border:1px solid var(--border);border-radius:14px;padding:14px 16px;background:var(--panel);margin-bottom:18px;font-size:13.5px;color:var(--text2);">🔍 아직 분석하기엔 오답이 적어요. 더 풀고 나서 다시 시도해보세요.</div>`;
@@ -1610,7 +1630,7 @@ function weakspotCard(){
 }
 function conceptPanel(){
   const subj=S.towerSubject;
-  const bar=SUBJS.map(s=>`<button data-act="towersub" data-arg="${s}" style="padding:8px 14px;border-radius:999px;font-size:13.5px;font-weight:700;cursor:pointer;border:1px solid ${s===subj?'var(--orange)':'var(--border)'};background:${s===subj?'var(--tintO)':'var(--panel2)'};color:${s===subj?'var(--orange)':'var(--text2)'};">${s}</button>`).join('');
+  const bar=subjOn().map(s=>`<button data-act="towersub" data-arg="${s}" style="padding:8px 14px;border-radius:999px;font-size:13.5px;font-weight:700;cursor:pointer;border:1px solid ${s===subj?'var(--orange)':'var(--border)'};background:${s===subj?'var(--tintO)':'var(--panel2)'};color:${s===subj?'var(--orange)':'var(--text2)'};">${s}</button>`).join('')+archChip();
   let body;
   if(subj==='도덕'){
     const modes=[['read','📖 개념노트'],['blank','✏️ 빈칸 채우기'],['quiz','🎯 용어 퀴즈'],['ox','⭕ OX 퀴즈']];
@@ -1729,13 +1749,16 @@ function vSummon(){
 }
 
 function vBank(){
-  const sel=(name,label)=>{const opts=['<option value="">'+label+' 전체</option>'].concat((S.qFacets[name]||[]).map(v=>`<option value="${h(v)}" ${S.qFilter[name]===v?'selected':''}>${h(v)}</option>`)).join('');
+  // 보관한 과목은 목록에서 빼되, 보관함을 펼치면 그대로 보인다
+  const sel=(name,label)=>{const src=(S.qFacets[name]||[]).filter(v=>name!=='subject'||!archived(v));
+    const opts=['<option value="">'+label+' 전체</option>'].concat(src.map(v=>`<option value="${h(v)}" ${S.qFilter[name]===v?'selected':''}>${h(v)}</option>`)).join('');
     return `<select data-filter="${name}" style="padding:9px 12px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:14px;">${opts}</select>`;};
   const q=S.qCurrent;
   const term=(S.bankSearch||'').trim().toLowerCase();
   let shown = S.onlyNew ? S.qList.filter(x=>!x.solved) : S.qList;
+  shown = shown.filter(x=>!archived(x.subject));            // 보관한 과목은 목록에서 숨김
   if(term) shown = shown.filter(x=>`${x.subject} ${x.year} ${x.exam_round} ${x.level}`.toLowerCase().includes(term));
-  const newCnt = S.qList.filter(x=>!x.solved).length;
+  const newCnt = S.qList.filter(x=>!x.solved&&!archived(x.subject)).length;
   // 풀던 회차 이어서 하기
   const rb=S.resumeBank;
   const resume = (rb && (!q || q.id!==rb.qid)) ? `<div style="margin-top:12px;display:flex;gap:11px;align-items:center;flex-wrap:wrap;border:1px solid var(--gold-d);border-radius:13px;padding:12px 15px;background:rgba(255,224,102,.08);">
@@ -1986,13 +2009,13 @@ function vWrong(){
         <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">연결이 끊긴 것 같아요. 다시 시도해볼까요?</div>
         <button data-act="retrywrong" style="padding:10px 20px;border-radius:11px;border:1px solid rgba(46,230,166,.5);background:rgba(20,117,92,.2);color:var(--accent-b);font-weight:800;font-size:14px;cursor:pointer;">다시 시도</button></div>`
     : '<div style="color:var(--text3);">불러오는 중...</div>';
-  const subs=Object.entries(d.by_subject||{}).sort((a,b)=>b[1]-a[1]);
+  const subs=Object.entries(d.by_subject||{}).sort((a,b)=>b[1]-a[1]);   // d는 applyArch()가 이미 걸러둔 값
   const totalWrong=(d.wrong||[]).length;
   const fSubj=S.wrongSubjFilter;
-  const chips=subs.length?subs.map(([s,n])=>{
+  const chips=(subs.length?subs.map(([s,n])=>{
     const on=fSubj===s;
     return `<button data-act="wrongsubj" data-arg="${h(s)}" style="padding:10px 14px;border-radius:12px;border:1px solid ${on?'var(--danger-b)':'rgba(255,84,104,.4)'};background:${on?'rgba(255,84,104,.22)':'rgba(255,84,104,.08)'};display:flex;gap:10px;align-items:center;cursor:pointer;"><span style="font-weight:700;color:${on?'var(--danger-b)':'inherit'};">${h(s)}</span><span style="font-family:'Press Start 2P',monospace;font-size:12px;color:var(--danger-b);">${n}</span></button>`;
-  }).join(''):'<div style="color:var(--text3);">아직 틀린 문제가 없어요 🎉</div>';
+  }).join(''):'<div style="color:var(--text3);">한국사 오답이 없어요 🎉</div>')+archChip();
   const item=w=>`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid ${w.repeat?'rgba(255,140,40,.55)':'var(--border)'};border-radius:12px;padding:12px 14px;background:${w.repeat?'rgba(255,140,40,.08)':'var(--panel)'};">
       ${w.repeat?`<span style="font-size:11px;font-weight:800;color:#fff;background:linear-gradient(180deg,#ff9a3d,#e0603b);padding:3px 8px;border-radius:7px;">🔁 반복 ${w.wrong_count}회</span>`:''}
       <span style="font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold);">${h(w.subject)}</span>
@@ -2831,7 +2854,7 @@ function liveMsg(ev){
     if(p.inlineData&&p.inlineData.data) livePlay(p.inlineData.data);
   });
   if(sc.inputTranscription&&sc.inputTranscription.text){
-    e.heard=(e.heard||'')+sc.inputTranscription.text;
+    e.heard=(e.heard||'')+sc.inputTranscription.text; e.lastUserAt=Date.now();
   }
   if(sc.outputTranscription&&sc.outputTranscription.text){
     LIVE.say=(LIVE.say||'')+sc.outputTranscription.text;
@@ -3012,13 +3035,15 @@ async function eyeCheck(){
   e.status = r.studying?'집중':'딴짓';
   e.activity = r.activity||'';
   e.msg = r.message||'';
-  // Live가 붙어 있으면 관찰 결과를 넘겨 루하가 자기 목소리로 직접 반응하게 한다(목소리가 둘로 갈리지 않게)
+  // 대화 중이면 잔소리를 끼워넣지 않는다 — 말하던 흐름이 끊기고 엉뚱한 소리로 들림
+  const talking = Date.now()-(e.lastUserAt||0) < 90000 || EYE.speaking || LIVE.srcs.length;
   const viaLive = liveOn() && !e.muteTTS;
   if(!r.studying){
     e.distract++; toast('👁 '+(r.message||'집중!'),'bad');
-    if(viaLive) liveSend(`(관찰) 수영이가 지금 딴짓 중이야: ${e.activity||'집중이 흐트러졌어'}. 짧게 한마디 해줘.`);
+    if(talking){ /* 방금까지 대화 중 → 화면 표시만 하고 넘어감 */ }
+    else if(viaLive) liveSend(`(관찰) 수영이가 지금 딴짓 중이야: ${e.activity||'집중이 흐트러졌어'}. 짧게 한마디 해줘.`);
     else speak(r.message||'집중하자');
-  } else if(e.checks%3===1){
+  } else if(e.checks%3===1 && !talking){
     if(viaLive) liveSend(`(관찰) 수영이가 잘 집중하고 있어: ${e.activity||'공부 중'}. 짧게 응원해줘.`);
     else speak(r.message);
   }
@@ -3027,6 +3052,7 @@ async function eyeCheck(){
 }
 async function eyeSay(text){
   const e=eyeInit(); const msg=(text||e.input||'').trim(); if(!msg) return;
+  e.lastUserAt=Date.now();
   e.log.push({role:'user',text:msg}); e.input=''; e.busy=true;
   const hit=POSES.find(([re])=>re.test(msg));
   if(hit){ setPose(hit[1], hit[2]); }
@@ -3732,6 +3758,15 @@ const ACTS = {
   pick:arg=>{const[n,c]=arg.split(':').map(Number); S.picks[n]=c; render();},
   gradeall:()=>gradeAll(),
   towersub:s=>{ S.towerSubject=s; render(); if(s==='도덕'&&!S.dodeok) loadDodeok().then(render); },
+  arch:()=>{ S.showArch=!S.showArch; applyArch();
+    // 보관함을 접었는데 보관된 과목을 보고 있었다면 한국사로 되돌린다
+    if(!S.showArch){
+      if(archived(S.towerSubject)) S.towerSubject='한국사';
+      if(archived(S.wrongSubjFilter)) S.wrongSubjFilter='';
+      if(archived(S.qFilter.subject)) S.qFilter.subject='';
+      if(S.tab==='cram') S.tab='camp';
+    }
+    render(); },
   towerconcept:()=>towerConcept(),
   dodeokmode:m=>dodeokStart(m),
   dodeokreveal:()=>{ if(S.dq){S.dq.reveal=true;render();} },

@@ -985,6 +985,10 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._study_get(q.get("today", ""), q.get("weekStart", ""), q.get("periodStart", ""))
         if p == "/dodeok.json":
             return self._file(os.path.join(HERE, "dodeok.json"), "application/json; charset=utf-8")
+        if p == "/flight-sw.js":
+            return self._file(os.path.join(HERE, "flight-sw.js"), "application/javascript; charset=utf-8")
+        if p == "/flight-manifest.json":
+            return self._file(os.path.join(HERE, "flight-manifest.json"), "application/manifest+json; charset=utf-8")
         if p in ("/flight", "/flight.html"):
             return self._file(os.path.join(HERE, "flight.html"), "text/html; charset=utf-8")
         if p == "/manifest.json":

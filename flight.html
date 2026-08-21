@@ -6,6 +6,7 @@
 <meta name="color-scheme" content="dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>✈︎ 오프라인 비행 위치 · LJ241</title>
+<link rel="manifest" href="./flight-manifest.json">
 <style>
 :root{
   --bg:#070b14; --card:#0f172a; --card2:#131c31; --line:#1e2a44;
@@ -114,6 +115,7 @@ details summary::-webkit-details-marker{display:none}
   <div class="h">비행 설정</div>
   <div class="row" style="gap:8px">
     <button class="p" id="takeoffNow" style="flex:1">🛫 지금 이륙</button>
+    <button class="s" id="schedBtn">🕓 예정 시각</button>
     <button class="s" id="reset">초기화</button>
   </div>
   <div class="grid">
@@ -158,11 +160,20 @@ const ICN_KIX = [[37.469,126.451],[37.20,126.62],[36.80,126.96],[36.30,127.46],[
   [34.30,132.82],[34.35,133.72],[34.42,134.62],[34.427,135.244]];
 
 const PRESETS = {
-  "LJ241": {name:"LJ241 · 인천(ICN) → 오사카 간사이(KIX)", dep:"ICN", arr:"KIX",
-            path:ICN_KIX, tair:82, taxi:8},
-  "LJ242": {name:"LJ242 · 오사카 간사이(KIX) → 인천(ICN)", dep:"KIX", arr:"ICN",
-            path:ICN_KIX.slice().reverse(), tair:88, taxi:10}
+  "LJ241": {name:"LJ241 · 인천(ICN) → 간사이(KIX) 08:25", dep:"ICN", arr:"KIX",
+            path:ICN_KIX, tair:82, taxi:8, sched:"08:25", taxiOut:15},
+  "LJ236": {name:"LJ236 · 간사이(KIX) → 인천(ICN) 16:05", dep:"KIX", arr:"ICN",
+            path:ICN_KIX.slice().reverse(), tair:88, taxi:10, sched:"16:05", taxiOut:15}
 };
+// 예정 출발시각 + 지상활주 시간 → 이륙 예상 시각(오늘 기준, 이미 지났으면 내일)
+function schedT0(pr){
+  if(!pr.sched) return null;
+  const [h,m]=pr.sched.split(":").map(Number), d=new Date();
+  d.setHours(h,m,0,0);
+  let t=d.getTime()+(pr.taxiOut||15)*60000;
+  if(t < Date.now()-14*3600000) t+=86400000;
+  return t;
+}
 
 // 항로 주변 지명 (위도, 경도, 이름)
 const MARKS = [
@@ -523,8 +534,11 @@ $('takeoffNow').onclick=()=>{ S.t0=Date.now(); S.fixes=[]; save(); syncUI(); log
 $('t0').onchange=e=>{ S.t0=e.target.value?new Date(e.target.value).getTime():null; save(); tick(); };
 $('tair').onchange=e=>{ S.tair=Math.max(20,Math.min(1200,parseInt(e.target.value)||82)); save(); tick(); };
 $('taxi').onchange=e=>{ S.taxi=Math.max(0,parseInt(e.target.value)||0); save(); tick(); };
-$('preset').onchange=e=>{ S.preset=e.target.value; S.custom=null; S.tair=PRESETS[S.preset].tair;
-  S.taxi=PRESETS[S.preset].taxi; S.fixes=[]; buildPath(); save(); syncUI(); logFix(""); tick(); };
+$('preset').onchange=e=>{ S.preset=e.target.value; const pr=PRESETS[S.preset];
+  S.custom=null; S.tair=pr.tair; S.taxi=pr.taxi; S.fixes=[]; S.t0=schedT0(pr);
+  buildPath(); save(); syncUI(); logFix("예정 이륙 "+(S.t0?hhmm(S.t0):"--")+" 기준으로 설정"); tick(); };
+$('schedBtn').onclick=()=>{ const pr=PRESETS[S.preset]; S.t0=schedT0(pr); S.fixes=[]; save(); syncUI();
+  logFix("예정 출발 "+pr.sched+" + 활주 "+(pr.taxiOut||15)+"분 → 이륙 "+hhmm(S.t0)); tick(); };
 $('applyPath').onclick=()=>{
   const pts=($('custom').value||"").split("\n").map(l=>l.match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/))
     .filter(Boolean).map(m=>[parseFloat(m[1]),parseFloat(m[2])]);
@@ -535,10 +549,28 @@ $('reset').onclick=()=>{ if(!confirm("설정과 GPS 기록을 모두 지울까�
   S=Object.assign({},D); buildPath(); save(); syncUI(); logFix(""); tick(); };
 $('zoom').onclick=()=>{ zoomed=!zoomed; $('zoom').textContent=zoomed?"전체":"확대"; tick(); };
 
+/* 서비스워커 등록 — 한 번 열어두면 기내(오프라인)에서도 그대로 열린다 */
+(async()=>{
+  const sub=$('sub');
+  if(!('serviceWorker' in navigator) || location.protocol==='file:'){
+    sub.textContent="오프라인 추측항법 · GPS 잡히면 자동 보정"; return;
+  }
+  try{
+    await navigator.serviceWorker.register('./flight-sw.js', {scope:'./'});
+    await navigator.serviceWorker.ready;
+    const c=await caches.open('flight-offline-v1');
+    await c.addAll([location.pathname+location.search, './flight-sw.js', './flight-manifest.json']);
+    sub.innerHTML="<span class='dot ok'></span>오프라인 저장 완료 — 이제 인터넷 없어도 열립니다";
+  }catch(e){
+    sub.innerHTML="<span class='dot warn'></span>오프라인 저장 실패("+e.message+") — 읽기 목록에 추가해 두세요";
+  }
+})();
+
 /* 화면 꺼짐 방지(지원 기기) */
 (async()=>{ try{ if('wakeLock' in navigator) await navigator.wakeLock.request('screen'); }catch(e){} })();
 
-load(); syncUI(); logFix(""); tick();
+load(); if(!S.t0){ S.t0=schedT0(PRESETS[S.preset]); save(); }
+syncUI(); logFix(""); tick();
 setInterval(tick, 1000);
 window.addEventListener('resize',()=>tick());
 </script>

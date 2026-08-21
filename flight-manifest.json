@@ -1,0 +1,14 @@
+{
+ "name": "오프라인 비행 위치",
+ "short_name": "비행 위치",
+ "start_url": "./flight.html",
+ "scope": "./",
+ "display": "standalone",
+ "background_color": "#070b14",
+ "theme_color": "#070b14",
+ "orientation": "portrait",
+ "icons": [
+  { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+  { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+ ]
+}

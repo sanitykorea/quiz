@@ -142,9 +142,20 @@ details summary::-webkit-details-marker{display:none}
 </div>
 
 <div class="card">
+  <div class="h">비행 리포트 · 오차 채점</div>
+  <div class="log" id="report">비행이 끝나고 <b>🛬 착륙</b>을 누르면 예측이 얼마나 맞았는지 채점합니다.</div>
+  <div class="row" style="gap:8px;margin-top:10px">
+    <button class="sm" id="expBtn" style="flex:1">📤 기록 내보내기</button>
+    <button class="sm" id="impBtn">📥 불러오기</button>
+  </div>
+  <textarea id="expBox" rows="4" style="display:none;width:100%;margin-top:8px;font:11px/1.5 ui-monospace,monospace;background:#0a1223;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:9px"></textarea>
+</div>
+
+<div class="card">
   <div class="h">비행 설정</div>
   <div class="row" style="gap:8px">
     <button class="p" id="takeoffNow" style="flex:1">🛫 지금 이륙</button>
+    <button class="s" id="landNow">🛬 착륙</button>
     <button class="s" id="schedBtn">🕓 예정 시각</button>
     <button class="s" id="reset">초기화</button>
   </div>
@@ -299,7 +310,8 @@ function phiInv(x){                             // 진행률 → 시간비 (이�
 /* ---------- 상태 ---------- */
 const KEY='flight-offline-v1';
 const D={preset:"LJ241", t0:null, tair:82, taxi:8, alt:35000, fixes:[], custom:null,
-         mspd:null, malt:null};   // mspd/malt = 손으로 넣은 실측 속도·고도 {v,t}
+         mspd:null, malt:null,    // mspd/malt = 손으로 넣은 실측 속도·고도 {v,t}
+         tland:null, learn:{}};   // tland = 실제 착륙 시각, learn = 편명별 실측 비행시간
 let S=Object.assign({},D), P=makePath(ICN_KIX), zoomed=false, watchId=null;
 
 function load(){
@@ -314,10 +326,10 @@ function buildPath(){
 
 /* 최근 실측값(GPS fix + 손입력) 통합 — 12분 이내 값만 유효 */
 const FRESH=12*60000;
-function measured(now){
+function measured(now, fxArr){
   now=now||Date.now();
   let spd=null, alt=null, hdg=null, vs=null;
-  const fx=S.fixes;
+  const fx=fxArr||S.fixes;
   for(let i=fx.length-1;i>=0;i--){
     const f=fx[i];
     if(now-f.t>FRESH) break;
@@ -328,7 +340,7 @@ function measured(now){
   if(S.mspd && now-S.mspd.t<FRESH && (!spd || S.mspd.t>spd.t)) spd={v:S.mspd.v, t:S.mspd.t, src:"입력"};
   if(S.malt && now-S.malt.t<FRESH && (!alt || S.malt.t>alt.t)) alt={v:S.malt.v, t:S.malt.t, src:"입력"};
   // 승강률: 고도가 있는 최근 두 기록
-  const ah=S.fixes.filter(f=>f.alt!=null).slice(-2);
+  const ah=fx.filter(f=>f.alt!=null).slice(-2);
   if(ah.length===2 && now-ah[1].t<FRESH){
     const dt=(ah[1].t-ah[0].t)/60000;
     if(dt>0.5) vs=(ah[1].alt-ah[0].alt)*3.28084/dt;      // ft/min
@@ -337,17 +349,25 @@ function measured(now){
 }
 
 /* 보정: 기록된 위치들로 실제 비행시간(T) 재계산 */
-function calibrate(){
+function calibrate(fxAll){
   const pr=PRESETS[S.preset];
   let T=+S.tair||pr.tair, src="설정값";
-  const fx=S.fixes.filter(f=>f.s!=null);
+  const fx=(fxAll||S.fixes).filter(f=>f.s!=null);
   if(S.t0 && fx.length){
     const f=fx[fx.length-1];
     const te=(f.t-S.t0)/60000;                                  // 이륙 후 경과(분)
     const u=phiInv(Math.min(0.999, f.s/P.L));
     if(te>1 && u>0.02 && u<0.995){
-      let Tpos=te/u, gsMeas=null, how="";
-      const ms=measured(f.t);
+      // 최근 기록 3개로 각각 비행시간을 추정한 뒤 중앙값 — 튄 신호 하나에 끌려가지 않게
+      const cand=[];
+      for(const g of fx.slice(-3)){
+        if(g.xt>150) continue;                                  // 항로에서 크게 벗어난 신호는 제외
+        const tg=(g.t-S.t0)/60000, ug=phiInv(Math.min(0.999, g.s/P.L));
+        if(tg>1 && ug>0.02 && ug<0.995) cand.push(tg/ug);
+      }
+      cand.sort((a,b)=>a-b);
+      let Tpos=cand.length?cand[(cand.length-1)>>1]:te/u, gsMeas=null, how="";
+      const ms=measured(f.t, fxAll||S.fixes);
       // ① GPS나 손입력 대지속도가 있으면 그대로 사용(가장 정확)
       if(f.spd && f.spd>50){ gsMeas=f.spd*3.6; how="속도 실측"; }
       else if(ms.spd && ms.spd.v>180){ gsMeas=ms.spd.v; how="속도 "+ms.spd.src; }
@@ -355,6 +375,13 @@ function calibrate(){
       else if(fx.length>=2){
         const g=fx[fx.length-2], dt=(f.t-g.t)/3600000, ds=f.s-g.s;
         if(dt>0.04 && ds>5){ gsMeas=ds/dt; how="구간 속도"; }
+      }
+      // 속도 타당성 검사 — 여객기 순항 범위를 벗어나거나 위치 기반 추정과 크게 어긋나면 버린다
+      if(gsMeas!=null){
+        const gsModel=(P.L/(Tpos/60))*vprof(u)/AREA;
+        if(gsMeas<250 || gsMeas>1100 || gsMeas>gsModel*1.5 || gsMeas<gsModel*0.6){
+          gsMeas=null; how="";
+        }
       }
       if(gsMeas){
         const um=phiInv(Math.min(0.999, f.s/P.L));
@@ -378,8 +405,8 @@ function calibrate(){
 }
 
 /* 현재 스냅샷 */
-function snap(now){
-  const {T,src}=calibrate();
+function snap(now, fxAll){
+  const {T,src}=calibrate(fxAll);
   const t0=S.t0;
   if(!t0) return {pre:true, T, src, s:0, u:0, pos:P.wp[0], b:brg(P.wp[0],P.wp[1])};
   const te=(now-t0)/60000, u=Math.max(0,te/T);
@@ -437,13 +464,15 @@ function tick(){
     $('next').textContent="--";
     setTimerLink(Math.round(S.tair)+ +S.taxi);
   } else if(k.landed){
-    $('phase').textContent="착륙"; $('remain').innerHTML="도착";
+    const over=Math.round((now-k.land)/60000);
+    $('phase').textContent = S.tland ? "착륙" : "착륙 예정 경과";
+    $('remain').innerHTML = S.tland ? "도착" : "곧 도착<small> (예정 +"+over+"분)</small>";
     $('etaline').innerHTML="착륙 <b>"+hhmm(k.land)+"</b> · 게이트 예정 <b>"+hhmm(k.gate)+"</b>";
     $('prog').style.width="100%"; $('pct').textContent="100%";
     $('elapsed').textContent=dur(k.te); $('dist').textContent="0 km";
     $('gs').textContent="--"; $('alt').textContent="0 ft";
-    $('where').textContent=PRESETS[S.preset].arr+" 도착";
-    $('next').textContent="수고하셨습니다 🙌";
+    $('where').textContent=PRESETS[S.preset].arr+(S.tland?" 도착":" 접근 중 — 착륙하면 🛬 착륙을 눌러주세요");
+    $('next').textContent=S.tland?"수고하셨습니다 🙌":"착륙 시각을 기록하면 오차가 채점됩니다";
   } else {
     const rem=(k.T-k.te);
     const wait = k.te<0;                      // 아직 이륙 전(예정 시각 기준)
@@ -560,11 +589,15 @@ function draw(k){
 }
 
 /* ---------- 보정 입력 ---------- */
-function addFix(lat,lon,acc,tag,spd,hdg,alt){
+function addFix(lat,lon,acc,tag,spd,hdg,alt,when){
   const pr=P.project([lat,lon]);
-  if(pr.xt>200 && !confirm("항로에서 "+Math.round(pr.xt)+"km 떨어진 위치입니다. 그래도 적용할까요?")) return;
+  const auto=(tag==="자동");
+  if(pr.xt>200){
+    if(auto){ logFix("항로에서 "+Math.round(pr.xt)+"km 떨어진 신호 — 자동 보정에서 제외"); return; }
+    if(!confirm("항로에서 "+Math.round(pr.xt)+"km 떨어진 위치입니다. 그래도 적용할까요?")) return;
+  }
   const before=snap(Date.now());
-  S.fixes.push({t:Date.now(), lat, lon, acc:acc||null, s:pr.s, xt:pr.xt, tag:tag||"GPS",
+  S.fixes.push({t:when||Date.now(), lat, lon, acc:acc||null, s:pr.s, xt:pr.xt, tag:tag||"GPS",
                 spd:(spd&&spd>0)?spd:null, hdg:(hdg>=0)?hdg:null,
                 alt:(alt!=null&&isFinite(alt))?alt:null});
   if(S.fixes.length>40) S.fixes.shift();
@@ -574,6 +607,7 @@ function addFix(lat,lon,acc,tag,spd,hdg,alt){
   if(Math.abs(d)>=2 && !before.pre)
     $('diNote').innerHTML="<span class='dot warn'></span>도착 예정이 "+(d>0?"+":"")+d+
       "분 바뀌었습니다 — 위 버튼을 다시 눌러 타이머를 새로 맞추세요.";
+  renderReport();
   logFix("보정됨 · 진행 "+Math.round(100*pr.s/P.L)+"% · 항로이탈 "+Math.round(pr.xt)+"km · 도착 "+
          hhmm(after.land)+(before.pre?"":" ("+(d>0?"+":"")+d+"분)"));
   tick();
@@ -597,14 +631,14 @@ $('gps').onclick=()=>{
     if(!best||a<best.coords.accuracy) best=pos;
     $('gpsmsg').innerHTML="<span class='dot ok'></span>수신 중 ±"+Math.round(a)+"m"+
       (c.speed>10?" · "+Math.round(c.speed*3.6)+"km/h":"");
-    if(a<2000){ stopGps(); addFix(c.latitude,c.longitude,a,"GPS",c.speed,c.heading,c.altitude); }
+    if(a<2000){ stopGps(); addFix(c.latitude,c.longitude,a,"GPS",c.speed,c.heading,c.altitude,pos.timestamp); }
   }, err=>{
     $('gpsmsg').innerHTML="<span class='dot warn'></span>실패("+err.message+"). 위치 서비스 확인 또는 수동 좌표 입력.";
     stopGps();
   }, {enableHighAccuracy:true, timeout:90000, maximumAge:0});
   setTimeout(()=>{ if(watchId!==null){ stopGps();
     if(best) addFix(best.coords.latitude,best.coords.longitude,best.coords.accuracy,"GPS",
-                    best.coords.speed,best.coords.heading,best.coords.altitude);
+                    best.coords.speed,best.coords.heading,best.coords.altitude,best.timestamp);
     else $('gpsmsg').innerHTML="<span class='dot warn'></span>90초 안에 못 잡았습니다. 창가에서 다시 시도해 보세요."; } }, 92000);
 };
 function stopGps(){ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; }
@@ -628,7 +662,7 @@ $('gpslive').onclick=()=>{
     $('gpsmsg').innerHTML="<span class='dot ok'></span>"+hhmm(now)+" 수신 ±"+Math.round(a)+"m"+
       (c.speed>10?" · "+Math.round(c.speed*3.6)+"km/h":"");
     if(a<20000 && now-lastAuto>120000){          // 2분에 한 번까지만 기록
-      lastAuto=now; addFix(c.latitude,c.longitude,a,"자동",c.speed,c.heading,c.altitude);
+      lastAuto=now; addFix(c.latitude,c.longitude,a,"자동",c.speed,c.heading,c.altitude,pos.timestamp);
     }
   }, err=>{
     $('gpsmsg').innerHTML="<span class='dot warn'></span>수신 대기 중… ("+err.message+")";
@@ -683,6 +717,71 @@ $('applyIfe').onclick=()=>{
   tick();
 };
 
+/* ---------- 리포트: 각 보정 시점에서 '그때까지의 예측'이 얼마나 틀렸는지 재생 채점 ---------- */
+function report(){
+  const all=S.fixes.filter(f=>f.s!=null).sort((a,b)=>a.t-b.t);
+  if(!S.t0 || !all.length) return null;
+  const rows=all.map((f,i)=>{
+    const {T}=calibrate(all.slice(0,i));        // 이 기록을 보기 직전까지의 상태로 예측
+    const te=(f.t-S.t0)/60000, u=Math.max(0,te/T);
+    const sPred=P.L*phi(Math.min(1,u));
+    const gs=(P.L/(T/60))*vprof(Math.min(1,u))/AREA;
+    const dKm=sPred-f.s;                        // +면 실제보다 앞서 있다고 예측
+    return {t:f.t, te, dKm, dMin:gs>0?dKm/gs*60:0, landPred:S.t0+T*60000, tag:f.tag, xt:f.xt};
+  });
+  const abs=rows.map(r=>Math.abs(r.dKm));
+  return {rows, avg:abs.reduce((a,b)=>a+b,0)/abs.length, max:Math.max(...abs),
+          first:rows[0], last:rows[rows.length-1]};
+}
+function renderReport(){
+  const R=report(), el=$('report');
+  if(!R){ el.innerHTML="비행이 끝나고 <b>🛬 착륙</b>을 누르면 예측이 얼마나 맞았는지 채점합니다."; return; }
+  const real=S.tland? Math.round((S.tland-S.t0)/60000) : null;
+  const pr=PRESETS[S.preset];
+  let h="";
+  if(real!=null){
+    const err0=Math.round((R.first.landPred-S.tland)/60000);
+    const errL=Math.round((R.last.landPred-S.tland)/60000);
+    h+="<b style='color:var(--gold)'>실제 비행시간 "+real+"분</b> (최초 예상 "+Math.round(pr.tair)+"분, "+
+       (real-pr.tair>=0?"+":"")+(real-pr.tair)+"분)<br>"+
+       "도착 예측 오차: 첫 보정 때 "+(err0>0?"+":"")+err0+"분 → 마지막 보정 때 <b>"+(errL>0?"+":"")+errL+"분</b><br>";
+  }
+  h+="위치 예측 오차: 평균 <b>"+R.avg.toFixed(1)+"km</b> · 최대 "+R.max.toFixed(1)+"km ("+R.rows.length+"개 기록)<br><br>";
+  h+=R.rows.map(r=>"<b>"+hhmm(r.t)+"</b> T+"+Math.round(r.te)+"분 · 예측이 "+
+      (r.dKm>=0?"+":"")+r.dKm.toFixed(1)+"km ("+(r.dMin>=0?"+":"")+r.dMin.toFixed(1)+"분) "+
+      (Math.abs(r.dKm)<15?"<span style='color:var(--ok)'>양호</span>":"")+
+      (r.xt>20?" · 항로이탈 "+Math.round(r.xt)+"km":"")).join("<br>");
+  el.innerHTML=h;
+}
+
+/* ---------- 내보내기 / 불러오기 ---------- */
+$('expBtn').onclick=async()=>{
+  const box=$('expBox');
+  const R=report();
+  const dump={app:"flight-offline", ver:1, at:new Date().toISOString(),
+    preset:S.preset, route:PRESETS[S.preset].name, pathKm:Math.round(P.L),
+    t0:S.t0, tland:S.tland, tairSet:S.tair, taxi:S.taxi, learn:S.learn,
+    real:S.tland&&S.t0?Math.round((S.tland-S.t0)/60000):null,
+    summary:R?{avgKm:+R.avg.toFixed(2), maxKm:+R.max.toFixed(2), n:R.rows.length}:null,
+    fixes:S.fixes, replay:R?R.rows:null};
+  const txt=JSON.stringify(dump);
+  box.style.display="block"; box.value=txt; box.select();
+  try{ await navigator.clipboard.writeText(txt); logFix("기록을 클립보드에 복사했습니다 ("+txt.length+"자)"); }
+  catch(e){ logFix("아래 칸의 내용을 길게 눌러 복사하세요."); }
+};
+$('impBtn').onclick=()=>{
+  const box=$('expBox');
+  if(box.style.display==="none"||!box.value){ box.style.display="block"; box.value="";
+    box.placeholder="내보낸 JSON을 여기에 붙여넣고 다시 누르세요"; box.focus(); return; }
+  try{
+    const d=JSON.parse(box.value);
+    if(d.preset&&PRESETS[d.preset]) S.preset=d.preset;
+    S.t0=d.t0||null; S.tland=d.tland||null; S.fixes=d.fixes||[];
+    S.tair=d.tairSet||S.tair; S.taxi=d.taxi!=null?d.taxi:S.taxi; S.learn=d.learn||S.learn;
+    buildPath(); save(); syncUI(); renderReport(); logFix("기록을 불러왔습니다 ("+S.fixes.length+"개)"); tick();
+  }catch(e){ alert("JSON 형식이 아닙니다: "+e.message); }
+};
+
 /* ---------- 설정 ---------- */
 function toLocal(ts){ const d=new Date(ts-new Date().getTimezoneOffset()*60000); return d.toISOString().slice(0,16); }
 function syncUI(){
@@ -693,13 +792,26 @@ function syncUI(){
   $('tair').value=S.tair; $('taxi').value=S.taxi;
   $('custom').value=S.custom?S.custom.map(p=>p[0]+", "+p[1]).join("\n"):"";
 }
-$('takeoffNow').onclick=()=>{ S.t0=Date.now(); S.fixes=[]; save(); syncUI(); logFix("이륙 시각 "+hhmm(S.t0)+" 기록"); tick(); };
+$('takeoffNow').onclick=()=>{ S.t0=Date.now(); S.fixes=[]; S.tland=null; S.mspd=S.malt=null;
+  save(); syncUI(); logFix("이륙 시각 "+hhmm(S.t0)+" 기록"); tick(); };
+$('landNow').onclick=()=>{
+  if(!S.t0) return alert("이륙 시각이 없습니다.");
+  S.tland=Date.now();
+  const real=Math.round((S.tland-S.t0)/60000);
+  S.learn[S.preset]={tair:real, at:S.tland};        // 다음 비행 기본값으로 학습
+  save(); renderReport();
+  logFix("착륙 "+hhmm(S.tland)+" · 실제 비행시간 "+real+"분 (다음 비행 기본값으로 저장)");
+  tick();
+};
 $('t0').onchange=e=>{ S.t0=e.target.value?new Date(e.target.value).getTime():null; save(); tick(); };
 $('tair').onchange=e=>{ S.tair=Math.max(20,Math.min(1200,parseInt(e.target.value)||82)); save(); tick(); };
 $('taxi').onchange=e=>{ S.taxi=Math.max(0,parseInt(e.target.value)||0); save(); tick(); };
 $('preset').onchange=e=>{ S.preset=e.target.value; const pr=PRESETS[S.preset];
-  S.custom=null; S.tair=pr.tair; S.taxi=pr.taxi; S.fixes=[]; S.t0=schedT0(pr);
-  buildPath(); save(); syncUI(); logFix("예정 이륙 "+(S.t0?hhmm(S.t0):"--")+" 기준으로 설정"); tick(); };
+  const L=S.learn[S.preset];
+  S.custom=null; S.taxi=pr.taxi; S.fixes=[]; S.tland=null; S.mspd=S.malt=null; S.t0=schedT0(pr);
+  S.tair=L&&L.tair ? L.tair : pr.tair;
+  buildPath(); save(); syncUI(); renderReport();
+  logFix("예정 이륙 "+(S.t0?hhmm(S.t0):"--")+" 기준"+(L?" · 지난 비행 실측 "+L.tair+"분 반영":"")); tick(); };
 $('schedBtn').onclick=()=>{ const pr=PRESETS[S.preset]; S.t0=schedT0(pr); S.fixes=[]; save(); syncUI();
   logFix("예정 출발 "+pr.sched+" + 활주 "+(pr.taxiOut||15)+"분 → 이륙 "+hhmm(S.t0)); tick(); };
 $('applyPath').onclick=()=>{
@@ -709,7 +821,7 @@ $('applyPath').onclick=()=>{
   S.custom=pts; S.fixes=[]; buildPath(); save(); logFix("사용자 경로 "+pts.length+"점 적용 · 총 "+Math.round(P.L)+"km"); tick();
 };
 $('reset').onclick=()=>{ if(!confirm("설정과 GPS 기록을 모두 지울까요?")) return;
-  S=Object.assign({},D); buildPath(); save(); syncUI(); logFix(""); tick(); };
+  S=Object.assign({},D,{learn:S.learn}); buildPath(); save(); syncUI(); renderReport(); logFix(""); tick(); };
 $('zoom').onclick=()=>{ zoomed=!zoomed; $('zoom').textContent=zoomed?"전체":"확대"; tick(); };
 
 /* 서비스워커 등록 — 한 번 열어두면 기내(오프라인)에서도 그대로 열린다 */
@@ -736,7 +848,7 @@ keepAwake();
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') keepAwake(); });
 
 load(); if(!S.t0){ S.t0=schedT0(PRESETS[S.preset]); save(); }
-syncUI(); logFix(""); tick();
+syncUI(); logFix(""); renderReport(); tick();
 setInterval(tick, 1000);
 window.addEventListener('resize',()=>tick());
 </script>

@@ -92,8 +92,8 @@ details summary::-webkit-details-marker{display:none}
 <div class="grid">
   <div class="kv"><span>경과</span><b id="elapsed">--</b></div>
   <div class="kv"><span>남은 거리</span><b id="dist">--</b></div>
-  <div class="kv"><span>추정 대지속도</span><b id="gs">--</b></div>
-  <div class="kv"><span>추정 고도</span><b id="alt">--</b></div>
+  <div class="kv"><span id="gsLbl">추정 대지속도</span><b id="gs">--</b></div>
+  <div class="kv"><span id="altLbl">추정 고도</span><b id="alt">--</b></div>
   <div class="kv wide"><span>다음 지점</span><b id="next" style="font-size:15px">--</b></div>
 </div>
 
@@ -116,6 +116,9 @@ details summary::-webkit-details-marker{display:none}
     </div>
     <button class="sm" id="applyManual">좌표로 보정</button>
     <button class="sm" id="applyIfe">남은 시간으로 보정</button>
+    <div><label>고도 (ft · 나침반/기내 화면)</label><input id="mAlt" placeholder="예: 35000" inputmode="numeric"></div>
+    <div><label>대지속도 (km/h)</label><input id="mSpd" placeholder="예: 820" inputmode="numeric"></div>
+    <button class="sm wide" id="applyMeas">고도·속도 값 반영</button>
   </div>
   <div class="log" id="fixlog" style="margin-top:10px">아직 보정 기록이 없습니다. 이륙 시각 기준 추정치로 표시 중.</div>
 </div>
@@ -165,10 +168,10 @@ details summary::-webkit-details-marker{display:none}
     <div class="note" style="margin-top:10px">
       ① 이륙하는 순간 <b>🛫 지금 이륙</b>을 누르세요. 안 눌러도 설정된 이륙 시각 기준으로 계산합니다.<br>
       ② 가끔 창가에서 <b>GPS 위치 잡기</b> → 실제 위치로 경로 진행도와 도착 시각이 다시 계산됩니다.<br>
-      ③ GPS가 막히면 기내 화면의 남은 시간이나 좌표를 넣어도 보정됩니다(도분초 표기 그대로 붙여넣기 가능).<br>
+      ③ GPS가 막히면 기내 화면·나침반 앱의 <b>좌표·고도·속도</b>를 손으로 넣어도 됩니다(도분초 표기 그대로 붙여넣기 가능). 속도만 넣어도 남은 시간이 다시 계산됩니다.<br>
       ③-1 <b>아이폰 위성 기능(긴급 SOS·위성 메시지·나의 찾기)은 이 앱에서 쓸 수 없습니다</b> — 애플 기본 앱 전용이고 웹/서드파티 API가 없습니다. 다만 <b>필요도 없습니다</b>: 위성 통신은 위치를 <i>내보내는</i> 용도이고, 위치를 <i>알아내는</i> GPS 수신은 통신 없이 됩니다. 나의 찾기도 위치 자체는 이 앱과 똑같은 GPS로 구합니다.<br>
       ④ 이 파일 하나로 동작합니다. 네트워크·서버 전혀 필요 없음. 모든 값은 기기에만 저장됩니다.<br>
-      ⑤ 속도·고도는 비행 프로파일 기반 <b>추정치</b>입니다(실측 아님).<br>      ⑥ 항로는 실제 제출 항로 <b>RKSI CUN G585 SAPRA Y599 KABKI Y597 MIHOU Y361 TONBI RJBB</b>(477nm)를 항로 DB 좌표로 복원한 것입니다.
+      ⑤ 속도·고도는 실측값이 없을 때만 비행 프로파일 기반 <b>추정치</b>로 표시됩니다(라벨에 표기). GPS 고도는 <b>기하 고도(WGS84)</b>라 기내 화면의 기압 고도와 수백~1000ft 차이가 날 수 있습니다 — 정상입니다.<br>      ⑥ 항로는 실제 제출 항로 <b>RKSI CUN G585 SAPRA Y599 KABKI Y597 MIHOU Y361 TONBI RJBB</b>(477nm)를 항로 DB 좌표로 복원한 것입니다.
     </div>
   </details>
 </div>
@@ -295,7 +298,8 @@ function phiInv(x){                             // 진행률 → 시간비 (이�
 
 /* ---------- 상태 ---------- */
 const KEY='flight-offline-v1';
-const D={preset:"LJ241", t0:null, tair:82, taxi:8, alt:35000, fixes:[], custom:null};
+const D={preset:"LJ241", t0:null, tair:82, taxi:8, alt:35000, fixes:[], custom:null,
+         mspd:null, malt:null};   // mspd/malt = 손으로 넣은 실측 속도·고도 {v,t}
 let S=Object.assign({},D), P=makePath(ICN_KIX), zoomed=false, watchId=null;
 
 function load(){
@@ -306,6 +310,30 @@ function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} 
 function buildPath(){
   const pr=PRESETS[S.preset];
   P = makePath(S.custom && S.custom.length>1 ? S.custom : pr.path);
+}
+
+/* 최근 실측값(GPS fix + 손입력) 통합 — 12분 이내 값만 유효 */
+const FRESH=12*60000;
+function measured(now){
+  now=now||Date.now();
+  let spd=null, alt=null, hdg=null, vs=null;
+  const fx=S.fixes;
+  for(let i=fx.length-1;i>=0;i--){
+    const f=fx[i];
+    if(now-f.t>FRESH) break;
+    if(spd==null && f.spd) spd={v:f.spd*3.6, t:f.t, src:"GPS"};
+    if(alt==null && f.alt!=null) alt={v:f.alt*3.28084, t:f.t, src:"GPS"};
+    if(hdg==null && f.hdg!=null) hdg=f.hdg;
+  }
+  if(S.mspd && now-S.mspd.t<FRESH && (!spd || S.mspd.t>spd.t)) spd={v:S.mspd.v, t:S.mspd.t, src:"입력"};
+  if(S.malt && now-S.malt.t<FRESH && (!alt || S.malt.t>alt.t)) alt={v:S.malt.v, t:S.malt.t, src:"입력"};
+  // 승강률: 고도가 있는 최근 두 기록
+  const ah=S.fixes.filter(f=>f.alt!=null).slice(-2);
+  if(ah.length===2 && now-ah[1].t<FRESH){
+    const dt=(ah[1].t-ah[0].t)/60000;
+    if(dt>0.5) vs=(ah[1].alt-ah[0].alt)*3.28084/dt;      // ft/min
+  }
+  return {spd, alt, hdg, vs};
 }
 
 /* 보정: 기록된 위치들로 실제 비행시간(T) 재계산 */
@@ -319,8 +347,10 @@ function calibrate(){
     const u=phiInv(Math.min(0.999, f.s/P.L));
     if(te>1 && u>0.02 && u<0.995){
       let Tpos=te/u, gsMeas=null, how="";
-      // ① GPS가 대지속도를 직접 주면 그대로 사용(가장 정확)
+      const ms=measured(f.t);
+      // ① GPS나 손입력 대지속도가 있으면 그대로 사용(가장 정확)
       if(f.spd && f.spd>50){ gsMeas=f.spd*3.6; how="속도 실측"; }
+      else if(ms.spd && ms.spd.v>180){ gsMeas=ms.spd.v; how="속도 "+ms.spd.src; }
       // ② 아니면 최근 두 기록의 이동거리로 산출
       else if(fx.length>=2){
         const g=fx[fx.length-2], dt=(f.t-g.t)/3600000, ds=f.s-g.s;
@@ -334,6 +364,15 @@ function calibrate(){
       T=Math.max(20, Math.min(1200, Tpos));
       src="GPS "+fx.length+"회"+(how?" · "+how:"")+" 보정";
     }
+  } else if(S.t0 && S.mspd && Date.now()-S.mspd.t<FRESH && S.mspd.v>180){
+    // 위치 기록이 없을 때 — 입력된 속도만으로 남은 시간 추정(모델 진행도 기준 2회 반복)
+    let Tt=T;
+    for(let i=0;i<2;i++){
+      const u=Math.max(0.02,Math.min(0.98,((S.mspd.t-S.t0)/60000)/Tt));
+      const Tg=P.L*vprof(u)/(S.mspd.v*AREA)*60;
+      if(isFinite(Tg)&&Tg>0) Tt=Tg;
+    }
+    T=Math.max(20,Math.min(1200,Tt)); src="속도 입력 보정";
   }
   return {T, src};
 }
@@ -419,8 +458,16 @@ function tick(){
     $('prog').style.width=pct+"%"; $('pct').textContent=Math.round(pct)+"%";
     $('elapsed').textContent=wait ? "이륙 "+Math.round(-k.te)+"분 전" : dur(k.te);
     $('dist').textContent=Math.round(P.L-k.s)+" km";
-    $('gs').textContent=wait ? "지상" : Math.round(k.gs)+" km/h";
-    $('alt').textContent=wait ? "0 ft" : Math.round(k.alt/100)*100+" ft";
+    const ms=measured(now);
+    if(!wait && ms.spd){ $('gsLbl').textContent="대지속도 · 실측("+ms.spd.src+")";
+      $('gs').textContent=Math.round(ms.spd.v)+" km/h"; }
+    else { $('gsLbl').textContent="추정 대지속도";
+      $('gs').textContent=wait ? "지상" : Math.round(k.gs)+" km/h"; }
+    if(!wait && ms.alt){ $('altLbl').textContent="고도 · 실측("+ms.alt.src+")";
+      $('alt').textContent=(Math.round(ms.alt.v/100)*100).toLocaleString()+" ft"+
+        (ms.vs && Math.abs(ms.vs)>150 ? (ms.vs>0?" ↑":" ↓")+Math.abs(Math.round(ms.vs/50)*50) : ""); }
+    else { $('altLbl').textContent="추정 고도";
+      $('alt').textContent=wait ? "0 ft" : (Math.round(k.alt/100)*100).toLocaleString()+" ft"; }
     $('where').textContent=(wait?"출발 대기 · ":"지금 ")+nearMark(k.pos)+" · "+k.pos[0].toFixed(2)+", "+k.pos[1].toFixed(2);
     setTimerLink(Math.max(1,Math.ceil(k.T-k.te)));
     // 앞으로 지나갈 지점
@@ -505,19 +552,21 @@ function draw(k){
 
   // 비행기
   const q=X(k.pos[0],k.pos[1]);
-  cx.save(); cx.translate(q[0],q[1]); cx.rotate(k.b*rad);
+  const mh=measured().hdg;                       // 실측 방위가 있으면 그쪽으로
+  cx.save(); cx.translate(q[0],q[1]); cx.rotate((mh!=null?mh:k.b)*rad);
   cx.fillStyle="#ffffff"; cx.beginPath();
   cx.moveTo(0,-9); cx.lineTo(6.5,8); cx.lineTo(0,4.5); cx.lineTo(-6.5,8); cx.closePath(); cx.fill();
   cx.restore();
 }
 
 /* ---------- 보정 입력 ---------- */
-function addFix(lat,lon,acc,tag,spd,hdg){
+function addFix(lat,lon,acc,tag,spd,hdg,alt){
   const pr=P.project([lat,lon]);
   if(pr.xt>200 && !confirm("항로에서 "+Math.round(pr.xt)+"km 떨어진 위치입니다. 그래도 적용할까요?")) return;
   const before=snap(Date.now());
   S.fixes.push({t:Date.now(), lat, lon, acc:acc||null, s:pr.s, xt:pr.xt, tag:tag||"GPS",
-                spd:(spd&&spd>0)?spd:null, hdg:(hdg>=0)?hdg:null});
+                spd:(spd&&spd>0)?spd:null, hdg:(hdg>=0)?hdg:null,
+                alt:(alt!=null&&isFinite(alt))?alt:null});
   if(S.fixes.length>40) S.fixes.shift();
   save();
   const after=snap(Date.now());
@@ -533,7 +582,8 @@ function logFix(msg){
   const rows=S.fixes.slice().reverse().map(f=>
     "<b>"+hhmm(f.t)+"</b> "+f.tag+" "+f.lat.toFixed(2)+", "+f.lon.toFixed(2)+
     " · 진행 "+Math.round(100*f.s/P.L)+"%"+(f.acc?" ±"+Math.round(f.acc)+"m":"")+
-    (f.spd?" · "+Math.round(f.spd*3.6)+"km/h":"")).join("<br>");
+    (f.spd?" · "+Math.round(f.spd*3.6)+"km/h":"")+
+    (f.alt!=null?" · "+Math.round(f.alt*3.28084).toLocaleString()+"ft":"")).join("<br>");
   $('fixlog').innerHTML=(msg?"<b style='color:var(--ok)'>"+msg+"</b><br>":"")+(rows||"기록 없음");
 }
 
@@ -547,14 +597,14 @@ $('gps').onclick=()=>{
     if(!best||a<best.coords.accuracy) best=pos;
     $('gpsmsg').innerHTML="<span class='dot ok'></span>수신 중 ±"+Math.round(a)+"m"+
       (c.speed>10?" · "+Math.round(c.speed*3.6)+"km/h":"");
-    if(a<2000){ stopGps(); addFix(c.latitude,c.longitude,a,"GPS",c.speed,c.heading); }
+    if(a<2000){ stopGps(); addFix(c.latitude,c.longitude,a,"GPS",c.speed,c.heading,c.altitude); }
   }, err=>{
     $('gpsmsg').innerHTML="<span class='dot warn'></span>실패("+err.message+"). 위치 서비스 확인 또는 수동 좌표 입력.";
     stopGps();
   }, {enableHighAccuracy:true, timeout:90000, maximumAge:0});
   setTimeout(()=>{ if(watchId!==null){ stopGps();
     if(best) addFix(best.coords.latitude,best.coords.longitude,best.coords.accuracy,"GPS",
-                    best.coords.speed,best.coords.heading);
+                    best.coords.speed,best.coords.heading,best.coords.altitude);
     else $('gpsmsg').innerHTML="<span class='dot warn'></span>90초 안에 못 잡았습니다. 창가에서 다시 시도해 보세요."; } }, 92000);
 };
 function stopGps(){ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; }
@@ -578,7 +628,7 @@ $('gpslive').onclick=()=>{
     $('gpsmsg').innerHTML="<span class='dot ok'></span>"+hhmm(now)+" 수신 ±"+Math.round(a)+"m"+
       (c.speed>10?" · "+Math.round(c.speed*3.6)+"km/h":"");
     if(a<20000 && now-lastAuto>120000){          // 2분에 한 번까지만 기록
-      lastAuto=now; addFix(c.latitude,c.longitude,a,"자동",c.speed,c.heading);
+      lastAuto=now; addFix(c.latitude,c.longitude,a,"자동",c.speed,c.heading,c.altitude);
     }
   }, err=>{
     $('gpsmsg').innerHTML="<span class='dot warn'></span>수신 대기 중… ("+err.message+")";
@@ -611,6 +661,17 @@ $('applyManual').onclick=()=>{
   if(!c || Math.abs(c[0])>90 || Math.abs(c[1])>180)
     return alert("예: 35.82, 130.72  또는  35°49'25\"N 130°43'25\"E");
   addFix(c[0],c[1],null,"수동");
+};
+$('applyMeas').onclick=()=>{
+  const a=parseFloat($('mAlt').value), v=parseFloat($('mSpd').value), now=Date.now();
+  let msg=[];
+  if(a>0){ S.malt={v:a, t:now}; msg.push("고도 "+Math.round(a).toLocaleString()+"ft"); }
+  if(v>0){ S.mspd={v:v, t:now}; msg.push("속도 "+Math.round(v)+"km/h"); }
+  if(!msg.length) return alert("고도(ft) 또는 속도(km/h)를 입력하세요.");
+  save();
+  const k=snap(now);
+  logFix(msg.join(" · ")+" 반영 · 도착 "+hhmm(k.land)+" ("+k.src+")");
+  tick();
 };
 $('applyIfe').onclick=()=>{
   const v=parseFloat($('ifemin').value);

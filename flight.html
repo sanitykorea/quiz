@@ -101,9 +101,10 @@ details summary::-webkit-details-marker{display:none}
   <div class="h">GPS 보정</div>
   <div class="row" style="gap:8px">
     <button class="p" id="gps" style="flex:1">📍 GPS 위치 잡기</button>
+    <button class="s" id="gpslive">🛰 계속 수신</button>
     <button class="s sm" id="gpsstop" style="display:none">중지</button>
   </div>
-  <div class="note" style="margin-top:8px" id="gpsmsg"><span class="dot"></span>창가에서 눌러주세요. 비행기 모드여도 위치 서비스가 켜져 있으면 대개 잡힙니다.</div>
+  <div class="note" style="margin-top:8px" id="gpsmsg"><span class="dot"></span>창가에서 눌러주세요. GPS 수신은 <b>통신과 무관</b>해서 비행기 모드에서도 위치 서비스만 켜져 있으면 잡힙니다.</div>
   <div class="grid" style="margin-top:10px">
     <div>
       <label>수동 좌표 (위도, 경도)</label>
@@ -164,7 +165,8 @@ details summary::-webkit-details-marker{display:none}
     <div class="note" style="margin-top:10px">
       ① 이륙하는 순간 <b>🛫 지금 이륙</b>을 누르세요. 안 눌러도 설정된 이륙 시각 기준으로 계산합니다.<br>
       ② 가끔 창가에서 <b>GPS 위치 잡기</b> → 실제 위치로 경로 진행도와 도착 시각이 다시 계산됩니다.<br>
-      ③ GPS가 막히면 기내 화면의 남은 시간을 넣어도 보정됩니다.<br>
+      ③ GPS가 막히면 기내 화면의 남은 시간이나 좌표를 넣어도 보정됩니다(도분초 표기 그대로 붙여넣기 가능).<br>
+      ③-1 <b>아이폰 위성 기능(긴급 SOS·위성 메시지·나의 찾기)은 이 앱에서 쓸 수 없습니다</b> — 애플 기본 앱 전용이고 웹/서드파티 API가 없습니다. 다만 <b>필요도 없습니다</b>: 위성 통신은 위치를 <i>내보내는</i> 용도이고, 위치를 <i>알아내는</i> GPS 수신은 통신 없이 됩니다. 나의 찾기도 위치 자체는 이 앱과 똑같은 GPS로 구합니다.<br>
       ④ 이 파일 하나로 동작합니다. 네트워크·서버 전혀 필요 없음. 모든 값은 기기에만 저장됩니다.<br>
       ⑤ 속도·고도는 비행 프로파일 기반 <b>추정치</b>입니다(실측 아님).<br>      ⑥ 항로는 실제 제출 항로 <b>RKSI CUN G585 SAPRA Y599 KABKI Y597 MIHOU Y361 TONBI RJBB</b>(477nm)를 항로 DB 좌표로 복원한 것입니다.
     </div>
@@ -316,18 +318,21 @@ function calibrate(){
     const te=(f.t-S.t0)/60000;                                  // 이륙 후 경과(분)
     const u=phiInv(Math.min(0.999, f.s/P.L));
     if(te>1 && u>0.02 && u<0.995){
-      let Tpos=te/u;
-      // 최근 두 기록 사이 실측 대지속도로 한번 더 조정
-      if(fx.length>=2){
+      let Tpos=te/u, gsMeas=null, how="";
+      // ① GPS가 대지속도를 직접 주면 그대로 사용(가장 정확)
+      if(f.spd && f.spd>50){ gsMeas=f.spd*3.6; how="속도 실측"; }
+      // ② 아니면 최근 두 기록의 이동거리로 산출
+      else if(fx.length>=2){
         const g=fx[fx.length-2], dt=(f.t-g.t)/3600000, ds=f.s-g.s;
-        if(dt>0.04 && ds>5){
-          const gsMeas=ds/dt, um=phiInv(Math.min(0.999,((f.s+g.s)/2)/P.L));
-          const Tgs=P.L*vprof(um)/(gsMeas*AREA);
-          if(isFinite(Tgs)&&Tgs>0) Tpos=0.6*Tpos+0.4*(Tgs*60);
-        }
+        if(dt>0.04 && ds>5){ gsMeas=ds/dt; how="구간 속도"; }
+      }
+      if(gsMeas){
+        const um=phiInv(Math.min(0.999, f.s/P.L));
+        const Tgs=P.L*vprof(um)/(gsMeas*AREA)*60;
+        if(isFinite(Tgs)&&Tgs>0) Tpos=0.6*Tpos+0.4*Tgs;
       }
       T=Math.max(20, Math.min(1200, Tpos));
-      src="GPS "+fx.length+"회 보정";
+      src="GPS "+fx.length+"회"+(how?" · "+how:"")+" 보정";
     }
   }
   return {T, src};
@@ -507,11 +512,12 @@ function draw(k){
 }
 
 /* ---------- 보정 입력 ---------- */
-function addFix(lat,lon,acc,tag){
+function addFix(lat,lon,acc,tag,spd,hdg){
   const pr=P.project([lat,lon]);
   if(pr.xt>200 && !confirm("항로에서 "+Math.round(pr.xt)+"km 떨어진 위치입니다. 그래도 적용할까요?")) return;
   const before=snap(Date.now());
-  S.fixes.push({t:Date.now(), lat, lon, acc:acc||null, s:pr.s, xt:pr.xt, tag:tag||"GPS"});
+  S.fixes.push({t:Date.now(), lat, lon, acc:acc||null, s:pr.s, xt:pr.xt, tag:tag||"GPS",
+                spd:(spd&&spd>0)?spd:null, hdg:(hdg>=0)?hdg:null});
   if(S.fixes.length>40) S.fixes.shift();
   save();
   const after=snap(Date.now());
@@ -526,7 +532,8 @@ function addFix(lat,lon,acc,tag){
 function logFix(msg){
   const rows=S.fixes.slice().reverse().map(f=>
     "<b>"+hhmm(f.t)+"</b> "+f.tag+" "+f.lat.toFixed(2)+", "+f.lon.toFixed(2)+
-    " · 진행 "+Math.round(100*f.s/P.L)+"%"+(f.acc?" ±"+Math.round(f.acc)+"m":"")).join("<br>");
+    " · 진행 "+Math.round(100*f.s/P.L)+"%"+(f.acc?" ±"+Math.round(f.acc)+"m":"")+
+    (f.spd?" · "+Math.round(f.spd*3.6)+"km/h":"")).join("<br>");
   $('fixlog').innerHTML=(msg?"<b style='color:var(--ok)'>"+msg+"</b><br>":"")+(rows||"기록 없음");
 }
 
@@ -536,26 +543,74 @@ $('gps').onclick=()=>{
   $('gpsmsg').innerHTML="<span class='dot warn'></span>위성 찾는 중… 창가에서 30~60초 기다려 주세요.";
   $('gpsstop').style.display="block";
   watchId=navigator.geolocation.watchPosition(pos=>{
-    const a=pos.coords.accuracy||9999;
+    const c=pos.coords, a=c.accuracy||9999;
     if(!best||a<best.coords.accuracy) best=pos;
-    $('gpsmsg').innerHTML="<span class='dot ok'></span>수신 중 ±"+Math.round(a)+"m";
-    if(a<300){ stopGps(); addFix(pos.coords.latitude,pos.coords.longitude,a,"GPS"); }
+    $('gpsmsg').innerHTML="<span class='dot ok'></span>수신 중 ±"+Math.round(a)+"m"+
+      (c.speed>10?" · "+Math.round(c.speed*3.6)+"km/h":"");
+    if(a<2000){ stopGps(); addFix(c.latitude,c.longitude,a,"GPS",c.speed,c.heading); }
   }, err=>{
     $('gpsmsg').innerHTML="<span class='dot warn'></span>실패("+err.message+"). 위치 서비스 확인 또는 수동 좌표 입력.";
     stopGps();
   }, {enableHighAccuracy:true, timeout:90000, maximumAge:0});
   setTimeout(()=>{ if(watchId!==null){ stopGps();
-    if(best) addFix(best.coords.latitude,best.coords.longitude,best.coords.accuracy,"GPS");
+    if(best) addFix(best.coords.latitude,best.coords.longitude,best.coords.accuracy,"GPS",
+                    best.coords.speed,best.coords.heading);
     else $('gpsmsg').innerHTML="<span class='dot warn'></span>90초 안에 못 잡았습니다. 창가에서 다시 시도해 보세요."; } }, 92000);
 };
 function stopGps(){ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null; }
   $('gpsstop').style.display="none"; }
 $('gpsstop').onclick=stopGps;
 
+/* 계속 수신: 창가에 두면 신호가 잡히는 순간마다 알아서 보정 */
+let liveId=null, lastAuto=0;
+$('gpslive').onclick=()=>{
+  if(liveId!==null){
+    navigator.geolocation.clearWatch(liveId); liveId=null;
+    $('gpslive').textContent="🛰 계속 수신"; $('gpslive').classList.remove('p');
+    $('gpsmsg').innerHTML="<span class='dot'></span>계속 수신을 껐습니다.";
+    return;
+  }
+  if(!navigator.geolocation) return;
+  $('gpslive').textContent="🛰 수신 중 (끄기)"; $('gpslive').classList.add('p');
+  $('gpsmsg').innerHTML="<span class='dot warn'></span>계속 수신 중 — 폰을 창가에 두세요. 잡히는 즉시 자동 보정됩니다.";
+  liveId=navigator.geolocation.watchPosition(pos=>{
+    const c=pos.coords, a=c.accuracy||9999, now=Date.now();
+    $('gpsmsg').innerHTML="<span class='dot ok'></span>"+hhmm(now)+" 수신 ±"+Math.round(a)+"m"+
+      (c.speed>10?" · "+Math.round(c.speed*3.6)+"km/h":"");
+    if(a<20000 && now-lastAuto>120000){          // 2분에 한 번까지만 기록
+      lastAuto=now; addFix(c.latitude,c.longitude,a,"자동",c.speed,c.heading);
+    }
+  }, err=>{
+    $('gpsmsg').innerHTML="<span class='dot warn'></span>수신 대기 중… ("+err.message+")";
+  }, {enableHighAccuracy:true, maximumAge:0, timeout:600000});
+};
+
+// 십진수 / 도분초 / 도분 모두 인식 — 나침반·지도 앱 표기를 그대로 붙여넣기
+function parseCoord(txt){
+  txt=(txt||"").trim();
+  const dms=(re,order)=>{                       // order: 반구 문자가 앞이면 "pre", 뒤면 "post"
+    const out=[]; let m;
+    while((m=re.exec(txt))){
+      const h=(order==="pre"?m[1]:m[4]).toUpperCase();
+      const d=(order==="pre"?m[2]:m[1]), mi=(order==="pre"?m[3]:m[2]), se=(order==="pre"?m[4]:m[3]);
+      let v=(+d)+((+mi||0)/60)+((+se||0)/3600);
+      if(h==="S"||h==="W") v=-v;
+      out.push({v,h});
+    }
+    const la=out.find(o=>"NS".includes(o.h) && Math.abs(o.v)<=90);
+    const lo=out.find(o=>"EW".includes(o.h) && Math.abs(o.v)<=180);
+    return (la&&lo) ? [la.v, lo.v] : null;      // 위도·경도가 모두 유효할 때만 인정
+  };
+  return dms(/([NSEW])\s*(\d{1,3})[°d\s]+(\d{1,2}(?:\.\d+)?)?['′\s]*(\d{1,2}(?:\.\d+)?)?/gi,"pre")
+      || dms(/(\d{1,3})\s*[°d]?\s*(\d{1,2}(?:\.\d+)?)?\s*['′]?\s*(\d{1,2}(?:\.\d+)?)?\s*["″]?\s*([NSEW])/gi,"post")
+      || (()=>{ const d=txt.match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+                return d ? [parseFloat(d[1]), parseFloat(d[2])] : null; })();
+}
 $('applyManual').onclick=()=>{
-  const m=($('manual').value||"").match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
-  if(!m) return alert("예: 34.52, 129.31");
-  addFix(parseFloat(m[1]),parseFloat(m[2]),null,"수동");
+  const c=parseCoord($('manual').value);
+  if(!c || Math.abs(c[0])>90 || Math.abs(c[1])>180)
+    return alert("예: 35.82, 130.72  또는  35°49'25\"N 130°43'25\"E");
+  addFix(c[0],c[1],null,"수동");
 };
 $('applyIfe').onclick=()=>{
   const v=parseFloat($('ifemin').value);
@@ -614,7 +669,10 @@ $('zoom').onclick=()=>{ zoomed=!zoomed; $('zoom').textContent=zoomed?"전체":"�
 })();
 
 /* 화면 꺼짐 방지(지원 기기) */
-(async()=>{ try{ if('wakeLock' in navigator) await navigator.wakeLock.request('screen'); }catch(e){} })();
+let wl=null;
+async function keepAwake(){ try{ if('wakeLock' in navigator) wl=await navigator.wakeLock.request('screen'); }catch(e){} }
+keepAwake();
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') keepAwake(); });
 
 load(); if(!S.t0){ S.t0=schedT0(PRESETS[S.preset]); save(); }
 syncUI(); logFix(""); tick();

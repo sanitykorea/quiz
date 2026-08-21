@@ -985,6 +985,8 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._study_get(q.get("today", ""), q.get("weekStart", ""), q.get("periodStart", ""))
         if p == "/dodeok.json":
             return self._file(os.path.join(HERE, "dodeok.json"), "application/json; charset=utf-8")
+        if p == "/flight-icon-180.png":
+            return self._file(os.path.join(HERE, "flight-icon-180.png"), "image/png")
         if p == "/flight-sw.js":
             return self._file(os.path.join(HERE, "flight-sw.js"), "application/javascript; charset=utf-8")
         if p == "/flight-manifest.json":

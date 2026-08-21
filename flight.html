@@ -7,6 +7,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>✈︎ 오프라인 비행 위치 · LJ241</title>
 <link rel="manifest" href="./flight-manifest.json">
+<link rel="apple-touch-icon" href="./flight-icon-180.png">
+<link rel="icon" type="image/png" href="./flight-icon-180.png">
+<meta name="apple-mobile-web-app-title" content="비행 위치">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#070b14">
 <style>
 :root{
   --bg:#070b14; --card:#0f172a; --card2:#131c31; --line:#1e2a44;
@@ -41,6 +46,9 @@ button:active{opacity:.7}
 button.p{background:var(--gold);color:#0b1120;border-color:var(--gold);font-weight:800}
 button.s{background:#16305a;border-color:#26497f;color:#cfe4ff}
 button.sm{padding:8px 10px;font-size:12px;font-weight:600}
+.btnlink{display:block;text-align:center;text-decoration:none;background:var(--gold);color:#0b1120;
+  border-radius:12px;padding:13px;font-weight:800;font-size:15px}
+.btnlink:active{opacity:.7}
 input,select{font:inherit;color:var(--fg);background:#0a1223;border:1px solid var(--line);
   border-radius:10px;padding:10px;width:100%}
 label{display:block;font-size:11px;color:var(--dim);margin:8px 0 4px}
@@ -109,6 +117,24 @@ details summary::-webkit-details-marker{display:none}
     <button class="sm" id="applyIfe">남은 시간으로 보정</button>
   </div>
   <div class="log" id="fixlog" style="margin-top:10px">아직 보정 기록이 없습니다. 이륙 시각 기준 추정치로 표시 중.</div>
+</div>
+
+<div class="card">
+  <div class="h">다이나믹 아일랜드 · 잠금화면</div>
+  <a class="btnlink" id="diBtn" href="#">⏱ 남은 시간 타이머 켜기 · <span id="diMin">--분</span></a>
+  <div class="note" id="diNote" style="margin-top:9px">
+    iOS 타이머는 <b>다이나믹 아일랜드와 잠금화면에 실시간 카운트다운</b>으로 뜹니다. 앱을 안 열어도 남은 시간이 보입니다.
+  </div>
+  <details style="margin-top:10px">
+    <summary>▸ 처음 한 번만: 단축어 만들기 (30초)</summary>
+    <div class="note" style="margin-top:8px">
+      1. <b>단축어</b> 앱 → <b>+</b> → 액션 검색 <b>“타이머 시작”</b> 추가<br>
+      2. 기간 칸을 탭 → <b>“단축어 입력”</b> 선택 → 단위를 <b>분</b>으로<br>
+      3. 이름을 정확히 <b>비행타이머</b> 로 저장<br>
+      4. 이제 위 버튼을 누르면 남은 시간만큼 타이머가 시작됩니다. GPS 보정으로 도착 시각이 바뀌면 다시 누르면 됩니다.<br><br>
+      단축어를 안 만들 거면 <b>시계 → 타이머</b>에 위 숫자를 직접 넣어도 똑같이 뜹니다.
+    </div>
+  </details>
 </div>
 
 <div class="card">
@@ -337,6 +363,13 @@ function nearMark(pos){
   return bd<12 ? best[2]+" 상공" : best[2]+" "+dir+"쪽 "+Math.round(bd)+"km";
 }
 
+function setTimerLink(min){
+  min=Math.max(1,Math.min(1440,Math.round(min)));
+  $('diMin').textContent=min+"분";
+  $('diBtn').href="shortcuts://run-shortcut?name="+encodeURIComponent("비행타이머")+
+                  "&input=text&text="+min;
+}
+
 function tick(){
   const now=Date.now(), k=snap(now);
   $('clock').textContent=hhmm(now);
@@ -352,6 +385,7 @@ function tick(){
     $('gs').textContent="--"; $('alt').textContent="--";
     $('where').textContent="출발: "+PRESETS[S.preset].dep+" · 총 항로 "+Math.round(P.L)+"km";
     $('next').textContent="--";
+    setTimerLink(Math.round(S.tair)+ +S.taxi);
   } else if(k.landed){
     $('phase').textContent="착륙"; $('remain').innerHTML="도착";
     $('etaline').innerHTML="착륙 <b>"+hhmm(k.land)+"</b> · 게이트 예정 <b>"+hhmm(k.gate)+"</b>";
@@ -362,18 +396,22 @@ function tick(){
     $('next').textContent="수고하셨습니다 🙌";
   } else {
     const rem=(k.T-k.te);
-    $('phase').textContent = k.u<R1 ? "상승" : (k.u>1-R3 ? "하강" : "순항");
+    const wait = k.te<0;                      // 아직 이륙 전(예정 시각 기준)
+    $('phase').textContent = wait ? "이륙 대기"
+      : (k.u<R1 ? "상승" : (k.u>1-R3 ? "하강" : "순항"));
     $('remain').innerHTML = rem>=60
       ? Math.floor(rem/60)+"<small>시간</small> "+p2(Math.round(rem%60))+"<small>분</small>"
       : Math.max(0,Math.round(rem))+"<small>분</small>";
-    $('etaline').innerHTML="착륙 예정 <b>"+hhmm(k.land)+"</b> · 게이트 <b>"+hhmm(k.gate)+"</b> <span style='opacity:.6'>("+k.src+")</span>";
+    $('etaline').innerHTML=(wait ? "이륙 예정 <b>"+hhmm(S.t0)+"</b> · " : "")+
+      "착륙 예정 <b>"+hhmm(k.land)+"</b> · 게이트 <b>"+hhmm(k.gate)+"</b> <span style='opacity:.6'>("+k.src+")</span>";
     const pct=Math.min(100,100*k.s/P.L);
     $('prog').style.width=pct+"%"; $('pct').textContent=Math.round(pct)+"%";
-    $('elapsed').textContent=dur(k.te);
+    $('elapsed').textContent=wait ? "이륙 "+Math.round(-k.te)+"분 전" : dur(k.te);
     $('dist').textContent=Math.round(P.L-k.s)+" km";
-    $('gs').textContent=Math.round(k.gs)+" km/h";
-    $('alt').textContent=Math.round(k.alt/100)*100+" ft";
-    $('where').textContent="지금 "+nearMark(k.pos)+" · "+k.pos[0].toFixed(2)+", "+k.pos[1].toFixed(2);
+    $('gs').textContent=wait ? "지상" : Math.round(k.gs)+" km/h";
+    $('alt').textContent=wait ? "0 ft" : Math.round(k.alt/100)*100+" ft";
+    $('where').textContent=(wait?"출발 대기 · ":"지금 ")+nearMark(k.pos)+" · "+k.pos[0].toFixed(2)+", "+k.pos[1].toFixed(2);
+    setTimerLink(Math.max(1,Math.ceil(k.T-k.te)));
     // 앞으로 지나갈 지점
     let nx=null;
     for(const m of MARKS){
@@ -472,6 +510,9 @@ function addFix(lat,lon,acc,tag){
   save();
   const after=snap(Date.now());
   const d=Math.round((after.land-before.land)/60000);
+  if(Math.abs(d)>=2 && !before.pre)
+    $('diNote').innerHTML="<span class='dot warn'></span>도착 예정이 "+(d>0?"+":"")+d+
+      "분 바뀌었습니다 — 위 버튼을 다시 눌러 타이머를 새로 맞추세요.";
   logFix("보정됨 · 진행 "+Math.round(100*pr.s/P.L)+"% · 항로이탈 "+Math.round(pr.xt)+"km · 도착 "+
          hhmm(after.land)+(before.pre?"":" ("+(d>0?"+":"")+d+"분)"));
   tick();
@@ -559,7 +600,7 @@ $('zoom').onclick=()=>{ zoomed=!zoomed; $('zoom').textContent=zoomed?"전체":"�
     await navigator.serviceWorker.register('./flight-sw.js', {scope:'./'});
     await navigator.serviceWorker.ready;
     const c=await caches.open('flight-offline-v1');
-    await c.addAll([location.pathname+location.search, './flight-sw.js', './flight-manifest.json']);
+    await c.addAll([location.pathname+location.search, './flight-sw.js', './flight-manifest.json', './flight-icon-180.png']);
     sub.innerHTML="<span class='dot ok'></span>오프라인 저장 완료 — 이제 인터넷 없어도 열립니다";
   }catch(e){
     sub.innerHTML="<span class='dot warn'></span>오프라인 저장 실패("+e.message+") — 읽기 목록에 추가해 두세요";

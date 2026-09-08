@@ -230,6 +230,10 @@ def main():
     if err:
         print("경쟁률 조회 실패:", err)
     prev = st.get("ratio", {})
+    prev_asof = st.get("asof", "")
+    # 이 페이지는 4시간마다(00·04·08·12·16·20시) 갱신된다. 숫자가 안 늘어도
+    # 새 회차가 나오면 "그대로"인 것 자체가 정보라 보낸다.
+    fresh = bool(asof) and asof != prev_asof
     cur = {}
     for jh, unit, label in WATCH:
         v = data.get((jh, unit))
@@ -239,8 +243,11 @@ def main():
         key = f"{jh}|{unit}"
         cur[key] = [quota, applied, rate]
         old = prev.get(key)
-        delta = ""
-        if old and old[1] != applied:
+        if old is None:
+            delta = ""
+        elif old[1] == applied:
+            delta = '  <i>변동 없음</i>'
+        else:
             d = applied - old[1]
             delta = f"  <b>{'+' if d > 0 else ''}{d}</b>"
         if not old or old[1] != applied:
@@ -249,7 +256,7 @@ def main():
                      + history_line(key, applied))
 
     msgs = []
-    if lines and changed:
+    if lines and (fresh or changed):
         head = f"📊 <b>성공회대 수시 경쟁률</b>\n<i>{html.escape(asof)}</i>\n\n"
         left = DEADLINES[0][1] - now
         tail = f"\n\n⏳ 원서접수 마감까지 <b>{left.days}일 {left.seconds // 3600}시간</b>" if left.total_seconds() > 0 else ""
@@ -280,7 +287,8 @@ def main():
     for m in msgs:
         send(m)
     if cur:
-        st["ratio"] = cur          # 실패했을 때 직전값을 지우지 않는다
+        st["ratio"] = cur
+        st["asof"] = asof          # 실패했을 때 직전값을 지우지 않는다
     st["deadline_sent"] = sorted(sent)
     st["updated"] = now.isoformat(timespec="seconds")
     save(st)

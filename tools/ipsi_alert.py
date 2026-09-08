@@ -5,7 +5,7 @@
 - 마감일: 남은 날짜가 정해진 지점(D-3/D-2/D-1/당일)에 닿으면 한 번씩만 보낸다.
 표준 라이브러리만 사용. 상태는 같은 폴더의 ipsi_state.json에 남긴다.
 """
-import json, os, re, html, sys, urllib.request, urllib.parse, datetime, ssl
+import json, os, re, html, sys, urllib.request, urllib.error, urllib.parse, datetime, ssl
 
 RATIO_URL = "https://addon.jinhakapply.com/RatioV1/RatioH/Ratio10910511.html"
 STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ipsi_state.json")
@@ -77,17 +77,27 @@ def fetch_browser(url):
             browser.close()
 
 
-def fetch(url):
-    """가벼운 방법 먼저, 막히면 브라우저로 다시."""
-    try:
-        html_text = fetch_plain(url)
-        if "<table" in html_text:
-            return html_text
-        light_err = f"표 없음({len(html_text)}자)"
-    except Exception as e:
-        light_err = f"{type(e).__name__}: {str(e)[:80]}"
-    print("가벼운 조회 실패 → 브라우저로 재시도:", light_err)
-    return fetch_browser(url)
+def fetch_and_parse(url):
+    """가벼운 방법으로 받아 파싱해보고, 원하는 표가 안 나오면 브라우저로 다시 받는다.
+
+    Cloudflare 안내 페이지에도 <table>이 들어있을 수 있어, 태그 존재가 아니라
+    '실제로 파싱되는가'로 판정해야 한다.
+    """
+    notes = []
+    for name, getter in (("plain", fetch_plain), ("browser", fetch_browser)):
+        try:
+            page = getter(url)
+        except Exception as e:
+            notes.append(f"{name}={type(e).__name__}:{str(e)[:60]}")
+            continue
+        data, asof = parse(page)
+        if data:
+            if name == "browser":
+                print("브라우저로 통과")
+            return data, asof, ""
+        head = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page)).strip()[:90]
+        notes.append(f"{name}={len(page)}자/표0 «{head}»")
+    return {}, "", " | ".join(notes)
 
 
 def cells(row):
@@ -97,21 +107,28 @@ def cells(row):
 
 
 def parse(page):
-    """{(전형, 모집단위): (모집, 지원, 경쟁률)} 과 기준시각을 돌려준다."""
+    """{(전형, 모집단위): (모집, 지원, 경쟁률)} 과 기준시각을 돌려준다.
+
+    표 바로 앞 N자를 보는 방식은 브라우저가 DOM을 재직렬화하면 어긋난다.
+    문서 전체에서 '○○ 경쟁률 현황'의 위치와 <table>의 위치를 각각 모은 뒤,
+    각 표에 가장 가까운 앞쪽 제목을 붙인다.
+    """
     asof = ""
     m = re.search(r"(\d{4}-\d{2}-\d{2}[^<]{0,20}현황)", page)
     if m:
         asof = m.group(1).strip()
+
+    # 태그를 '같은 길이의 공백'으로 바꿔야 원본과 문자 위치가 그대로 유지된다
+    flat = re.sub(r"<[^>]+>", lambda mm: " " * len(mm.group(0)), page)
+    titles = [(mm.start(), re.sub(r"\s+", " ", mm.group(1)).strip())
+              for mm in re.finditer(r"([가-힣()·][가-힣()·\s]{0,29})\s*경쟁률\s*현황", flat)]
+
     data = {}
-    for tbl in re.findall(r"<table[^>]*>(.*?)</table>", page, re.S):
-        idx = page.find(tbl)
-        before = re.sub(r"<[^>]+>", " ", page[max(0, idx - 400):idx])
-        title = re.sub(r"\s+", " ", html.unescape(before)).strip()
-        m = re.search(r"([가-힣()·\s]+?)\s*경쟁률 현황\s*$", title)
-        if not m:
-            continue
-        jeonhyeong = m.group(1).strip()
-        for row in re.findall(r"<tr[^>]*>(.*?)</tr>", tbl, re.S):
+    for tm in re.finditer(r"<table[^>]*>(.*?)</table>", page, re.S):
+        # 이 표 앞에 있는 제목 중 가장 가까운 것
+        before = [t for pos, t in titles if pos < tm.start()]
+        jeonhyeong = before[-1] if before else ""
+        for row in re.findall(r"<tr[^>]*>(.*?)</tr>", tm.group(1), re.S):
             c = cells(row)
             if len(c) >= 4 and c[0].endswith("학부"):
                 try:
@@ -143,8 +160,22 @@ def send(text):
         "chat_id": chat, "text": text,
         "parse_mode": "HTML", "disable_web_page_preview": "true"}).encode()
     req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body)
-    with urllib.request.urlopen(req, timeout=20) as r:
-        return json.loads(r.read().decode()).get("ok", False)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            res = json.loads(r.read().decode())
+        if not res.get("ok"):
+            print("텔레그램 거절:", res.get("description"))
+        return res.get("ok", False)
+    except urllib.error.HTTPError as e:
+        # 사유를 알아야 고칠 수 있다. 본문에 토큰은 들어가지 않는다.
+        try:
+            detail = json.loads(e.read().decode()).get("description", "")
+        except Exception:
+            detail = ""
+        print(f"텔레그램 전송 실패: HTTP {e.code} {detail}")
+    except Exception as e:
+        print("텔레그램 전송 실패:", type(e).__name__, str(e)[:120])
+    return False
 
 
 def main():
@@ -153,14 +184,7 @@ def main():
     lines, changed = [], False
 
     # ---- 경쟁률 ----
-    err = ""
-    try:
-        page = fetch(RATIO_URL)
-        data, asof = parse(page)
-        if not data:
-            err = f"페이지는 받았으나 표를 못 읽음 ({len(page)}자)"
-    except Exception as e:
-        data, asof, err = {}, "", f"{type(e).__name__}: {str(e)[:120]}"
+    data, asof, err = fetch_and_parse(RATIO_URL)
     if err:
         print("경쟁률 조회 실패:", err)
     prev = st.get("ratio", {})
@@ -222,4 +246,10 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        # 알림 도구가 죽었다고 워크플로 전체를 실패로 만들지 않는다
+        sys.exit(0)

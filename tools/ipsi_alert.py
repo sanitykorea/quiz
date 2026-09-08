@@ -50,6 +50,28 @@ HEADERS = {
 }
 
 
+# 예년 최종 확정치 — 성공회대 입시결과(enter.skhu.ac.kr) 3개년.
+# 접수 중에는 경쟁률 절대값보다 "작년 최종의 몇 %가 들어왔나"가 판단에 쓸모 있다.
+# {키: [(학년도, 모집, 최종지원), ...]}  자유전공은 2026학년도 신설이라 1개년뿐.
+HISTORY = {
+    "학생부종합 열린인재|사회융합학부": [(2026, 34, 270), (2025, 34, 265), (2024, 34, 238)],
+    "교과성적|사회융합학부":            [(2026, 15, 74),  (2025, 37, 213), (2024, 37, 171)],
+    "교과성적|자유전공학부":            [(2026, 109, 624)],
+}
+
+
+def history_line(key, applied):
+    """작년 최종 대비 진척도 + 3개년 평균 경쟁률."""
+    h = HISTORY.get(key)
+    if not h:
+        return ""
+    ly_year, ly_quota, ly_applied = h[0]
+    pct = round(applied / ly_applied * 100) if ly_applied else 0
+    avg = sum(a / q for _, q, a in h) / len(h)
+    extra = f" · {len(h)}년평균 {avg:.2f}:1" if len(h) > 1 else ""
+    return f"\n   <i>{ly_year}학년도 최종 {ly_applied}명({ly_applied/ly_quota:.2f}:1) 대비 <b>{pct}%</b>{extra}</i>"
+
+
 def fetch_plain(url):
     """가벼운 방법. 국내 일반 IP에서는 이걸로 충분하다."""
     ctx = ssl.create_default_context()
@@ -223,7 +245,8 @@ def main():
             delta = f"  <b>{'+' if d > 0 else ''}{d}</b>"
         if not old or old[1] != applied:
             changed = True
-        lines.append(f"· {label}\n   {applied}/{quota}명 · <b>{rate}</b>{delta}")
+        lines.append(f"· {label}\n   {applied}/{quota}명 · <b>{rate}</b>{delta}"
+                     + history_line(key, applied))
 
     msgs = []
     if lines and changed:

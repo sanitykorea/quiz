@@ -1,0 +1,40 @@
+name: 입시 알림 (경쟁률·마감일)
+
+# 원서접수 기간(2026.9.7~9.11)에만 자주 돌린다. 접수가 끝나면 경쟁률이 더 안 바뀜.
+# cron은 UTC 기준 — KST 09:00~19:00 = UTC 00:00~10:00
+on:
+  schedule:
+    - cron: '*/20 0-10 * * *'
+  workflow_dispatch:
+
+# 상태 파일(ipsi_state.json)을 커밋해 다음 실행이 변동을 비교할 수 있게 한다
+permissions:
+  contents: write
+
+concurrency:
+  group: ipsi-alert
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 경쟁률·마감일 확인 후 알림
+        env:
+          TG_BOT_TOKEN: ${{ secrets.IPSI_TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.IPSI_TG_CHAT_ID }}
+        run: python3 tools/ipsi_alert.py
+
+      - name: 상태 저장
+        run: |
+          if [ -n "$(git status --porcelain tools/ipsi_state.json)" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add tools/ipsi_state.json
+            git commit -m "chore: 입시 알림 상태 갱신 [skip ci]"
+            git push
+          else
+            echo "변동 없음 — 커밋 생략"
+          fi

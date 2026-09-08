@@ -8,7 +8,23 @@
 import json, os, re, html, sys, urllib.request, urllib.error, urllib.parse, datetime, ssl
 
 RATIO_URL = "https://addon.jinhakapply.com/RatioV1/RatioH/Ratio10910511.html"
-STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ipsi_state.json")
+HERE = os.path.dirname(os.path.abspath(__file__))
+# Actions는 레포에 커밋된 상태를 쓰고, 맥은 자기 상태를 따로 둔다(git 충돌 방지)
+STATE = os.environ.get("IPSI_STATE") or os.path.join(HERE, "ipsi_state.json")
+# all | ratio | deadline — 둘이 같은 알림을 두 번 보내지 않게 역할을 나눈다
+MODE = os.environ.get("ALERT_MODE", "all")
+
+
+def _secret(env_name, filename):
+    """환경변수 우선, 없으면 같은 폴더의 파일에서 읽는다. 값은 절대 출력하지 않는다."""
+    v = os.environ.get(env_name, "").strip()
+    if v:
+        return v
+    try:
+        with open(os.path.join(HERE, filename), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
 KST = datetime.timezone(datetime.timedelta(hours=9))
 
 # (표 제목에 들어가는 전형명, 모집단위, 화면에 쓸 이름)
@@ -152,7 +168,8 @@ def save(st):
 
 
 def send(text):
-    token, chat = os.environ.get("TG_BOT_TOKEN"), os.environ.get("TG_CHAT_ID")
+    token = _secret("TG_BOT_TOKEN", "ipsi_bot_token.txt")
+    chat = _secret("TG_CHAT_ID", "ipsi_chat_id.txt")
     if not token or not chat:
         print("[dry-run] 토큰/채팅ID 없음 — 전송 생략\n" + text)
         return False
@@ -184,7 +201,10 @@ def main():
     lines, changed = [], False
 
     # ---- 경쟁률 ----
-    data, asof, err = fetch_and_parse(RATIO_URL)
+    if MODE == "deadline":
+        data, asof, err = {}, "", ""          # 경쟁률은 맥 쪽에서 담당
+    else:
+        data, asof, err = fetch_and_parse(RATIO_URL)
     if err:
         print("경쟁률 조회 실패:", err)
     prev = st.get("ratio", {})
@@ -214,7 +234,7 @@ def main():
 
     # ---- 마감일 ----
     sent = set(st.get("deadline_sent", []))
-    for name, when in DEADLINES:
+    for name, when in (DEADLINES if MODE != "ratio" else []):
         days = (when.date() - now.date()).days
         if when < now or days not in MARKS:
             continue

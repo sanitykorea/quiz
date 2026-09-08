@@ -1,10 +1,10 @@
-name: 입시 알림 (경쟁률·마감일)
+name: 입시 알림 (마감일)
 
 # 원서접수 기간(2026.9.7~9.11)에만 자주 돌린다. 접수가 끝나면 경쟁률이 더 안 바뀜.
 # cron은 UTC 기준 — KST 09:00~19:00 = UTC 00:00~10:00
 on:
   schedule:
-    - cron: '*/20 0-10 * * *'
+    - cron: '5 0,9 * * *'   # 마감 확인이라 자주 볼 필요 없음 (KST 09:05·18:05)
   workflow_dispatch:
 
 # 상태 파일(ipsi_state.json)을 커밋해 다음 실행이 변동을 비교할 수 있게 한다
@@ -21,17 +21,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Cloudflare가 데이터센터 IP에는 TLS 지문까지 검사한다.
-      # urllib으로는 막히므로 실제 크롬 엔진으로 받는다.
-      - name: 크롬 준비
-        run: |
-          python3 -m pip install --quiet playwright
-          python3 -m playwright install --with-deps chromium
-
-      - name: 경쟁률·마감일 확인 후 알림
+      - name: 마감일 확인 후 알림
         env:
           TG_BOT_TOKEN: ${{ secrets.IPSI_TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.IPSI_TG_CHAT_ID }}
+          # 경쟁률은 맥(한국 IP)이 맡는다. 해외 IP는 Cloudflare가 원본에 붙지 못해(521) 실패한다
+          ALERT_MODE: deadline
         run: python3 tools/ipsi_alert.py
 
       - name: 상태 저장

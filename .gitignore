@@ -18,3 +18,7 @@ gemini_key.rtf
 *.rtf
 .DS_Store
 seed.sql
+
+# 입시 알림 봇 토큰 (절대 커밋 금지)
+tools/ipsi_bot_token.txt
+tools/ipsi_chat_id.txt

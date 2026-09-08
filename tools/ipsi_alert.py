@@ -39,6 +39,12 @@ DEADLINES = [
 ]
 MARKS = [3, 2, 1, 0]     # D-3 / D-2 / D-1 / 당일
 
+# 진학어플라이 공지 기준:
+#  · 평소   4시간마다 갱신(00·04·08·12·16·20시)
+#  · 마감일 정오까지 1시간마다 → 이후 갱신 중단, 최종 현황은 집계 후 별도 공지
+CLOSE_DAY = DEADLINES[0][1].date()
+FREEZE_AT = datetime.datetime.combine(CLOSE_DAY, datetime.time(12, 0), tzinfo=KST)
+
 
 HEADERS = {
     "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -223,8 +229,8 @@ def main():
     lines, changed = [], False
 
     # ---- 경쟁률 ----
-    if MODE == "deadline":
-        data, asof, err = {}, "", ""          # 경쟁률은 맥 쪽에서 담당
+    if MODE == "deadline" or now.date() > CLOSE_DAY:
+        data, asof, err = {}, "", ""          # 마감 다음 날부터는 조회할 것이 없다
     else:
         data, asof, err = fetch_and_parse(RATIO_URL)
     if err:
@@ -283,6 +289,23 @@ def main():
                     f"<code>{html.escape(err)}</code>\n\n"
                     "마감일 알림은 정상 동작합니다.")
     st["last_error"] = err
+
+    # 갱신이 멈추는 구간을 미리 알려두지 않으면, 조용한 게 고장인지 정상인지 알 수 없다
+    notices = st.get("notices", [])
+    if now >= FREEZE_AT and "freeze" not in notices:
+        notices.append("freeze")
+        msgs.append("🔒 <b>경쟁률 갱신 중단</b>\n\n"
+                    "마감일 정오까지만 1시간 단위로 갱신돼요. "
+                    "지금부터 마감(18:00)까지는 숫자가 그대로 멈춰 있어요.\n"
+                    "최종 현황은 대학이 집계 후 따로 공지합니다.")
+    if now >= DEADLINES[0][1] and "closed" not in notices:
+        notices.append("closed")
+        snap = "\n".join(f"· {l}: {prev.get(f'{j}|{u}', ['?','?'])[1]}명"
+                          for j, u, l in WATCH) if prev else ""
+        msgs.append("🏁 <b>원서접수 마감</b>\n\n"
+                    f"마지막으로 확인된 수치\n{snap}\n\n"
+                    "실제 최종 경쟁률은 대학 집계 후 공지돼요.")
+    st["notices"] = notices
 
     for m in msgs:
         send(m)

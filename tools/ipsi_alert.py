@@ -34,11 +34,60 @@ HEADERS = {
 }
 
 
-def fetch(url):
+def fetch_plain(url):
+    """가벼운 방법. 국내 일반 IP에서는 이걸로 충분하다."""
     ctx = ssl.create_default_context()
     req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=25, context=ctx) as r:
         return r.read().decode("utf-8", "ignore")
+
+
+def fetch_browser(url):
+    """진짜 크롬으로 연다.
+
+    이 사이트는 Cloudflare 뒤에 있고, 데이터센터 IP(GitHub 러너 등)에서는
+    검사 수위가 올라가 TLS 지문까지 본다. urllib은 파이썬이라는 게 지문에서
+    드러나 막히므로, 실제 브라우저 엔진으로 받아야 통과한다.
+    """
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=[
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox", "--disable-dev-shm-usage",
+        ])
+        ctx = browser.new_context(
+            locale="ko-KR", timezone_id="Asia/Seoul",
+            user_agent=HEADERS["User-Agent"],
+            viewport={"width": 1440, "height": 900},
+            extra_http_headers={"Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8"},
+        )
+        # navigator.webdriver 흔적 제거 — 자동화 탐지의 1순위 지표
+        ctx.add_init_script(
+            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});")
+        page = ctx.new_page()
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            # Cloudflare 자바스크립트 챌린지가 걸리면 표가 늦게 나타난다
+            try:
+                page.wait_for_selector("table", timeout=20000)
+            except Exception:
+                page.wait_for_timeout(6000)
+            return page.content()
+        finally:
+            browser.close()
+
+
+def fetch(url):
+    """가벼운 방법 먼저, 막히면 브라우저로 다시."""
+    try:
+        html_text = fetch_plain(url)
+        if "<table" in html_text:
+            return html_text
+        light_err = f"표 없음({len(html_text)}자)"
+    except Exception as e:
+        light_err = f"{type(e).__name__}: {str(e)[:80]}"
+    print("가벼운 조회 실패 → 브라우저로 재시도:", light_err)
+    return fetch_browser(url)
 
 
 def cells(row):

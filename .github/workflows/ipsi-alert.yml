@@ -21,6 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Cloudflare가 데이터센터 IP에는 TLS 지문까지 검사한다.
+      # urllib으로는 막히므로 실제 크롬 엔진으로 받는다.
+      - name: 크롬 준비
+        run: |
+          python3 -m pip install --quiet playwright
+          python3 -m playwright install --with-deps chromium
+
       - name: 경쟁률·마감일 확인 후 알림
         env:
           TG_BOT_TOKEN: ${{ secrets.IPSI_TG_BOT_TOKEN }}

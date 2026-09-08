@@ -24,9 +24,19 @@ DEADLINES = [
 MARKS = [3, 2, 1, 0]     # D-3 / D-2 / D-1 / 당일
 
 
+HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+    "Referer": "https://addon.jinhakapply.com/",
+    "Connection": "close",
+}
+
+
 def fetch(url):
     ctx = ssl.create_default_context()
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=25, context=ctx) as r:
         return r.read().decode("utf-8", "ignore")
 
@@ -94,11 +104,16 @@ def main():
     lines, changed = [], False
 
     # ---- 경쟁률 ----
+    err = ""
     try:
-        data, asof = parse(fetch(RATIO_URL))
+        page = fetch(RATIO_URL)
+        data, asof = parse(page)
+        if not data:
+            err = f"페이지는 받았으나 표를 못 읽음 ({len(page)}자)"
     except Exception as e:
-        print("경쟁률 조회 실패:", e)
-        data, asof = {}, ""
+        data, asof, err = {}, "", f"{type(e).__name__}: {str(e)[:120]}"
+    if err:
+        print("경쟁률 조회 실패:", err)
     prev = st.get("ratio", {})
     cur = {}
     for jh, unit, label in WATCH:
@@ -140,9 +155,16 @@ def main():
         msgs.append(f"{urgency} <b>{name} D-{days}</b>\n\n"
                     f"{when_s}까지\n남은 시간 <b>{left.days}일 {left.seconds // 3600}시간</b>")
 
+    if err and st.get("last_error") != err:
+        msgs.append("⚠️ <b>경쟁률 조회 실패</b>\n\n"
+                    f"<code>{html.escape(err)}</code>\n\n"
+                    "마감일 알림은 정상 동작합니다.")
+    st["last_error"] = err
+
     for m in msgs:
         send(m)
-    st["ratio"] = cur
+    if cur:
+        st["ratio"] = cur          # 실패했을 때 직전값을 지우지 않는다
     st["deadline_sent"] = sorted(sent)
     st["updated"] = now.isoformat(timespec="seconds")
     save(st)

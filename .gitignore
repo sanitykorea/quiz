@@ -23,3 +23,5 @@ seed.sql
 tools/ipsi_bot_token.txt
 tools/ipsi_chat_id.txt
 tools/ipsi_state.json
+tools/ipsi_sync_key.txt
+ipsi_sync_key.txt

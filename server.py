@@ -719,6 +719,11 @@ def _read_key(env_names, fname):
 def gemini_key():
     return _read_key(["GEMINI_API_KEY", "GOOGLE_API_KEY"], "gemini_key.txt")
 
+def ipsi_sync_key():
+    """입시 알림 스크립트(GitHub Actions·맥)가 앱과 완료 현황·경쟁률을 주고받을 때 쓰는 공유 키.
+    Render 환경변수와 GitHub Secret에 같은 값을 넣는다. 없으면 동기화만 꺼지고 앱 체크는 그대로 저장된다."""
+    return _read_key(["IPSI_SYNC_KEY"], "ipsi_sync_key.txt")
+
 def ai_provider():
     return "gemini" if gemini_key() else None
 
@@ -873,6 +878,10 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._file(HTML, "text/html; charset=utf-8")
         if p == "/api/session":
             return self._json({"authed": self._authed(), "setup": not has_seal(), "isAdmin": self._authed(), "ai": ai_provider()})
+        if p == "/api/ipsi":   # 앱(PIN 세션) 또는 알림 스크립트(동기화 키)
+            if not self._ipsi_authed():
+                return self._json({"error": "unauthorized"}, 401)
+            return self._json(self._ipsi_load())
         # 봉인(PIN) 밖으로 새면 안 되는 학습 콘텐츠 — 기출 본문·정답키·문항 이미지 등
         if p.startswith("/api/") and p != "/api/session" and self._guard():
             return
@@ -2216,6 +2225,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._result_letter(b)
+        if p == "/api/ipsi":
+            if not self._ipsi_authed():
+                return self._json({"error": "unauthorized"}, 401)
+            return self._json(self._ipsi_save(b))
         if p == "/api/live/token":
             if self._guard():
                 return
@@ -2707,6 +2720,46 @@ class H(http.server.BaseHTTPRequestHandler):
             self._reparse_row(c, rid)
         c.commit(); c.close()
         return self._json({"ok": True})
+
+    # ---- 수시 지원 대장: 완료 현황·카드 상태·경쟁률을 앱과 알림 스크립트가 공유 ----
+    def _ipsi_authed(self):
+        if self._authed():
+            return True
+        k = ipsi_sync_key()
+        got = self.headers.get("X-Ipsi-Key", "")
+        return bool(k) and bool(got) and secrets.compare_digest(k, got)
+
+    def _ipsi_load(self):
+        c = db()
+        r = c.execute("SELECT v FROM meta WHERE k='ipsi'").fetchone()
+        c.close()
+        try:
+            d = json.loads(r["v"]) if r else {}
+        except Exception:
+            d = {}
+        d.setdefault("done", []); d.setdefault("status", {}); d.setdefault("ratio", {})
+        d["sync"] = bool(ipsi_sync_key())
+        return d
+
+    def _ipsi_save(self, b):
+        """부분 갱신: done_add/done_remove(목록), status(카드별 병합), ratio·asof(덮어쓰기)."""
+        d = self._ipsi_load(); d.pop("sync", None)
+        done = set(d.get("done", []))
+        done |= {str(x)[:120] for x in (b.get("done_add") or [])}
+        done -= {str(x) for x in (b.get("done_remove") or [])}
+        d["done"] = sorted(done)
+        st = b.get("status")
+        if isinstance(st, dict):
+            d["status"].update({str(k)[:40]: str(v)[:12] for k, v in st.items()})
+        if isinstance(b.get("ratio"), dict):
+            d["ratio"] = b["ratio"]
+            d["asof"] = str(b.get("asof", ""))[:40]
+        d["updated"] = int(time.time())
+        c = db()
+        c.execute("INSERT OR REPLACE INTO meta(k,v) VALUES('ipsi',?)", (json.dumps(d, ensure_ascii=False),))
+        c.commit(); c.close()
+        d["sync"] = bool(ipsi_sync_key())
+        return d
 
     def _live_context(self):
         """Live 세션에 넣을 학습 맥락 — 실제 DB에서 뽑아 매 연결마다 최신으로 만든다."""

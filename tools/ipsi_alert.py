@@ -282,6 +282,27 @@ def collect_done(st):
     return done
 
 
+APP_URL = os.environ.get("IPSI_APP_URL", "https://jisik-tower.onrender.com")
+
+
+def app_sync(payload=None):
+    """학습포털과 완료 현황·경쟁률을 주고받는다. 키가 없으면 조용히 건너뛴다."""
+    key = _secret("IPSI_SYNC_KEY", "ipsi_sync_key.txt")
+    if not key:
+        return None
+    data = json.dumps(payload, ensure_ascii=False).encode() if payload is not None else None
+    req = urllib.request.Request(APP_URL.rstrip("/") + "/api/ipsi", data=data,
+                                 method="POST" if data else "GET",
+                                 headers={"X-Ipsi-Key": key, "Content-Type": "application/json",
+                                          "User-Agent": "ipsi-alert"})
+    try:
+        with urllib.request.urlopen(req, timeout=75) as r:   # Render 무료 플랜 콜드스타트 대비
+            return json.loads(r.read().decode())
+    except Exception as e:
+        print("앱 동기화 실패:", type(e).__name__, str(e)[:100])
+        return None
+
+
 def main():
     now = datetime.datetime.now(KST)
     st = load()
@@ -331,6 +352,15 @@ def main():
     # ---- 마감일 ----
     sent = set(st.get("deadline_sent", []))
     done = collect_done(st) if MODE != "ratio" else set(st.get("done", []))
+    # 학습포털이 완료 현황의 기준. 텔레그램에서 이번에 새로 누른 것만 앱에 더하고,
+    # 앱에서 체크/해제한 것은 그대로 따른다(앱에서 체크하면 알림도 멎는다).
+    if MODE != "ratio":
+        tg_new = done - set(st.get("done", []))
+        remote = app_sync()
+        if remote is not None and isinstance(remote.get("done"), list):
+            done = set(remote["done"]) | tg_new
+            if tg_new:
+                app_sync({"done_add": sorted(tg_new)})
     st["done"] = sorted(done)
     for school, item, when in (DEADLINES if MODE != "ratio" else []):
         key = f"{school}|{item}"
@@ -370,6 +400,8 @@ def main():
                     "실제 최종 경쟁률은 대학 집계 후 공지돼요.")
     st["notices"] = notices
 
+    if cur and MODE != "deadline":
+        app_sync({"ratio": cur, "asof": asof})   # 학습포털 경쟁률 패널 갱신
     for m in msgs:
         send(m)
     for text, key in deadline_msgs:

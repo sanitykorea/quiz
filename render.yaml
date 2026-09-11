@@ -18,3 +18,5 @@ services:
         sync: false
       - key: TURSO_AUTH_TOKEN
         sync: false
+      - key: IPSI_SYNC_KEY      # 입시 알림 스크립트 ↔ 앱 동기화 (GitHub Secret과 같은 값)
+        sync: false

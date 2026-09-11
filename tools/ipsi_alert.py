@@ -36,8 +36,6 @@ WATCH = [
 # (학교, 항목, 마감일시) — 각 대학 2027 수시 요강에서 확인한 값
 DEADLINES = [
     ("성공회대·인천대·인하대", "원서접수 마감", datetime.datetime(2026, 9, 11, 18, 0, tzinfo=KST)),
-    # 동국대(서울)만 17:00 마감 — 진학어플라이 경쟁률 페이지 공지 원문으로 확인
-    ("동국대", "원서접수 마감(17시!)", datetime.datetime(2026, 9, 11, 17, 0, tzinfo=KST)),
     ("인하대",   "대체서식 온라인 입력 마감", datetime.datetime(2026, 9, 12, 0, 0, tzinfo=KST)),
     ("인천대",   "서류 PDF 업로드 마감",     datetime.datetime(2026, 9, 15, 18, 0, tzinfo=KST)),
     ("성공회대", "서류 등기우편 마감",       datetime.datetime(2026, 9, 16, 17, 0, tzinfo=KST)),
@@ -47,8 +45,7 @@ DEADLINES = [
     ("성공회대", "합격자 발표",              datetime.datetime(2026, 11, 13, 16, 0, tzinfo=KST)),
     ("인천대",   "자기추천 면접",            datetime.datetime(2026, 11, 21, 9, 0, tzinfo=KST)),
     ("인하대",   "면접(사회과학대학)",       datetime.datetime(2026, 11, 22, 9, 0, tzinfo=KST)),
-    ("동국대",   "Do Dream 면접(날짜 미확정)", datetime.datetime(2026, 12, 4, 9, 0, tzinfo=KST)),
-    ("인천대·동국대·인하대", "합격자 발표", datetime.datetime(2026, 12, 18, 10, 0, tzinfo=KST)),
+    ("인천대·인하대", "합격자 발표", datetime.datetime(2026, 12, 18, 10, 0, tzinfo=KST)),
     ("전 대학",  "문서등록 시작",            datetime.datetime(2026, 12, 21, 10, 0, tzinfo=KST)),
     ("전 대학",  "문서등록 마감(한 곳만!)",   datetime.datetime(2026, 12, 23, 14, 0, tzinfo=KST)),
     ("전 대학",  "충원 통보 마감",           datetime.datetime(2026, 12, 29, 18, 0, tzinfo=KST)),

@@ -54,7 +54,8 @@ DEADLINES = [
 # 경쟁률 화면에 띄울 기준 마감(원서접수)
 MAIN_DL = DEADLINES[0][2]
 
-MARKS = [3, 2, 1, 0]     # D-3 / D-2 / D-1 / 당일
+# 마감까지 남은 '시간' 기준 알림 지점. 가까워질수록 촘촘해진다.
+MARKS = [72, 48, 24, 12, 6, 3, 1]
 
 # 진학어플라이 공지 기준:
 #  · 평소   4시간마다 갱신(00·04·08·12·16·20시)
@@ -212,32 +213,70 @@ def save(st):
         json.dump(st, f, ensure_ascii=False, indent=1, sort_keys=True)
 
 
-def send(text):
+def _api(method, **payload):
+    token = _secret("TG_BOT_TOKEN", "ipsi_bot_token.txt")
+    if not token:
+        return None
+    body = urllib.parse.urlencode(
+        {k: (json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v)
+         for k, v in payload.items()}).encode()
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/{method}", data=body)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        try:
+            print(f"텔레그램 {method} 실패: HTTP {e.code} "
+                  f"{json.loads(e.read().decode()).get('description','')}")
+        except Exception:
+            print(f"텔레그램 {method} 실패: HTTP {e.code}")
+    except Exception as e:
+        print(f"텔레그램 {method} 실패:", type(e).__name__, str(e)[:120])
+    return None
+
+
+def send(text, done_tag=None):
+    """done_tag가 있으면 '완료' 버튼을 붙인다. 누르면 그 항목 알림이 멎는다."""
     token = _secret("TG_BOT_TOKEN", "ipsi_bot_token.txt")
     chat = _secret("TG_CHAT_ID", "ipsi_chat_id.txt")
     if not token or not chat:
         print("[dry-run] 토큰/채팅ID 없음 — 전송 생략\n" + text)
         return False
-    body = urllib.parse.urlencode({
-        "chat_id": chat, "text": text,
-        "parse_mode": "HTML", "disable_web_page_preview": "true"}).encode()
-    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendMessage", data=body)
-    try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            res = json.loads(r.read().decode())
-        if not res.get("ok"):
-            print("텔레그램 거절:", res.get("description"))
-        return res.get("ok", False)
-    except urllib.error.HTTPError as e:
-        # 사유를 알아야 고칠 수 있다. 본문에 토큰은 들어가지 않는다.
-        try:
-            detail = json.loads(e.read().decode()).get("description", "")
-        except Exception:
-            detail = ""
-        print(f"텔레그램 전송 실패: HTTP {e.code} {detail}")
-    except Exception as e:
-        print("텔레그램 전송 실패:", type(e).__name__, str(e)[:120])
-    return False
+    payload = {"chat_id": chat, "text": text,
+               "parse_mode": "HTML", "disable_web_page_preview": "true"}
+    if done_tag:
+        payload["reply_markup"] = {"inline_keyboard": [[
+            {"text": "✅ 완료했어요 (알림 끄기)", "callback_data": "done|" + done_tag[:55]}]]}
+    res = _api("sendMessage", **payload)
+    if res and not res.get("ok"):
+        print("텔레그램 거절:", res.get("description"))
+    return bool(res and res.get("ok"))
+
+
+def collect_done(st):
+    """채널에서 누른 '완료' 버튼과 '완료 <항목>' 메시지를 읽어 done 목록에 넣는다."""
+    done = set(st.get("done", []))
+    res = _api("getUpdates", offset=st.get("upd_offset", 0), timeout=0)
+    if not res or not res.get("ok"):
+        return done
+    for u in res.get("result", []):
+        st["upd_offset"] = u["update_id"] + 1
+        cq = u.get("callback_query")
+        if cq:
+            data = cq.get("data", "")
+            if data.startswith("done|"):
+                done.add(data[5:])
+                _api("answerCallbackQuery", callback_query_id=cq["id"],
+                     text="알림을 껐어요")
+                print("완료 처리:", data[5:])
+            continue
+        txt = ((u.get("message") or u.get("channel_post") or {}).get("text") or "").strip()
+        if txt.startswith("완료"):
+            key = txt[2:].strip()
+            if key:
+                done.add(key)
+                print("완료 처리(문자):", key)
+    return done
 
 
 def main():
@@ -279,6 +318,7 @@ def main():
                      + history_line(key, applied))
 
     msgs = []
+    deadline_msgs = []
     if lines and (fresh or changed):
         head = f"📊 <b>성공회대 수시 경쟁률</b>\n<i>{html.escape(asof)}</i>\n\n"
         left = MAIN_DL - now
@@ -287,27 +327,28 @@ def main():
 
     # ---- 마감일 ----
     sent = set(st.get("deadline_sent", []))
+    done = collect_done(st) if MODE != "ratio" else set(st.get("done", []))
+    st["done"] = sorted(done)
     for school, item, when in (DEADLINES if MODE != "ratio" else []):
-        days = (when.date() - now.date()).days
-        if when < now or days not in MARKS:
+        key = f"{school}|{item}"
+        if when < now or key in done:          # 이미 지났거나 완료 처리된 항목
             continue
-        tag = f"{school}|{item}|D-{days}"
+        hrs_left = (when - now).total_seconds() / 3600
+        hit = next((t for t in MARKS if hrs_left <= t), None)
+        if hit is None:
+            continue
+        tag = f"{key}|{hit}h"
         if tag in sent:
             continue
         sent.add(tag)
         left = when - now
-        hrs = int(left.total_seconds() // 3600)
+        h, m = int(left.total_seconds() // 3600), int(left.total_seconds() % 3600 // 60)
         when_s = when.strftime("%m월 %d일 %H시").lstrip("0")
-        urgency = "🚨" if days == 0 else ("⚠️" if days <= 1 else "🔔")
-        remain = f"{left.days}일 {left.seconds // 3600}시간" if left.days else f"<b>{hrs}시간 {left.seconds % 3600 // 60}분</b>"
-        msgs.append(f"{urgency} <b>{school} · {item}</b>  D-{days}\n\n"
-                    f"{when_s}까지\n남은 시간 {remain}")
-
-    if err and st.get("last_error") != err:
-        msgs.append("⚠️ <b>경쟁률 조회 실패</b>\n\n"
-                    f"<code>{html.escape(err)}</code>\n\n"
-                    "마감일 알림은 정상 동작합니다.")
-    st["last_error"] = err
+        urgency = "🚨" if hrs_left <= 6 else ("⚠️" if hrs_left <= 24 else "🔔")
+        remain = f"<b>{h}시간 {m}분</b>" if h < 48 else f"{left.days}일 {left.seconds // 3600}시간"
+        deadline_msgs.append((
+            f"{urgency} <b>{school} · {item}</b>\n\n"
+            f"{when_s}까지\n남은 시간 {remain}", key))
 
     # 갱신이 멈추는 구간을 미리 알려두지 않으면, 조용한 게 고장인지 정상인지 알 수 없다
     notices = st.get("notices", [])
@@ -328,6 +369,8 @@ def main():
 
     for m in msgs:
         send(m)
+    for text, key in deadline_msgs:
+        send(text, done_tag=key)
     if cur:
         st["ratio"] = cur
         st["asof"] = asof          # 실패했을 때 직전값을 지우지 않는다

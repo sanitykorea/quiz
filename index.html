@@ -1709,10 +1709,9 @@ function vTower(){
 // 일정의 (학교, 항목) 문자열은 tools/ipsi_alert.py DEADLINES와 글자 하나까지 같아야 한다 —
 // "학교|항목"이 텔레그램 ✅ 버튼과 앱 체크가 공유하는 완료 키다.
 const IPSI_DL=[
- ['성공회대·인천대·숭실대·인하대','원서접수 마감','2026-09-11T18:00'],
+ ['성공회대·인천대·인하대','원서접수 마감','2026-09-11T18:00'],
  ['동국대','원서접수 마감(17시!)','2026-09-11T17:00'],
  ['인하대','대체서식 온라인 입력 마감','2026-09-12T00:00'],
- ['숭실대','대체서식 입력 마감','2026-09-14T17:00'],
  ['인천대','서류 PDF 업로드 마감','2026-09-15T18:00'],
  ['성공회대','서류 등기우편 마감','2026-09-16T17:00'],
  ['인하대','서류 등기우편 마감','2026-09-16T17:00'],
@@ -1721,10 +1720,8 @@ const IPSI_DL=[
  ['성공회대','합격자 발표','2026-11-13T16:00'],
  ['인천대','자기추천 면접','2026-11-21T09:00'],
  ['인하대','면접(사회과학대학)','2026-11-22T09:00'],
- ['숭실대','SSU미래인재 1단계 발표','2026-11-23T10:00'],
- ['숭실대','SSU미래인재 면접','2026-11-27T09:00'],
  ['동국대','Do Dream 면접(날짜 미확정)','2026-12-04T09:00'],
- ['인천대·숭실대·동국대·인하대','합격자 발표','2026-12-18T10:00'],
+ ['인천대·동국대·인하대','합격자 발표','2026-12-18T10:00'],
  ['전 대학','문서등록 시작','2026-12-21T10:00'],
  ['전 대학','문서등록 마감(한 곳만!)','2026-12-23T14:00'],
  ['전 대학','충원 통보 마감','2026-12-29T18:00'],
@@ -1742,10 +1739,6 @@ const IPSI_CARDS=[
   kpis:[['지원자 평균','4.19등급','나 4.00 · 위'],['실질 합격률','21.3%','17/80'],['면접','11.21(토)','3배수']],
   rows:[['올해 경쟁률','72명 / 10명 · 7.20 : 1 (9.11 12:00)'],['모집','10명 (전체 694)'],['작년','80명 지원 · 8.0:1 · 충원 7'],['최종등록 평균','3.42등급'],['전형','1단계 서류 100(3배수) → 서류 70 + 면접 30'],['평가요소','학업 · 진로 · 발전 · 공동체 역량'],['수능최저','없음'],['서류','9.15(화) 18:00 · PDF 업로드 · 증빙 15매']],
   verdict:'최우선. 지원자 평균보다 내가 위에 있는 유일한 학과. HRD·평생교육이라 학력평가 소송과 바로 이어진다.'},
- {id:'ssu',uni:'숭실대',dept:'사회복지학부',type:'학생부종합 · SSU미래인재(면접형)',def:'plan',tone:'reach',
-  kpis:[['70% 등급','3.24','나 −0.76'],['학업 배점','10%','약점 덜 아픔'],['올해 경쟁률','31.0:1','작년 16.5:1']],
-  rows:[['올해 경쟁률','248명 / 8명 · 31.00 : 1 (9.11 14:00) — 작년 16.5:1의 두 배'],['모집','8명(면접형) · 서류형 3명 별도 · 전체 522'],['작년','182명 지원 · 16.5:1 · 실질 12.1%'],['평가 배점','학업 10 · 진로·탐구 60 · 공동체 30'],['전형','1단계 서류 100(3~3.5배수) → 서류 50 + 면접 50'],['수능최저','없음'],['대체서식','9.14(월) 17:00 · 활동 10개 · 각 100자 · 증빙 20매'],['면접','11.27(금)']],
-  verdict:'재검토. 올해 면접형 모집이 8명으로 줄고 경쟁률이 31:1로 작년의 두 배다. 학업 배점 10%·충원율 100%의 이점이 경쟁 폭증에 상쇄될 수 있다.'},
  {id:'dgu',uni:'동국대',dept:'법학과',type:'학생부종합 · Do Dream',def:'plan',tone:'reach',
   kpis:[['합격자 평균','2.70등급','최저 4.83'],['올해 경쟁률','15.6:1','작년 22.3:1'],['충원율','15%','거의 안 빠짐']],
   rows:[['원서접수','9.11(금) 17:00 — 다른 대학보다 1시간 빠름'],['올해 경쟁률','312명 / 20명 · 15.60 : 1 (9.11 14:00)'],['모집','20명 (전체 656)'],['작년','446명 지원'],['전형','1단계 서류 100(2.5~4배수) → 1단계 70 + 면접 30'],['수능최저','미적용'],['면접','12월 초 (미확정 · 작년 12.5~7)']],
@@ -1754,6 +1747,30 @@ const IPSI_CARDS=[
   kpis:[['70% 등급','3.48','편차 0.51'],['실질 합격률','12.6%','23/182'],['면접','11.22(일)','3.5배수']],
   rows:[['올해 경쟁률','124명 / 16명 · 7.75 : 1 (9.11 12:00)'],['모집','16명 (전체 939)'],['작년','182명 지원 · 11.4:1 · 충원 7'],['등급','50% 2.97 · 70% 3.48'],['전형','1단계 서류 100(3.5배수) → 서류 70 + 면접 30'],['수능최저','미적용'],['대체서식','9.11(금) 24:00까지 사이트 입력'],['서류','9.16(수) 17:00 · 등기우편']],
   verdict:'편차가 커 하위권까지 내려가는 구조. 청참위 조례 제안·공익소송이 전공과 정면으로 맞는다.'},
+];
+// 같은 전형 안 다른 학과 — 올해 = 9.11 12:00 경쟁률, 입결 = 작년(2026) 결과
+// [학과, 올해 지원, 모집, 작년 경쟁률, ●, ○, 충원(예비), 표시]  표시: pick=지원 · alt=대안 · warn · off=전공 불일치
+const IPSI_CMP=[
+ {id:'inu',uni:'인천대',type:'자기추천',marks:['최종등록 평균','지원자 평균'],fill:'예비',rows:[
+  ['창의인재개발학과',72,10,8.0,3.42,4.19,7,'pick'],
+  ['법학부',118,17,8.5,3.39,3.69,14,'alt'],
+  ['경제학과',156,19,9.4,3.45,3.72,20],
+  ['사회복지학과',118,10,17.1,3.44,3.94,13],
+  ['소비자학과',196,13,9.2,3.81,3.79,5,'warn'],
+  ['문헌정보학과',79,10,12.1,3.37,3.98,5],
+  ['행정학과',85,11,8.3,3.21,3.94,4],
+  ['정치외교학과',75,10,12.9,3.06,3.87,9],
+  ['독어독문학과',137,11,12.1,4.91,4.77,16,'off']],
+  verdict:'창의인재개발 유지. 사회계열에서 지원자 평균(○)이 나보다 오른쪽인 학과는 여기뿐이다 — 경쟁자층이 나보다 약하다. 대안은 법학부: 올해 6.94:1로 사회계열 최저, 17명 모집에 작년 예비 14번까지 돌았고 소송 서사도 맞는다. 대신 지원자층이 3.69로 강하다. 소비자학과는 작년 최종등록이 가장 관대했던 탓에 9.2 → 15.1:1로 몰렸다.'},
+ {id:'inha',uni:'인하대',type:'인하미래인재(면접형)',marks:['70% 컷','50% 컷'],fill:'충원',rows:[
+  ['정치외교학과',124,16,11.4,3.48,2.97,7,'pick'],
+  ['사회복지학과',62,12,7.3,3.13,2.90,3,'warn'],
+  ['행정학과',137,21,7.7,3.01,2.85,9],
+  ['아동심리학과',56,10,9.8,2.94,2.93,3],
+  ['교육학과',48,7,10.1,2.67,2.67,9],
+  ['미디어커뮤니케이션학과',98,15,9.9,2.57,2.48,8],
+  ['중국학과',106,17,8.3,4.98,4.17,14,'off']],
+  verdict:'정치외교 유지. 사회계열에서 70% 컷(●)이 가장 오른쪽이고, 50%↔70% 폭이 0.51로 가장 넓다 — 하위 합격자가 멀리까지 내려간다는 뜻이다. 사회복지는 5.17:1로 가장 한산하고 모집도 9 → 12명으로 늘었지만 폭이 0.23으로 좁고, 행정·아동심리·교육은 사실상 0이다.'},
 ];
 const IPSI_RATIO_META={
  '학생부종합 열린인재|사회융합학부':{label:'열린인재 · 사회융합',last:270,lastRate:'7.94'},
@@ -1840,6 +1857,23 @@ function vIpsi(){
       ${open?`<dl class="ip-rows">${c.rows.map(([l,v])=>`<dt>${l}</dt><dd>${h(v)}</dd>`).join('')}</dl>`:''}
       <button class="ip-more" data-act="ipsiopen" data-arg="${c.id}" aria-expanded="${!!open}">${open?'접기 ▲':'전형 자세히 ▼'}</button></article>`; };
 
+  const G0=2.3,G1=5.1, gx=v=>((v-G0)/(G1-G0)*100).toFixed(1)+'%';
+  const TAG={pick:['지원','var(--accent-b)'],alt:['대안','var(--gold)'],warn:['주의','var(--danger-b)'],off:['전공 불일치','var(--text3)']};
+  const cmp=g=>`<div class="ip-cmp">
+    <div class="ip-cmp-h"><div><b>${g.uni}</b> · ${h(g.type)}</div>
+      <div class="ip-lg"><span><i class="dot"></i>${g.marks[0]}</span><span><i class="dot o"></i>${g.marks[1]}</span><span><i class="me"></i>나 4.00</span></div></div>
+    <div class="ip-cmp-axis"><span></span><span></span><div class="ip-ax"><span style="left:${gx(2.5)}">2.5</span><span style="left:${gx(3)}">3.0</span><span style="left:${gx(3.5)}">3.5</span><span style="left:${gx(4)}">4.0</span><span style="left:${gx(4.5)}">4.5</span><span style="left:${gx(5)}">5.0등급</span></div></div>
+    ${g.rows.map(([n,a,q,lr,m1,m2,f,t])=>{ const r=a/q, tg=TAG[t], lo=Math.min(m1,m2), hi=Math.max(m1,m2);
+      return `<div class="ip-cr${t==='pick'?' is-pick':''}${t==='off'?' is-off':''}">
+        <div class="ip-cr-n">${h(n)}${tg?`<em style="color:${tg[1]};border-color:${tg[1]}">${tg[0]}</em>`:''}</div>
+        <div class="ip-cr-r"><b>${r.toFixed(2)}</b><span>작년 ${lr.toFixed(1)} · ${g.fill} ${f}</span></div>
+        <div class="ip-sc" role="img" aria-label="${h(n)} ${g.marks[0]} ${m1}, ${g.marks[1]} ${m2}">
+          <i class="rng" style="left:${gx(lo)};width:calc(${gx(hi)} - ${gx(lo)})"></i>
+          <i class="me" style="left:${gx(4)}"></i>
+          <i class="dot o" style="left:${gx(m2)}" title="${g.marks[1]} ${m2}"></i>
+          <i class="dot" style="left:${gx(m1)}" title="${g.marks[0]} ${m1}"></i></div></div>`; }).join('')}
+    <p class="ip-verdict" style="margin-top:10px">${h(g.verdict)}</p></div>`;
+
   const row=x=>{ const d=done.has(x.key), past=x.t<=now, ms=x.t-now, hr=ms/36e5;
     const col=d?'var(--accent-b)':past?'var(--text3)':hr<=24?'var(--danger-b)':hr<=96?'var(--gold)':'var(--text3)';
     return `<div class="ip-dl${d?' is-done':''}${past?' is-past':''}">
@@ -1911,6 +1945,35 @@ function vIpsi(){
 .ip-note{border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--panel);font-size:13px;line-height:1.65;color:var(--text2)}
 .ip-note b{display:block;color:var(--text);font-size:13.5px;margin-bottom:4px}
 .ip-ck:focus-visible,.ip-st:focus-visible,.ip-more:focus-visible,.ip-toggle:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.ip-cmps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:12px;align-items:start}
+.ip-cmp{border:1px solid var(--border);border-radius:14px;background:var(--panel);padding:14px 15px}
+.ip-cmp-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--text2);margin-bottom:8px}
+.ip-cmp-h b{font-size:16px;color:var(--text)}
+.ip-lg{display:flex;gap:10px;font-size:11.5px;color:var(--text3);flex-wrap:wrap}
+.ip-lg span{display:inline-flex;align-items:center;gap:5px}
+.ip-lg .dot{position:static;transform:none}
+.ip-lg .me{position:static;display:inline-block;height:11px}
+.ip-cmp-axis,.ip-cr{display:grid;grid-template-columns:minmax(0,8.5em) 5.6em minmax(110px,1fr);gap:10px;align-items:center}
+.ip-ax{position:relative;height:14px;font-size:10.5px;color:var(--text3);font-variant-numeric:tabular-nums}
+.ip-ax span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.ip-ax span:last-child{transform:translateX(-80%)}
+.ip-cr{padding:7px 0;border-top:1px solid var(--border)}
+.ip-cr.is-pick{background:linear-gradient(90deg,rgba(20,117,92,.14),transparent 70%);border-radius:8px;border-top-color:transparent;padding-left:6px;margin-left:-6px}
+.ip-cr.is-off{opacity:.5}
+.ip-cr-n{font-size:13px;font-weight:700;overflow-wrap:anywhere}
+.ip-cr-n em{font-style:normal;font-size:10.5px;font-weight:700;border:1px solid;border-radius:999px;padding:0 6px;margin-left:5px;white-space:nowrap;vertical-align:1px}
+.ip-cr-r{display:flex;flex-direction:column;font-variant-numeric:tabular-nums}
+.ip-cr-r b{font-size:15px}
+.ip-cr-r span{font-size:10.5px;color:var(--text3);white-space:nowrap}
+.ip-sc{position:relative;height:18px}
+.ip-sc::before{content:'';position:absolute;left:0;right:0;top:50%;height:1px;background:var(--border)}
+.ip-sc .rng{position:absolute;top:50%;height:4px;margin-top:-2px;background:var(--text3);opacity:.45;border-radius:2px}
+.ip-cmp .me{position:absolute;top:0;bottom:0;width:2px;background:var(--gold);transform:translateX(-1px)}
+.ip-cmp .dot{position:absolute;top:50%;width:10px;height:10px;border-radius:50%;background:var(--text);border:2px solid var(--text);transform:translate(-50%,-50%);box-sizing:border-box}
+.ip-cmp .dot.o{background:var(--panel)}
+.ip-cr.is-pick .dot{background:var(--accent-b);border-color:var(--accent-b)}
+.ip-cr.is-pick .dot.o{background:var(--panel)}
+@media(max-width:560px){ .ip-cmp-axis,.ip-cr{grid-template-columns:minmax(0,1fr) auto} .ip-cmp-axis>span{display:none} .ip-cmp-axis .ip-ax,.ip-sc{grid-column:1/-1} .ip-cr-r{align-items:flex-end} }
 @media(max-width:560px){ .ip-clock{text-align:left} .ip-k-v{font-size:13.5px} .ip-cards{grid-template-columns:1fr} }
 </style>
 <div class="ip">
@@ -1925,7 +1988,7 @@ function vIpsi(){
   </div>
 
   <div class="ip-strip">
-    <div><div class="ip-s-k">지원</div><div class="ip-s-v">${IPSI_CARDS.length-cnt.hold}<span style="font-size:13px;color:var(--text3)"> / 6</span></div></div>
+    <div><div class="ip-s-k">지원</div><div class="ip-s-v">${IPSI_CARDS.length-cnt.hold}<span style="font-size:13px;color:var(--text3)"> / ${IPSI_CARDS.length}</span></div></div>
     <div><div class="ip-s-k">제출 완료</div><div class="ip-s-v" style="color:var(--accent-b)">${cnt.sent}</div></div>
     <div><div class="ip-s-k">지원 예정</div><div class="ip-s-v" style="color:var(--danger-b)">${cnt.plan}</div></div>
     <div><div class="ip-s-k">보류</div><div class="ip-s-v" style="color:var(--text3)">${cnt.hold}</div></div>
@@ -1938,6 +2001,10 @@ function vIpsi(){
 
   <section><div class="ip-sec-h"><h3>지원 카드</h3><small>상태 칩을 누르면 지원 예정 → 제출 완료 → 보류</small></div>
     <div class="ip-cards">${IPSI_CARDS.map(card).join('')}</div></section>
+
+  <section><div class="ip-sec-h"><h3>같은 전형, 다른 학과</h3><small>경쟁률 = 9.11 12:00 · 등급 = 작년 입결 · 점이 금색 선보다 오른쪽이면 나보다 낮은 등급</small></div>
+    <div class="ip-cmps">${IPSI_CMP.map(cmp).join('')}</div>
+    <p style="margin:9px 0 0;font-size:12px;color:var(--text3);">입결 등급은 학생부 지원자 통계라 검정고시 환산과 같은 잣대가 아니에요 — 학과끼리 상대 비교로 보세요. 올해 경쟁률은 18:00 마감까지 더 올라가요.</p></section>
 
   <section><div class="ip-sec-h"><h3>마감과 일정</h3>
       <button class="ip-toggle" data-act="ipsipast">${S.ipsiShowPast?'지난 일정 숨기기':'지난 일정 보기 · '+past.length}</button></div>
@@ -1953,7 +2020,7 @@ function vIpsi(){
 
   <section><div class="ip-sec-h"><h3>놓치면 안 되는 것</h3></div>
     <div class="ip-notes">
-      <div class="ip-note" style="border-color:var(--gold-d)"><b>검정고시 증명서는 직접 제출</b>온라인 제공은 2026년 1회까지. 2회차는 정부24 '대입전형용' 합격·성적증명서를 발급, 주민번호 뒷자리까지 표기. 숭실대는 7.1. 이후 발급분만.</div>
+      <div class="ip-note" style="border-color:var(--gold-d)"><b>검정고시 증명서는 직접 제출</b>온라인 제공은 2026년 1회까지. 2회차는 정부24 '대입전형용' 합격·성적증명서를 발급, 주민번호 뒷자리까지 표기.</div>
       <div class="ip-note" style="border-color:var(--danger-b)"><b>문서등록은 한 곳만</b>12.21~23. 두 곳 이상 등록하면 모든 대학 입학이 취소된다. 등록 기간은 전국 공통이라 결과를 다 보고 고르게 된다.</div>
       <div class="ip-note" style="border-color:var(--pink)"><b>12.24~29 전화는 꼭 받기</b>충원 합격은 개별 전화 통보. 연락이 안 되면 등록포기로 처리된다.</div>
     </div></section>

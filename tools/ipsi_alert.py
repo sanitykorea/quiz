@@ -5,6 +5,7 @@
 - 마감일: 남은 날짜가 정해진 지점(D-3/D-2/D-1/당일)에 닿으면 한 번씩만 보낸다.
 표준 라이브러리만 사용. 상태는 같은 폴더의 ipsi_state.json에 남긴다.
 """
+import hashlib
 import json, os, re, html, sys, urllib.request, urllib.error, urllib.parse, datetime, ssl
 
 RATIO_URL = "https://addon.jinhakapply.com/RatioV1/RatioH/Ratio10910511.html"
@@ -236,6 +237,19 @@ def _api(method, **payload):
     return None
 
 
+def _cid(key):
+    """텔레그램 callback_data는 64바이트 제한 — 한글 키 대신 짧은 고정 ID를 싣는다."""
+    return hashlib.sha1(key.encode()).hexdigest()[:12]
+
+
+def _key_of(cid):
+    for s, i, _ in DEADLINES:
+        k = f"{s}|{i}"
+        if cid == _cid(k) or cid == k or (len(cid) >= 10 and k.startswith(cid)):   # 예전 버튼(잘린 키)도 인정
+            return k
+    return cid
+
+
 def send(text, done_tag=None):
     """done_tag가 있으면 '완료' 버튼을 붙인다. 누르면 그 항목 알림이 멎는다."""
     token = _secret("TG_BOT_TOKEN", "ipsi_bot_token.txt")
@@ -247,7 +261,7 @@ def send(text, done_tag=None):
                "parse_mode": "HTML", "disable_web_page_preview": "true"}
     if done_tag:
         payload["reply_markup"] = {"inline_keyboard": [[
-            {"text": "✅ 완료했어요 (알림 끄기)", "callback_data": "done|" + done_tag[:55]}]]}
+            {"text": "✅ 완료했어요 (알림 끄기)", "callback_data": "done|" + _cid(done_tag)}]]}
     res = _api("sendMessage", **payload)
     if res and not res.get("ok"):
         print("텔레그램 거절:", res.get("description"))
@@ -266,10 +280,11 @@ def collect_done(st):
         if cq:
             data = cq.get("data", "")
             if data.startswith("done|"):
-                done.add(data[5:])
+                k = _key_of(data[5:])
+                done.add(k)
                 _api("answerCallbackQuery", callback_query_id=cq["id"],
                      text="알림을 껐어요")
-                print("완료 처리:", data[5:])
+                print("완료 처리:", k)
             continue
         txt = ((u.get("message") or u.get("channel_post") or {}).get("text") or "").strip()
         if txt.startswith("완료"):
@@ -365,13 +380,12 @@ def main():
         if when < now or key in done:          # 이미 지났거나 완료 처리된 항목
             continue
         hrs_left = (when - now).total_seconds() / 3600
-        hit = next((t for t in MARKS if hrs_left <= t), None)
+        hit = min((t for t in MARKS if hrs_left <= t), default=None)   # 가장 가까운 기준 — next()는 늘 72를 골랐다
         if hit is None:
             continue
         tag = f"{key}|{hit}h"
         if tag in sent:
             continue
-        sent.add(tag)
         left = when - now
         h, m = int(left.total_seconds() // 3600), int(left.total_seconds() % 3600 // 60)
         when_s = when.strftime("%m월 %d일 %H시").lstrip("0")
@@ -379,7 +393,7 @@ def main():
         remain = f"<b>{h}시간 {m}분</b>" if h < 48 else f"{left.days}일 {left.seconds // 3600}시간"
         deadline_msgs.append((
             f"{urgency} <b>{school} · {item}</b>\n\n"
-            f"{when_s}까지\n남은 시간 {remain}", key))
+            f"{when_s}까지\n남은 시간 {remain}", key, tag))
 
     # 갱신이 멈추는 구간을 미리 알려두지 않으면, 조용한 게 고장인지 정상인지 알 수 없다
     notices = st.get("notices", [])
@@ -402,15 +416,18 @@ def main():
         app_sync({"ratio": cur, "asof": asof})   # 학습포털 경쟁률 패널 갱신
     for m in msgs:
         send(m)
-    for text, key in deadline_msgs:
-        send(text, done_tag=key)
+    n_dl = 0
+    for text, key, tag in deadline_msgs:
+        if send(text, done_tag=key):
+            sent.add(tag)
+            n_dl += 1
     if cur:
         st["ratio"] = cur
         st["asof"] = asof          # 실패했을 때 직전값을 지우지 않는다
     st["deadline_sent"] = sorted(sent)
     st["updated"] = now.isoformat(timespec="seconds")
     save(st)
-    print(f"보낸 메시지 {len(msgs)}건 · 감시 {len(cur)}개 · {asof}")
+    print(f"보낸 메시지 {len(msgs)}건 · 일정 알림 {n_dl}/{len(deadline_msgs)}건 · 감시 {len(cur)}개 · {asof}")
     return 0
 
 

@@ -320,14 +320,70 @@ def app_sync(payload=None):
         return None
 
 
+# 다른 대학 최종 경쟁률 — (이름, 경쟁률 페이지, 학과, 모집인원, 원서 마감, 작년 최종)
+# 한 페이지에 같은 학과가 전형별로 여러 번 나오므로 모집인원으로 지원한 전형의 행을 고른다
+_D = lambda h: datetime.datetime(2026, 9, 11, h, 0, tzinfo=KST)
+FINAL_WATCH = [
+    ("인천대 창의인재개발 · 자기추천", "https://addon.jinhakapply.com/RatioV1/RatioH/Ratio11230791.html",
+     "창의인재개발학과", 10, _D(18), "작년 최종 80명 · 8.0:1"),
+    ("인하대 정치외교 · 인하미래인재(면접형)", "https://ratio.uwayapply.com/Sl5KOHxXJUpmJSY6Jko3ZlRm",
+     "정치외교학과", 16, _D(18), "작년 최종 182명 · 11.4:1"),
+    ("충북대 사회학 · 학생부종합Ⅰ", "https://addon.jinhakapply.com/RatioV1/RatioH/Ratio11411051.html",
+     "사회학과", 5, _D(19), "작년 최종 148명 · 29.6:1"),
+    ("강원대 정치외교 · 미래인재서류", "https://ratio.uwayapply.com/Sl5KV2FOclc4OUpmJSY6Jko3ZlRm",
+     "정치외교학과", 5, _D(20), "작년 최종 68명 · 13.6:1"),
+]
+
+
+def _page_text(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Macintosh) Chrome/124", "Accept-Language": "ko-KR"})
+    raw = urllib.request.urlopen(req, timeout=25).read()
+    for enc in ("utf-8", "cp949"):
+        try:
+            h = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    h = re.sub(r"(?is)<(script|style).*?</\1>", " ", h)
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", h)))
+
+
+def watch_finals(st):
+    """최종이 뜨면(진학: '최종 마감 현황' 문구 · 유웨이: 기준 시각이 마감 이후) 학교별로 한 번만 보낸다."""
+    got = st.setdefault("finals", {})
+    for label, url, dept, quota, close, last in FINAL_WATCH:
+        if label in got:
+            continue
+        try:
+            t = _page_text(url)
+        except Exception as e:
+            print("최종 확인 실패:", label, type(e).__name__)
+            continue
+        m = re.search(r"(\d{4})년 (\d{2})월 (\d{2})일 (\d{2})시 (\d{2})분 기준", t)
+        at = datetime.datetime(*map(int, m.groups()), tzinfo=KST) if m else None
+        if not ("최종 마감" in t or (at and at >= close)):
+            continue
+        row = next((r for r in re.finditer(re.escape(dept) + r" (\d+) ([\d,]+) ([\d.]+ : 1)", t)
+                    if int(r.group(1)) == quota), None)
+        if not row:
+            print("최종 표에서 행을 못 찾음:", label)
+            continue
+        applied, rate = int(row.group(2).replace(",", "")), row.group(3)
+        if send(f"🏁 <b>{label} 최종 경쟁률</b>\n\n{applied}/{quota}명 · <b>{rate}</b>\n<i>{last}</i>"):
+            got[label] = [quota, applied, rate]
+            print("최종 전송:", label, applied, rate)
+
+
 def final_check():
     """마감 후 2분마다(맥 launchd) — 경쟁률 페이지에 마감 뒤 새 회차가 뜨면 최종 경쟁률을 한 번 보내고 멈춘다."""
     now = datetime.datetime.now(KST)
     if now < MAIN_DL or now > MAIN_DL + datetime.timedelta(days=3):
         return 0
     st = load()
+    watch_finals(st)
     if st.get("final_asof"):
-        return 0                      # 이미 보냈다
+        save(st)
+        return 0                      # 성공회대는 이미 보냈다
     base = st.setdefault("final_base", st.get("asof", ""))   # 마감 전 마지막 회차(정오)
     data, asof, err = fetch_and_parse(RATIO_URL)
     if err or not data or not asof or asof == base:

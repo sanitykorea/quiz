@@ -33,16 +33,33 @@ WATCH = [
     ("교과성적",           "자유전공학부", "교과성적 · 자유전공"),
     ("교과성적",           "사회융합학부", "교과성적 · 사회융합"),
 ]
+# (학교, 항목, 마감일시) — 각 대학 2027 수시 요강에서 확인한 값
 DEADLINES = [
-    ("원서접수 마감", datetime.datetime(2026, 9, 11, 18, 0, tzinfo=KST)),
-    ("서류제출 마감", datetime.datetime(2026, 9, 16, 17, 0, tzinfo=KST)),
+    ("성공회대·인천대·숭실대·동국대·인하대", "원서접수 마감", datetime.datetime(2026, 9, 11, 18, 0, tzinfo=KST)),
+    ("인하대",   "대체서식 온라인 입력 마감", datetime.datetime(2026, 9, 12, 0, 0, tzinfo=KST)),
+    ("숭실대",   "대체서식 입력 마감",       datetime.datetime(2026, 9, 14, 17, 0, tzinfo=KST)),
+    ("인천대",   "서류 PDF 업로드 마감",     datetime.datetime(2026, 9, 15, 18, 0, tzinfo=KST)),
+    ("성공회대", "서류 등기우편 마감",       datetime.datetime(2026, 9, 16, 17, 0, tzinfo=KST)),
+    ("인하대",   "서류 등기우편 마감",       datetime.datetime(2026, 9, 16, 17, 0, tzinfo=KST)),
+    ("성공회대", "면접",                    datetime.datetime(2026, 10, 31, 9, 0, tzinfo=KST)),
+    ("성공회대", "합격자 발표",              datetime.datetime(2026, 11, 13, 16, 0, tzinfo=KST)),
+    ("인천대",   "면접",                    datetime.datetime(2026, 11, 21, 9, 0, tzinfo=KST)),
+    ("인하대",   "면접(사회과학대학)",       datetime.datetime(2026, 11, 22, 9, 0, tzinfo=KST)),
+    ("숭실대",   "면접",                    datetime.datetime(2026, 11, 27, 9, 0, tzinfo=KST)),
+    ("인천대·숭실대", "합격자 발표",          datetime.datetime(2026, 12, 18, 10, 0, tzinfo=KST)),
+    ("전 대학",  "문서등록 시작",            datetime.datetime(2026, 12, 21, 10, 0, tzinfo=KST)),
+    ("전 대학",  "문서등록 마감",            datetime.datetime(2026, 12, 23, 14, 0, tzinfo=KST)),
+    ("전 대학",  "충원 통보 마감",           datetime.datetime(2026, 12, 29, 18, 0, tzinfo=KST)),
 ]
+# 경쟁률 화면에 띄울 기준 마감(원서접수)
+MAIN_DL = DEADLINES[0][2]
+
 MARKS = [3, 2, 1, 0]     # D-3 / D-2 / D-1 / 당일
 
 # 진학어플라이 공지 기준:
 #  · 평소   4시간마다 갱신(00·04·08·12·16·20시)
 #  · 마감일 정오까지 1시간마다 → 이후 갱신 중단, 최종 현황은 집계 후 별도 공지
-CLOSE_DAY = DEADLINES[0][1].date()
+CLOSE_DAY = MAIN_DL.date()
 FREEZE_AT = datetime.datetime.combine(CLOSE_DAY, datetime.time(12, 0), tzinfo=KST)
 
 
@@ -264,25 +281,27 @@ def main():
     msgs = []
     if lines and (fresh or changed):
         head = f"📊 <b>성공회대 수시 경쟁률</b>\n<i>{html.escape(asof)}</i>\n\n"
-        left = DEADLINES[0][1] - now
+        left = MAIN_DL - now
         tail = f"\n\n⏳ 원서접수 마감까지 <b>{left.days}일 {left.seconds // 3600}시간</b>" if left.total_seconds() > 0 else ""
         msgs.append(head + "\n".join(lines) + tail)
 
     # ---- 마감일 ----
     sent = set(st.get("deadline_sent", []))
-    for name, when in (DEADLINES if MODE != "ratio" else []):
+    for school, item, when in (DEADLINES if MODE != "ratio" else []):
         days = (when.date() - now.date()).days
         if when < now or days not in MARKS:
             continue
-        tag = f"{name}|D-{days}"
+        tag = f"{school}|{item}|D-{days}"
         if tag in sent:
             continue
         sent.add(tag)
         left = when - now
-        when_s = when.strftime("%m월 %d일 %H시")
+        hrs = int(left.total_seconds() // 3600)
+        when_s = when.strftime("%m월 %d일 %H시").lstrip("0")
         urgency = "🚨" if days == 0 else ("⚠️" if days <= 1 else "🔔")
-        msgs.append(f"{urgency} <b>{name} D-{days}</b>\n\n"
-                    f"{when_s}까지\n남은 시간 <b>{left.days}일 {left.seconds // 3600}시간</b>")
+        remain = f"{left.days}일 {left.seconds // 3600}시간" if left.days else f"<b>{hrs}시간 {left.seconds % 3600 // 60}분</b>"
+        msgs.append(f"{urgency} <b>{school} · {item}</b>  D-{days}\n\n"
+                    f"{when_s}까지\n남은 시간 {remain}")
 
     if err and st.get("last_error") != err:
         msgs.append("⚠️ <b>경쟁률 조회 실패</b>\n\n"
@@ -298,7 +317,7 @@ def main():
                     "마감일 정오까지만 1시간 단위로 갱신돼요. "
                     "지금부터 마감(18:00)까지는 숫자가 그대로 멈춰 있어요.\n"
                     "최종 현황은 대학이 집계 후 따로 공지합니다.")
-    if now >= DEADLINES[0][1] and "closed" not in notices:
+    if now >= MAIN_DL and "closed" not in notices:
         notices.append("closed")
         snap = "\n".join(f"· {l}: {prev.get(f'{j}|{u}', ['?','?'])[1]}명"
                           for j, u, l in WATCH) if prev else ""

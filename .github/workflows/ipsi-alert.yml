@@ -1,10 +1,11 @@
-name: 입시 알림 (마감일)
+name: 입시 알림 (전형 일정)
 
 # 원서접수 기간(2026.9.7~9.11)에만 자주 돌린다. 접수가 끝나면 경쟁률이 더 안 바뀜.
 # cron은 UTC 기준 — KST 09:00~19:00 = UTC 00:00~10:00
 on:
   schedule:
-    - cron: '5 0,9 * * *'   # 마감 확인이라 자주 볼 필요 없음 (KST 09:05·18:05)
+    # 마감이 학교마다 달라 촘촘히 확인 — KST 09:05~23:05 2시간 간격
+    - cron: '5 0-14/2 * * *'
   workflow_dispatch:
 
 # 상태 파일(ipsi_state.json)을 커밋해 다음 실행이 변동을 비교할 수 있게 한다
@@ -25,7 +26,7 @@ jobs:
           key: ipsi-state-${{ github.run_id }}
           restore-keys: ipsi-state-
 
-      - name: 마감일 확인 후 알림
+      - name: 일정 확인 후 알림
         env:
           TG_BOT_TOKEN: ${{ secrets.IPSI_TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.IPSI_TG_CHAT_ID }}

@@ -414,8 +414,9 @@ def main():
     st["done"] = sorted(done)
     if remote is not None:
         sent |= set(remote.get("sent", []))
-    # backup(맥): 깃허브가 기본. 앱에 연결돼 중복을 거를 수 있을 때만, 기준 시각 18분 뒤까지 안 나갔으면 보낸다
-    use_dl = MODE in ("all", "deadline") or (MODE == "backup" and remote is not None)
+    # 학습포털(보낸 기록 공유)에 연결되면 깃허브(deadline)가 기본, 맥(backup)은 18분 뒤 빈자리만 메운다.
+    # 연결 전에는 중복을 거를 수 없으니 깃허브는 쉬고 맥이 혼자 보낸다.
+    use_dl = MODE in ("all", "backup") or (MODE == "deadline" and remote is not None)
     for school, item, when in (DEADLINES if use_dl else []):
         key = f"{school}|{item}"
         if when < now or key in done:          # 이미 지났거나 완료 처리된 항목
@@ -427,7 +428,7 @@ def main():
         tag = f"{key}|{hit}h"
         if tag in sent:
             continue
-        if MODE == "backup" and hrs_left > hit - 0.3:
+        if MODE == "backup" and remote is not None and hrs_left > hit - 0.3:
             continue
         left = when - now
         h, m = int(left.total_seconds() // 3600), int(left.total_seconds() % 3600 // 60)

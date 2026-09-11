@@ -144,7 +144,7 @@ const mdLite = s => h(s)
 const S = {
   gateMode:'loading', setup:false, isAdmin:false,
   entry:'', setupFirst:'', gateError:'',
-  theme:'dark', tab:'camp', now:Date.now(),
+  theme:'dark', tab:'ipsi', now:Date.now(),
   sleepDone:false, wakeDone:false,
   mins:{math:0,sci:0,kor:0,nc2:0}, running:null, runStart:0,
   nc2Pick:['사회','한국사'], lockPreview:false,
@@ -598,8 +598,9 @@ function gate(){
 function app(){
   const rbtn=on=>`display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:5px 9px;border-radius:8px;cursor:pointer;border:1px solid ${on?'rgba(46,230,166,.5)':'var(--border)'};background:${on?'rgba(20,117,92,.18)':'transparent'};color:${on?'var(--text3)':'var(--text)'};text-decoration:${on?'line-through':'none'};`;
   // 시험이 끝나 쓸 일이 없는 탭(벼락치기)은 보관함을 펼칠 때만 나온다
-  const tabs=[['camp','⛺','베이스캠프'],['ipsi','📋','수시 대장'],['guild','📜','전직소'],['tower','⚔️','수련의 탑'],['bank','📚','문제은행'],['wrong','📕','오답노트'],['eye','🔮','수호령의 눈'],['summon','🧚','수호령 소환'],['exam','🎯','실전 채점']]
-    .concat(S.showArch?[['cram','⚡','벼락치기']]:[]);
+  // 시험이 끝나 메인은 수시 대장. 베이스캠프(편지·리플레이·퀘스트)는 보관함을 열었을 때만 보인다
+  const tabs=[['ipsi','📋','수시 대장'],['guild','📜','전직소'],['tower','⚔️','수련의 탑'],['bank','📚','문제은행'],['wrong','📕','오답노트'],['eye','🔮','수호령의 눈'],['summon','🧚','수호령 소환'],['exam','🎯','실전 채점']]
+    .concat(S.showArch?[['camp','⛺','베이스캠프'],['cram','⚡','벼락치기']]:[]);
   if(S.isAdmin) tabs.push(['admin','🛠','관리소']);
   const nav=tabs.map(([id,ic,lb])=>`<button data-act="tab" data-arg="${id}" style="position:relative;background:none;border:none;padding:14px 16px 13px;cursor:pointer;white-space:nowrap;color:${id===S.tab?'var(--gold)':'var(--text2)'};font-size:15px;font-weight:700;transition:color .15s;"><span style="margin-right:6px;">${ic}</span>${lb}<div style="position:absolute;left:12px;right:12px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--accent-b);box-shadow:0 0 12px var(--accent-b);opacity:${id===S.tab?1:0};transition:opacity .2s;"></div></button>`).join('');
   const view = {camp:vCamp,ipsi:vIpsi,cram:vCram,tower:vTower,guild:vGuild,summon:vSummon,eye:vEye,bank:vBank,exam:vExam,wrong:vWrong,admin:vAdmin}[S.tab]();
@@ -674,7 +675,7 @@ const ARCH_SUBJ=['국어','수학','사회','과학','도덕','영어'];        
 function subjOn(){ return S.showArch ? KEEP_SUBJ.concat(ARCH_SUBJ) : KEEP_SUBJ.slice(); }
 function archived(s){ return !S.showArch && ARCH_SUBJ.includes(s); }
 function archChip(){
-  return `<button data-act="arch" style="padding:7px 13px;border-radius:999px;font-size:12.5px;font-weight:700;cursor:pointer;border:1px dashed var(--border);background:transparent;color:var(--text3);">${S.showArch?'🗄 보관함 접기':`🗄 보관함 (${ARCH_SUBJ.length}과목)`}</button>`;
+  return `<button data-act="arch" style="padding:7px 13px;border-radius:999px;font-size:12.5px;font-weight:700;cursor:pointer;border:1px dashed var(--border);background:transparent;color:var(--text3);">${S.showArch?'🗄 보관함 접기':`🗄 보관함 (${ARCH_SUBJ.length}과목 · 베이스캠프)`}</button>`;
 }
 function cramKey(y,r,s,step){ return `${y}#${r}#${s}#${step}`; }
 // ---- 인앱 강의 영상 ----
@@ -1739,11 +1740,11 @@ const IPSI_CARDS=[
   kpis:[['내 환산점수','468.0','작년 최저 476'],['격차','−8점','등급 하나'],['모집','109명','충원 162']],
   rows:[['올해 최종','499명 / 109명 · 4.58 : 1 — 작년 624명(5.72:1)보다 125명 적다'],['계산','4등급 8점 × 8과목 + 404'],['작년','624명 지원 · 5.72:1 · 최저 476.0(3등급)'],['서류','9.16(수) 17:00 · 등기우편']],
   verdict:'468과 476 사이에 값이 없어 8점을 메울 방법이 없다. 사실상 로또 카드.'},
- {id:'inu',uni:'인천대',dept:'창의인재개발학과',type:'학생부종합 · 자기추천',def:'plan',tone:'safe',
+ {id:'inu',uni:'인천대',dept:'창의인재개발학과',type:'학생부종합 · 자기추천',def:'sent',tone:'safe',
   kpis:[['지원자 평균','4.19등급','나 4.00 · 위'],['실질 합격률','18%','추정 17/94 · 작년 21%'],['면접','11.21(토)','인하대와 같은 날']],
   rows:[['올해 최종','94명 / 10명 · 9.40 : 1 — 작년 80명(8.0)보다 많다 · 정오 72명에서 +22'],['모집','10명 (전체 694)'],['작년','80명 지원 · 8.0:1 · 충원 7'],['최종등록 평균','3.42등급'],['전형','1단계 서류 100(3배수) → 서류 70 + 면접 30'],['평가요소','학업 · 진로 · 발전 · 공동체 역량'],['면접 시간','11.18(수) 발표 — 인하대와 겹치는지 이날 확인'],['수능최저','없음'],['서류','9.15(화) 18:00 · PDF 업로드 · 증빙 15매']],
   verdict:'최우선. 지원자 평균보다 내가 위에 있는 유일한 학과. HRD·평생교육이라 학력평가 소송과 바로 이어진다.'},
- {id:'inha',uni:'인하대',dept:'정치외교학과',type:'학생부종합 · 인하미래인재(면접형)',def:'plan',tone:'reach',
+ {id:'inha',uni:'인하대',dept:'정치외교학과',type:'학생부종합 · 인하미래인재(면접형)',def:'sent',tone:'reach',
   kpis:[['70% 등급','3.48','편차 0.51 · 사회계열 최대'],['실질 합격률','15%','추정 23/153 · 작년 12.6%'],['면접','11.21(토)','인천대와 같은 날']],
   rows:[['올해 최종','153명 / 16명 · 9.56 : 1 — 작년 182명(11.4:1)보다 29명 적다 · 정오 124명에서 +29'],['작년','182명 지원 · 11.4:1 · 충원 7 → 합격 23명'],['등급','50% 2.97 · 70% 3.48 — 사회복지 폭 0.23, 행정 0.16보다 넓게 퍼짐'],['1단계','서류 100% 정성평가 · 3.5배수 = 56명 면접 · 검정고시는 대체서식으로 평가'],['2단계','1단계 70 + 면접 30'],['면접','제출서류 기반 블라인드 · 위원 2 : 1 · 8~10분 · 기초학업 · 진로탐구 · 의사소통 동일 비중'],['1단계 발표','11월 중순(요강상 11.17 화로 보임) · 이때 면접 시간 공지'],['면접 시간','무작위 배정 · 변경 불가'],['강점','소송(판결문 · 소장)과 청참위 조례 제안이 제도 · 권리 · 정책참여로 바로 이어진다'],['약점','기초학업역량이 면접의 1/3 — 검정고시 96 외 학업 증빙이 얇다. 정치학 기본 개념을 활동과 엮어 말할 준비'],['서류형 선택지','같은 학과 중복지원 가능 · 7명 / 28명 4.00:1 (12:00) · 작년 70% 2.77 · 면접 없음 — 확률보다 보험'],['대체서식','9.11(금) 24:00까지 사이트 입력'],['서류','9.16(수) 17:00 · 등기우편']],
   verdict:'넣는다. 사회계열에서 컷이 가장 관대하고 편차가 가장 크며, 올해 경쟁률이 떨어졌고, 서사가 가장 잘 맞는다. 16명 모집이라 한두 명에 확률이 뒤집히지 않는다. 위험은 인천대와 같은 11.21 면접 — 둘 다 1단계를 붙고 시간까지 겹칠 때만 하나를 포기한다.'},
@@ -4115,7 +4116,7 @@ const ACTS = {
       if(archived(S.towerSubject)) S.towerSubject='한국사';
       if(archived(S.wrongSubjFilter)) S.wrongSubjFilter='';
       if(archived(S.qFilter.subject)) S.qFilter.subject='';
-      if(S.tab==='cram') S.tab='camp';
+      if(S.tab==='cram'||S.tab==='camp') S.tab='ipsi';
     }
     render(); },
   towerconcept:()=>towerConcept(),

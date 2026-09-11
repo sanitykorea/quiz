@@ -618,7 +618,7 @@ function app(){
           <div class="hdrBossWrap" style="display:inline-flex;align-items:center;gap:10px;padding:8px 15px;border-radius:999px;background:linear-gradient(180deg,rgba(255,84,104,.18),rgba(255,84,104,.06));border:1px solid rgba(255,84,104,.5);animation:bossPulse 2.4s ease-in-out infinite;white-space:nowrap;">
             <span style="font-size:15px;">⚔️</span>
             <span class="hdrBossTxt" style="font-size:12.5px;color:var(--text2);">최종 보스 토벌일 · ${bossDateStr()}</span>
-            <span style="font-family:'Press Start 2P',monospace;font-size:11px;color:#fff;background:var(--danger);padding:5px 8px;border-radius:8px;box-shadow:0 0 12px rgba(255,84,104,.6);">D-${dday()}</span>
+            ${hdrBadge()}
           </div>
         </div>
         <button class="hdrMenuBtn" data-act="hdrmenu" title="메뉴" aria-label="메뉴" style="${iconBtn}">${S.hdrMenu?'✕':'☰'}</button>
@@ -1709,7 +1709,8 @@ function vTower(){
 // 일정의 (학교, 항목) 문자열은 tools/ipsi_alert.py DEADLINES와 글자 하나까지 같아야 한다 —
 // "학교|항목"이 텔레그램 ✅ 버튼과 앱 체크가 공유하는 완료 키다.
 const IPSI_DL=[
- ['성공회대·인천대·숭실대·동국대·인하대','원서접수 마감','2026-09-11T18:00'],
+ ['성공회대·인천대·숭실대·인하대','원서접수 마감','2026-09-11T18:00'],
+ ['동국대','원서접수 마감(17시!)','2026-09-11T17:00'],
  ['인하대','대체서식 온라인 입력 마감','2026-09-12T00:00'],
  ['숭실대','대체서식 입력 마감','2026-09-14T17:00'],
  ['인천대','서류 PDF 업로드 마감','2026-09-15T18:00'],
@@ -1747,7 +1748,7 @@ const IPSI_CARDS=[
   verdict:'경계선. 70%컷은 한 등급 가까이 위지만 학업 배점 10%·충원율 100%가 실제로 유리하다.'},
  {id:'dgu',uni:'동국대',dept:'법학과',type:'학생부종합 · Do Dream',def:'plan',tone:'reach',
   kpis:[['합격자 평균','2.70등급','최저 4.83'],['경쟁률','22.3:1','가장 치열'],['충원율','15%','거의 안 빠짐']],
-  rows:[['모집','20명 (전체 656)'],['작년','446명 지원'],['전형','1단계 서류 100(2.5~4배수) → 1단계 70 + 면접 30'],['수능최저','미적용'],['면접','12월 초 (미확정 · 작년 12.5~7)']],
+  rows:[['원서접수','9.11(금) 17:00 — 다른 대학보다 1시간 빠름'],['모집','20명 (전체 656)'],['작년','446명 지원'],['전형','1단계 서류 100(2.5~4배수) → 1단계 70 + 면접 30'],['수능최저','미적용'],['면접','12월 초 (미확정 · 작년 12.5~7)']],
   verdict:'재검토 권장. 최저 4.83은 20명 중 한 명이고 충원율 15%라 상위권이 거의 안 빠진다. 전형료를 가장 확실히 버리는 카드.'},
  {id:'inha',uni:'인하대',dept:'정치외교학과',type:'학생부종합 · 인하미래인재(면접형)',def:'plan',tone:'reach',
   kpis:[['70% 등급','3.48','편차 0.51'],['실질 합격률','12.6%','23/182'],['면접','11.22(일)','3.5배수']],
@@ -1959,6 +1960,21 @@ function vIpsi(){
 </div>`;
 }
 
+// 상단 배지 — 시험 전엔 검정고시 D-day, 끝난 뒤엔 수시 대장의 다음 일정(완료 체크한 건 건너뜀)
+function hdrBadge(){
+  const pill=(txt,bg,glow,title)=>`<span title="${h(title)}" style="font-family:'Press Start 2P',monospace;font-size:11px;color:#fff;background:${bg};padding:5px 8px;border-radius:8px;box-shadow:0 0 12px ${glow};white-space:nowrap;">${txt}</span>`;
+  if(dday()>=0) return pill('D-'+dday(),'var(--danger)','rgba(255,84,104,.6)','검정고시 '+EXAM_DATE);
+  const now=Date.now(), done=new Set((S.ipsi&&S.ipsi.done)||[]);
+  const nx=IPSI_DL.map(([sc,it,iso])=>({sc,it,key:sc+'|'+it,t:new Date(iso+'+09:00').getTime()}))
+    .filter(x=>x.t>now&&!done.has(x.key)).sort((a,b)=>a.t-b.t)[0];
+  if(!nx) return pill('수시 끝','var(--accent-b)','rgba(46,230,166,.45)','수시 일정이 모두 지났어요');
+  const kday=t=>{ const d=new Date(t+9*36e5); return Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()); };
+  const n=Math.round((kday(nx.t)-kday(now))/864e5);
+  const urgent=n<=1;
+  return pill((n===0?'D-DAY':'D-'+n),
+    urgent?'var(--danger)':'var(--gold-d)', urgent?'rgba(255,84,104,.6)':'rgba(255,200,80,.45)',
+    nx.sc+' · '+nx.it);
+}
 function vGuild(){
   const items=[['acad','학업수행 스탯',35],['comm','공동체 기여도',25],['self','자기주도성',25],['dili','성실도',15]];
   const score=items.reduce((a,[id,,w])=>a+(S.checklist[id]?w:0),0);

@@ -35,7 +35,9 @@ WATCH = [
 ]
 # (학교, 항목, 마감일시) — 각 대학 2027 수시 요강에서 확인한 값
 DEADLINES = [
-    ("성공회대·인천대·숭실대·동국대·인하대", "원서접수 마감", datetime.datetime(2026, 9, 11, 18, 0, tzinfo=KST)),
+    ("성공회대·인천대·숭실대·인하대", "원서접수 마감", datetime.datetime(2026, 9, 11, 18, 0, tzinfo=KST)),
+    # 동국대(서울)만 17:00 마감 — 진학어플라이 경쟁률 페이지 공지 원문으로 확인
+    ("동국대", "원서접수 마감(17시!)", datetime.datetime(2026, 9, 11, 17, 0, tzinfo=KST)),
     ("인하대",   "대체서식 온라인 입력 마감", datetime.datetime(2026, 9, 12, 0, 0, tzinfo=KST)),
     ("숭실대",   "대체서식 입력 마감",       datetime.datetime(2026, 9, 14, 17, 0, tzinfo=KST)),
     ("인천대",   "서류 PDF 업로드 마감",     datetime.datetime(2026, 9, 15, 18, 0, tzinfo=KST)),

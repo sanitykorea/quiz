@@ -1791,6 +1791,37 @@ const IPSI_RATIO_SNAP={asof:'최종 마감 현황 (9.11 마감 후 공개)',rati
  '학생부종합 열린인재|사회융합학부':[33,295,'8.94 : 1'],
  '교과성적|자유전공학부':[109,499,'4.58 : 1'],
  '교과성적|사회융합학부':[15,96,'6.40 : 1']}};
+// 서류 체크리스트 — 요강 확인(2026.9.12): 국내 고교 재학 이력 → 5개교 모두 학생부 제출, 2026년 2회 검정고시는 온라인 미제공
+const IPSI_DOCS=[
+ {g:'공통 준비',sub:'주말에 정부24에서 미리 발급 · 각 5부 이상',due:null,items:[
+  ['학생부 발급','고1~고2 1학기 · 학교장 직인본(정부24 온라인 발급 가능) · PDF로도 저장'],
+  ['검정고시 합격증명서','대입전형용 · 2026년 2회 · 인하대는 9.7 이후 발급분만'],
+  ['검정고시 성적증명서','2026년 2회 · 재응시 과목이 합산된 성적증명서'],
+  ['인천대 회차 확인','합격증명서와 성적증명서의 연도·회차가 같아야 함 — 애매하면 월요일 입학처 전화'],
+  ['인하대 학생부 필요 여부','요강상 재학 사실 있으면 제출 — 입학처(032-860-7201~8)에 확인']]},
+ {g:'강원대',sub:'원서 사이트 PDF 업로드 · 우편 불가',due:'2026-09-14T14:00',items:[
+  ['합격·성적증명서 PDF','8.17 이후 발급분 · 주민번호 13자리'],
+  ['학생부 PDF','재학기간 학생부 반드시 제출(요강 12쪽)'],
+  ['대체서식 + 증빙 PDF','요강 87~89쪽 양식 · 선택이지만 서류 100% 전형이라 필수처럼']]},
+ {g:'인천대',sub:'원서 사이트 PDF 업로드',due:'2026-09-15T18:00',items:[
+  ['합격·성적증명서','연도·회차(합격증 번호) 동일'],
+  ['학생부 PDF','국내 고교 재학 사실 있는 자'],
+  ['대체서식 + 증빙','인천대 양식 · 증빙 15매 이내']]},
+ {g:'충북대',sub:'등기(우체국 소인) · 방문 · 택배(도착)',due:'2026-09-15T18:00',items:[
+  ['학생부 원본','우편 제출 필수(학폭 확인)'],
+  ['검정고시 성적증명서',''],
+  ['대체서식 + 증빙','청소년생활기록부로도 대체 가능']]},
+ {g:'인하대',sub:'등기',due:'2026-09-16T17:00',items:[
+  ['합격·성적증명서','합격증명서는 9.7 이후 발급분만'],
+  ['학생부','학교장 직인 또는 원본대조필'],
+  ['대체서식 출력본','원서 사이트 입력본 출력'],
+  ['증빙 10쪽','판결문 1·2·14·17·18·19쪽 + 활동증명서 1 + 이수증 3 · 부모 실명·다른 원고 정보 가리기']]},
+ {g:'성공회대',sub:'등기',due:'2026-09-16T17:00',items:[
+  ['2026년 2회 합격·성적증명서','교과성적 468점의 근거 — 안 내면 이전 성적으로 평가될 위험'],
+  ['학생부','국내고 입학 사실 → 제출'],
+  ['열린인재 대체서식 + 증빙',''],
+  ['전형별 발송 확인','열린인재·교과 2개 전형 — 따로 보내는지 확인']]},
+];
 const IPSI_ST=['plan','sent','hold'];
 
 function ipsiState(){ return S.ipsi||{done:[],status:{},ratio:{},sync:false}; }
@@ -1893,8 +1924,35 @@ function vIpsi(){
   const soon=items.filter(x=>x.t>now&&x.t<=wk), later=items.filter(x=>x.t>wk), past=items.filter(x=>x.t<=now);
   const grp=(title,arr)=>arr.length?`<div class="ip-grp">${title} · ${arr.length}</div>${arr.map(row).join('')}`:'';
 
+  const docs=IPSI_DOCS.map(d=>{
+    const keys=d.items.map(([t])=>'doc|'+d.g+'|'+t), n=keys.filter(k=>done.has(k)).length, all=n===keys.length;
+    const t=d.due?new Date(d.due+'+09:00').getTime():null, ms=t?t-now:0;
+    const col=all?'var(--accent-b)':t&&ms<=0?'var(--text3)':t&&ms<=864e5?'var(--danger-b)':t&&ms<=2*864e5?'var(--gold)':'var(--text3)';
+    return `<div class="ip-doc${all?' is-all':''}" style="--dc:${col}">
+      <div class="ip-doc-h"><div><b>${h(d.g)}</b><span>${n}/${keys.length}</span></div>
+        ${t?`<div class="ip-doc-due" style="color:${col}">${ipsiFmt(t)}<em ${!all&&ms>0?`data-ipleft="${t}"`:''}>${all?'완료':ipsiLeft(ms)}</em></div>`:''}</div>
+      <div class="ip-doc-sub">${h(d.sub)}</div>
+      ${d.items.map(([tt,note],i)=>{ const k=keys[i], on=done.has(k);
+        return `<div class="ip-doc-i${on?' is-on':''}"><button class="ip-ck" data-act="ipsidone" data-arg="${h(k)}" aria-pressed="${on}" aria-label="${h(d.g+' '+tt)} 체크">${on?'✓':''}</button>
+          <div><div class="ip-doc-t">${h(tt)}</div>${note?`<div class="ip-doc-n">${h(note)}</div>`:''}</div></div>`; }).join('')}
+    </div>`; }).join('');
+
   return `<style>
 .ip{display:grid;gap:24px}
+.ip-docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px;align-items:start}
+.ip-doc{border:1px solid var(--border);border-left:3px solid var(--dc);border-radius:12px;background:var(--panel);padding:12px 14px;display:grid;gap:8px}
+.ip-doc.is-all{opacity:.55}
+.ip-doc-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ip-doc-h b{font-size:15.5px}
+.ip-doc-h span{font-size:12px;color:var(--text3);margin-left:7px;font-variant-numeric:tabular-nums}
+.ip-doc-due{font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ip-doc-due em{font-style:normal;margin-left:6px}
+.ip-doc-sub{font-size:12px;color:var(--text3);margin-top:-4px}
+.ip-doc-i{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;align-items:start;padding-top:8px;border-top:1px solid var(--border)}
+.ip-doc-t{font-size:13.5px;font-weight:700}
+.ip-doc-n{font-size:12px;color:var(--text2);margin-top:2px;line-height:1.5}
+.ip-doc-i.is-on .ip-doc-t{text-decoration:line-through;color:var(--text3)}
+.ip-doc-i.is-on .ip-ck{background:var(--accent-b);border-color:var(--accent-b)}
 .ip-hero{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:14px}
 .ip-eb{font-family:'Press Start 2P',monospace;font-size:9px;color:var(--gold-d);letter-spacing:1px}
 .ip-h{margin:6px 0 0;font-size:22px;font-weight:800}
@@ -2003,6 +2061,9 @@ function vIpsi(){
     <div><div class="ip-s-k">보류</div><div class="ip-s-v" style="color:var(--text3)">${cnt.hold}</div></div>
     <div><div class="ip-s-k">일정 완료</div><div class="ip-s-v">${items.filter(x=>done.has(x.key)).length}<span style="font-size:13px;color:var(--text3)"> / ${items.length}</span></div></div>
   </div>
+
+  <section><div class="ip-sec-h"><h3>서류 체크리스트</h3><small>체크는 저장되고 다른 기기와 맞춰져요 · 마감순</small></div>
+    <div class="ip-docs">${docs}</div></section>
 
   <section><div class="ip-sec-h"><h3>성공회대 경쟁률</h3><small>${h(R.asof)} · 세로선 = 작년 최종</small></div>
     <div class="ip-ratio">${ratio}</div>

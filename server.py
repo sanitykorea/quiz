@@ -2737,7 +2737,7 @@ class H(http.server.BaseHTTPRequestHandler):
             d = json.loads(r["v"]) if r else {}
         except Exception:
             d = {}
-        d.setdefault("done", []); d.setdefault("status", {}); d.setdefault("ratio", {})
+        d.setdefault("done", []); d.setdefault("status", {}); d.setdefault("ratio", {}); d.setdefault("sent", [])
         d["sync"] = bool(ipsi_sync_key())
         return d
 
@@ -2748,6 +2748,9 @@ class H(http.server.BaseHTTPRequestHandler):
         done |= {str(x)[:120] for x in (b.get("done_add") or [])}
         done -= {str(x) for x in (b.get("done_remove") or [])}
         d["done"] = sorted(done)
+        # 알림을 보낸 기록 — 깃허브와 맥이 같은 알림을 두 번 보내지 않게 공유한다
+        sent = list(d.get("sent", [])) + [str(x)[:140] for x in (b.get("sent_add") or []) if str(x)[:140] not in d.get("sent", [])]
+        d["sent"] = sent[-400:]
         st = b.get("status")
         if isinstance(st, dict):
             d["status"].update({str(k)[:40]: str(v)[:12] for k, v in st.items()})

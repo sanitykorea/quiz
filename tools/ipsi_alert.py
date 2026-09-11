@@ -316,13 +316,49 @@ def app_sync(payload=None):
         return None
 
 
+def final_check():
+    """마감 후 2분마다(맥 launchd) — 경쟁률 페이지에 마감 뒤 새 회차가 뜨면 최종 경쟁률을 한 번 보내고 멈춘다."""
+    now = datetime.datetime.now(KST)
+    if now < MAIN_DL or now > MAIN_DL + datetime.timedelta(days=3):
+        return 0
+    st = load()
+    if st.get("final_asof"):
+        return 0                      # 이미 보냈다
+    base = st.setdefault("final_base", st.get("asof", ""))   # 마감 전 마지막 회차(정오)
+    data, asof, err = fetch_and_parse(RATIO_URL)
+    if err or not data or not asof or asof == base:
+        save(st)
+        print("최종 대기 ·", err or asof or "회차 없음")
+        return 0
+    cur, lines = {}, []
+    for jh, unit, label in WATCH:
+        v = data.get((jh, unit))
+        if not v:
+            continue
+        quota, applied, rate = v
+        key = f"{jh}|{unit}"
+        cur[key] = [quota, applied, rate]
+        lines.append(f"· {label}\n   {applied}/{quota}명 · <b>{rate}</b>" + history_line(key, applied))
+    if not cur:
+        print("최종 대기 · 표 없음", asof)
+        return 0
+    if send(f"🏁 <b>성공회대 최종 경쟁률</b>\n<i>{html.escape(asof)}</i>\n\n" + "\n".join(lines)):
+        st.update(final_asof=asof, asof=asof, ratio=cur)
+        app_sync({"ratio": cur, "asof": asof})
+        print("최종 경쟁률 전송 ·", asof)
+    save(st)
+    return 0
+
+
 def main():
+    if MODE == "final":
+        return final_check()
     now = datetime.datetime.now(KST)
     st = load()
     lines, changed = [], False
 
     # ---- 경쟁률 ----
-    if MODE == "deadline" or now.date() > CLOSE_DAY:
+    if MODE == "deadline" or now >= MAIN_DL:
         data, asof, err = {}, "", ""          # 마감 다음 날부터는 조회할 것이 없다
     else:
         data, asof, err = fetch_and_parse(RATIO_URL)
@@ -367,6 +403,7 @@ def main():
     done = collect_done(st) if MODE != "ratio" else set(st.get("done", []))
     # 학습포털이 완료 현황의 기준. 텔레그램에서 이번에 새로 누른 것만 앱에 더하고,
     # 앱에서 체크/해제한 것은 그대로 따른다(앱에서 체크하면 알림도 멎는다).
+    remote = None
     if MODE != "ratio":
         tg_new = done - set(st.get("done", []))
         remote = app_sync()
@@ -375,7 +412,11 @@ def main():
             if tg_new:
                 app_sync({"done_add": sorted(tg_new)})
     st["done"] = sorted(done)
-    for school, item, when in (DEADLINES if MODE != "ratio" else []):
+    if remote is not None:
+        sent |= set(remote.get("sent", []))
+    # backup(맥): 깃허브가 기본. 앱에 연결돼 중복을 거를 수 있을 때만, 기준 시각 18분 뒤까지 안 나갔으면 보낸다
+    use_dl = MODE in ("all", "deadline") or (MODE == "backup" and remote is not None)
+    for school, item, when in (DEADLINES if use_dl else []):
         key = f"{school}|{item}"
         if when < now or key in done:          # 이미 지났거나 완료 처리된 항목
             continue
@@ -385,6 +426,8 @@ def main():
             continue
         tag = f"{key}|{hit}h"
         if tag in sent:
+            continue
+        if MODE == "backup" and hrs_left > hit - 0.3:
             continue
         left = when - now
         h, m = int(left.total_seconds() // 3600), int(left.total_seconds() % 3600 // 60)
@@ -397,6 +440,8 @@ def main():
 
     # 갱신이 멈추는 구간을 미리 알려두지 않으면, 조용한 게 고장인지 정상인지 알 수 없다
     notices = st.get("notices", [])
+    if MODE == "deadline":                     # 경쟁률 공지는 맥 몫 — 깃허브 캐시 상태로 뒤늦게 다시 보내지 않는다
+        notices = notices + ["freeze", "closed"]
     if now >= FREEZE_AT and "freeze" not in notices:
         notices.append("freeze")
         msgs.append("🔒 <b>경쟁률 갱신 중단</b>\n\n"
@@ -421,6 +466,8 @@ def main():
         if send(text, done_tag=key):
             sent.add(tag)
             n_dl += 1
+    if n_dl and remote is not None:
+        app_sync({"sent_add": sorted(t for _, _, t in deadline_msgs if t in sent)})
     if cur:
         st["ratio"] = cur
         st["asof"] = asof          # 실패했을 때 직전값을 지우지 않는다

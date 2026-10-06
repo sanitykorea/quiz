@@ -215,8 +215,10 @@ def load():
 
 
 def save(st):
-    with open(STATE, "w", encoding="utf-8") as f:
+    # 쓰는 중에 죽으면 상태가 깨져 보낸 알림을 다시 보낸다 → 임시파일에 쓰고 바꿔친다
+    with open(STATE + ".tmp", "w", encoding="utf-8") as f:
         json.dump(st, f, ensure_ascii=False, indent=1, sort_keys=True)
+    os.replace(STATE + ".tmp", STATE)
 
 
 def _api(method, **payload):

@@ -2189,11 +2189,12 @@ function vIpsi(){
 .ip-res.is-in{background:rgba(20,117,92,.08)}
 .ip-res-d{font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
 .ip-res-d em{display:block;font-style:normal;color:var(--text3);font-weight:600;margin-top:2px}
-.ip-dec{width:100%;border-collapse:collapse;font-size:13px}
+.ip-dec{width:100%;min-width:620px;border-collapse:collapse;font-size:13px}   /* 좁은 화면에선 칸이 뭉개지니 가로 스크롤 */
 .ip-dec th,.ip-dec td{border-bottom:1px solid var(--border);padding:10px 12px;text-align:left;vertical-align:top}
 .ip-dec th{font-size:11.5px;color:var(--text3);font-weight:700;white-space:nowrap}
 .ip-dec td{font-variant-numeric:tabular-nums}
-.ip-wrap{overflow-x:auto}
+.ip-wrap{overflow-x:auto;min-width:0}
+.ip>section{min-width:0}   /* grid 자식은 기본이 min-width:auto라 표가 화면을 밀어낸다 */
 @media(max-width:560px){ .ip-res{grid-template-columns:1fr} }
 @media(max-width:560px){ .ip-clock{text-align:left} .ip-k-v{font-size:13.5px} .ip-cards{grid-template-columns:1fr} }
 </style>

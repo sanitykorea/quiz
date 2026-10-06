@@ -2738,11 +2738,12 @@ class H(http.server.BaseHTTPRequestHandler):
         except Exception:
             d = {}
         d.setdefault("done", []); d.setdefault("status", {}); d.setdefault("ratio", {}); d.setdefault("sent", [])
+        d.setdefault("notes", {})   # 면접 답변 초안·발표 결과 메모
         d["sync"] = bool(ipsi_sync_key())
         return d
 
     def _ipsi_save(self, b):
-        """부분 갱신: done_add/done_remove(목록), status(카드별 병합), ratio·asof(덮어쓰기)."""
+        """부분 갱신: done_add/done_remove(목록), status(카드별 병합), notes(키별 병합), ratio·asof(덮어쓰기)."""
         d = self._ipsi_load(); d.pop("sync", None)
         done = set(d.get("done", []))
         done |= {str(x)[:120] for x in (b.get("done_add") or [])}
@@ -2754,6 +2755,16 @@ class H(http.server.BaseHTTPRequestHandler):
         st = b.get("status")
         if isinstance(st, dict):
             d["status"].update({str(k)[:40]: str(v)[:12] for k, v in st.items()})
+        # 면접 답변·결과 메모 — 키별 병합(빈 값이면 삭제), 메모 하나당 4000자
+        nt = b.get("notes")
+        if isinstance(nt, dict):
+            for k, v in list(nt.items())[:50]:
+                k, v = str(k)[:60], str(v)[:4000]
+                if v.strip():
+                    d["notes"][k] = v
+                else:
+                    d["notes"].pop(k, None)
+            d["notes"] = dict(list(d["notes"].items())[:400])
         if isinstance(b.get("ratio"), dict):
             d["ratio"] = b["ratio"]
             d["asof"] = str(b.get("asof", ""))[:40]

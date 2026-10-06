@@ -1822,9 +1822,88 @@ const IPSI_DOCS=[
   ['열린인재 대체서식 + 증빙',''],
   ['전형별 발송 확인','열린인재·교과 2개 전형 — 따로 보내는지 확인']]},
 ];
+// ── 면접 (각 대학 2027 요강에서 확인) ─────────────────────────
+const IPSI_ITV=[
+ {id:'skhu',uni:'성공회대',dept:'사회융합학부 · 열린인재',when:'2026-10-31T09:00',
+  fmt:'평가위원 2명이 지원자 1명 면접',score:'서류 60 + 면접 40',
+  areas:[['전공적합성 50%','지원 학부 이해도·관심도·적응 가능성, 전공을 대하는 자세'],
+         ['역량·발전가능성 50%','전공 발전가능성, 기초역량과 학업수행능력이 전공으로 이어지는지']],
+  note:'면접 배점 40%. 서류 60점은 이미 고정이라 지금 움직일 수 있는 건 이것뿐이다.'},
+ {id:'inu',uni:'인천대',dept:'창의인재개발학과 · 자기추천',when:'2026-11-21T09:00',
+  fmt:'개별면접 · 위원 2인 · 10분 내외',score:'1단계 서류 100%(3배수) → 2단계 서류 70 + 면접 30',
+  areas:[['진로역량·발전역량',''],['공동체역량·의사소통능력','']],
+  note:'제출 서류를 재확인하는 면접. 대체서식 5개 활동이 그대로 질문이 된다. 1단계 11.6, 면접 시간·장소 11.18 발표.'},
+ {id:'inha',uni:'인하대',dept:'정치외교학과 · 인하미래인재(면접형)',when:'2026-11-21T09:00',
+  fmt:'개별면접 · 제출서류 기반 · 순서 무작위, 변경 불가',score:'1단계 서류 100%(3.5배수) → 2단계 서류 70 + 면접 30(300점 만점·최저 100)',
+  areas:[['의사소통역량',''],['진로탐구역량','']],
+  note:'동점자는 면접 총점 → 의사소통역량 → 진로탐구역량 순으로 가른다. 1단계 발표 11.17.'}];
+
+// [키, 질문, 힌트] — 체크(말해봄)와 답변 초안은 기기 간에 저장된다
+const IPSI_Q=[
+ {g:'어느 학교든 나온다',who:'all',qs:[
+  ['q-mot','우리 학과에 왜 지원했나요?','활동 5개 중 두 개를 근거로. 추상적인 관심 말고 한 일로'],
+  ['q-why','검정고시를 선택한 이유는?','자퇴 사유를 캐묻는 게 아니라 이후를 본다 — 학교 밖에서 뭘 했는지로 넘어가기'],
+  ['q-how','학교 밖에서 어떻게 공부했나요?','K-MOOC 3강좌 · 검정고시 96.0 · 스스로 만든 일과'],
+  ['q-plan','대학에서 무엇을 하고 싶나요?','1~2학년에 배우고 싶은 과목 이름까지'],
+  ['q-last','마지막으로 하고 싶은 말','30초. 외운 티 안 나게 한 문장 + 근거 하나']]},
+ {g:'① 학력평가 응시권 행정소송',who:'all',qs:[
+  ['q-s1','왜 소송까지 갔나요?','개인 불편이 아니라 구조 문제로 본 지점'],
+  ['q-s2','소송으로 무엇이 바뀌었다고 보나요?','판결(거부처분 취소)과 아직 안 바뀐 것 구분'],
+  ['q-s3','가장 어려웠던 순간은?','2025.7 제소 ~ 2026.3 선고, 8개월'],
+  ['q-s4','교육권·차별·평등을 어떻게 정의하나요?','법원이 "합리적 이유 없는 차별"로 본 논리 빌려 쓰기'],
+  ['q-s5','반대편(교육청) 논리는 무엇이었나요?','상대 주장을 요약할 수 있으면 신뢰가 올라간다']]},
+ {g:'② 청소년참여위원회 부위원장',who:'all',qs:[
+  ['q-c1','부위원장으로 실제로 한 일은?','회의 운영 · 정책 제안 · 조례 제정 제안'],
+  ['q-c2','제안한 조례는 어떻게 됐나요?','결과가 아쉬우면 그 이유까지'],
+  ['q-c3','의견이 반영되지 않을 때 어떻게 했나요?','공동체역량·의사소통 평가 구간'],
+  ['q-c4','청소년 참여기구의 한계는?','비판만 말고 대안 한 줄']]},
+ {g:'③④⑤ K-MOOC 강좌 3개',who:'all',qs:[
+  ['q-k1','기후정의란 무엇인가요?','③ 기후문제와 국제정치 — 책임과 피해의 불평등'],
+  ['q-k2','국익과 공동선이 부딪힌 사례를 들어보세요','③ 국제 기후 협상'],
+  ['q-k3','복지 사각지대 사례를 하나 들어보세요','④ 한국의 사회정책 — 제도가 누구를 배제하는지'],
+  ['q-k4','사회보험과 공적부조의 차이는?','④ 기본 개념 질문. 짧고 정확하게'],
+  ['q-k5','구조적 성차별이 무엇인가요?','⑤ 젠더와 융합인성 — 개인 악의가 아니라 제도'],
+  ['q-k6','강좌에서 배운 것을 어디에 써봤나요?','배움 → 행동 연결이 진로역량 점수']]},
+ {g:'성공회대만',who:'skhu',qs:[
+  ['q-sk1','사회융합학부에서 무엇을 배우는지 아나요?','전공적합성 50% — 학부 홈페이지 교과목 3개는 외우기'],
+  ['q-sk2','왜 성공회대인가요?','열림·나눔·섬김. 서류 평가항목에도 들어 있는 말'],
+  ['q-sk3','입학 후 학업 계획은?','역량·발전가능성 50% 구간']]},
+ {g:'인천대만',who:'inu',qs:[
+  ['q-in1','창의인재개발학과가 무엇을 하는 곳인지 아나요?','학과 소개와 졸업 후 진로를 자기 말로'],
+  ['q-in2','왜 교육·인재개발 분야인가요?','소송·청참위 경험을 교육 기회 문제로 잇기'],
+  ['q-in3','자기추천서에 쓴 활동 중 가장 중요한 하나는?','10분 면접이라 핵심 하나를 먼저 말해야 한다']]},
+ {g:'인하대만',who:'inha',qs:[
+  ['q-ih1','정치외교학에서 공부하고 싶은 분야는?','국제정치 / 비교정치 / 정치사상 중 하나로 좁히기'],
+  ['q-ih2','최근 관심 있게 본 국제 이슈는?','③ 강좌와 이어지면 가장 좋다'],
+  ['q-ih3','정치가 개인의 삶을 바꾼 사례를 본 적 있나요?','소송 경험이 답이 된다']]},
+ {g:'대비해야 할 압박 질문',who:'all',qs:[
+  ['q-p1','고등학교를 그만둔 이유를 자세히 말해보세요','길게 설명하지 않기. 사실 한 줄 + 이후 한 일'],
+  ['q-p2','학교 밖에 있었는데 협업 경험이 있나요?','청참위 회의·소송 공동 원고'],
+  ['q-p3','소송 당사자라는 점이 학교생활에 영향을 줄까요?','차분하게. 권리 주장과 갈등을 구분'],
+  ['q-p4','성적(검정고시)이 대학 공부에 충분하다고 보나요?','96.0 + 강좌 이수로 근거 들기']]}];
+
+// 발표·등록 일정 (결과를 적어두면 기기 간에 저장된다)
+const IPSI_RES=[
+ ['r-inu1','2026-11-06T10:00','인천대','자기추천 1단계 발표','10명 모집 · 3배수 → 30명 안'],
+ ['r-skhu','2026-11-13T16:00','성공회대','최종 발표 (열린인재·교과)','작년 열린인재 충원 15명'],
+ ['r-inha1','2026-11-17T10:00','인하대','1단계 발표 · 면접시간 공지','16명 모집 · 3.5배수 → 56명 안'],
+ ['r-inu2','2026-11-18T10:00','인천대','면접 시간·장소 발표','준비물도 이때 공지'],
+ ['r-kw','2026-12-18T15:00','강원대','최종 발표',''],
+ ['r-cb','2026-12-18T17:00','충북대','최종 발표',''],
+ ['r-fin','2026-12-18T10:00','인천대·인하대','최종 발표','정확한 시각은 학교 공지 확인'],
+ ['r-reg','2026-12-23T14:00','전 대학','문서등록 마감 — 한 곳만','두 곳 등록 시 전부 입학 취소'],
+ ['r-add','2026-12-29T18:00','전 대학','충원 통보 마감','개별 전화 — 안 받으면 포기 처리']];
+
+// 등록 결정표 — 등록금은 2026학년도 학교 공지, 휴학은 각 학칙
+const IPSI_DEC=[
+ ['성공회대','사회융합학부','미확인(사립 인문사회 330~370만원대)','가능','11.13'],
+ ['인천대','창의인재개발','2,046,000원','1학년 2학기 불가 (첫 2개 학기 제한)','12.18'],
+ ['인하대','정치외교','3,540,000원','가능 (첫 학기만 제한)','12.18'],
+ ['강원대','정치외교','1,712,000원','가능 (첫 학기만 제한)','12.18 15:00'],
+ ['충북대','사회학','1,733,000원','가능 (입학 학기만 제한)','12.18 17:00']];
 const IPSI_ST=['plan','sent','hold'];
 
-function ipsiState(){ return S.ipsi||{done:[],status:{},ratio:{},sync:false}; }
+function ipsiState(){ return S.ipsi||{done:[],status:{},ratio:{},notes:{},sync:false}; }
 async function loadIpsi(){
   const r=await api('/api/ipsi');
   S.ipsi=(r&&!r.error&&Array.isArray(r.done))?r:(S.ipsi||null);   // null = 불러오기 시도함
@@ -1835,6 +1914,12 @@ async function ipsiPost(body){
   if(r&&!r.error&&Array.isArray(r.done)) S.ipsi=r;
   else toast('저장하지 못했어요 · 연결을 확인하고 다시 눌러주세요','bad');
   render();
+}
+function ipsiNote(k,v){
+  const st=ipsiState(), notes={...(st.notes||{})};
+  if((notes[k]||'')===v) return;          // 안 바뀌었으면 요청하지 않는다
+  notes[k]=v; S.ipsi={...st,notes};
+  ipsiPost({notes:{[k]:v}});
 }
 function ipsiToggleDone(k){
   const st=ipsiState(), on=st.done.includes(k);
@@ -1861,7 +1946,9 @@ if(!window._ipsiTick){ window._ipsiTick=setInterval(()=>{
   if(S.tab!=='ipsi') return;
   const el=document.getElementById('ipClock');
   if(el){ const ms=+el.dataset.t-Date.now();
-    el.textContent=ms<=0?'지남':Math.floor(ms/36e5)+':'+String(Math.floor(ms%36e5/6e4)).padStart(2,'0')+':'+String(Math.floor(ms%6e4/1e3)).padStart(2,'0'); }
+    // 48시간이 넘으면 초 단위가 의미 없다 — 면접까지 수백 시간이라 '25일 7시간'으로 보여준다
+    el.textContent=ms<=0?'지남':ms>=48*36e5?Math.floor(ms/864e5)+'일 '+Math.floor(ms%864e5/36e5)+'시간'
+      :Math.floor(ms/36e5)+':'+String(Math.floor(ms%36e5/6e4)).padStart(2,'0')+':'+String(Math.floor(ms%6e4/1e3)).padStart(2,'0'); }
   document.querySelectorAll('[data-ipleft]').forEach(n=>{ n.textContent=ipsiLeft(+n.dataset.ipleft-Date.now()); });
 },1000); }
 
@@ -1936,6 +2023,37 @@ function vIpsi(){
         return `<div class="ip-doc-i${on?' is-on':''}"><button class="ip-ck" data-act="ipsidone" data-arg="${h(k)}" aria-pressed="${on}" aria-label="${h(d.g+' '+tt)} 체크">${on?'✓':''}</button>
           <div><div class="ip-doc-t">${h(tt)}</div>${note?`<div class="ip-doc-n">${h(note)}</div>`:''}</div></div>`; }).join('')}
     </div>`; }).join('');
+
+
+  // ── 면접 준비 ─────────────────────────────────────────────
+  const sec=S.ipsiSec||'now', itvSel=S.ipsiItv||'skhu', notes=st.notes||{};
+  const itvCard=v=>{ const t=new Date(v.when+'+09:00').getTime(), past=t<now, on=itvSel===v.id;
+    return `<article class="ip-itv${on?' is-sel':''}${past?' is-past':''}">
+      <div class="ip-itv-h"><div><div class="ip-uni">${h(v.uni)}</div><div class="ip-type">${h(v.dept)}</div></div>
+        <div class="ip-itv-d">${ipsiFmt(t)}<em ${!past?`data-ipleft="${t}"`:''}>${past?'지남':ipsiLeft(t-now)}</em></div></div>
+      <div class="ip-itv-s">${h(v.score)}<br><span>${h(v.fmt)}</span></div>
+      <dl class="ip-rows">${v.areas.map(([a,b])=>`<dt>${h(a)}</dt><dd>${h(b)}</dd>`).join('')}</dl>
+      <p class="ip-verdict">${h(v.note)}</p>
+      <button class="ip-toggle" data-act="ipsiitv" data-arg="${v.id}" aria-pressed="${on}">${on?'✓ 이 학교 질문 보는 중':'이 학교 질문 보기'}</button></article>`; };
+  const qGroups=IPSI_Q.filter(g=>g.who==='all'||g.who===itvSel);
+  const qAll=qGroups.flatMap(g=>g.qs);
+  const qSpoke=qAll.filter(([k])=>done.has('q|'+k)).length, qWrote=qAll.filter(([k])=>(notes['q|'+k]||'').trim()).length;
+  const qHtml=qGroups.map(g=>`<div class="ip-qg"><div class="ip-qg-h">${h(g.g)} · ${g.qs.length}</div>
+    ${g.qs.map(([k,q,hint])=>{ const dk='q|'+k, on=done.has(dk);
+      return `<div class="ip-q${on?' is-on':''}">
+        <div class="ip-q-h"><button class="ip-ck" data-act="ipsidone" data-arg="${h(dk)}" aria-pressed="${on}" aria-label="${h(q)} 말해봄 체크">${on?'✓':''}</button>
+          <div style="min-width:0"><div class="ip-q-t">${h(q)}</div>${hint?`<div class="ip-q-n">${h(hint)}</div>`:''}</div></div>
+        <textarea class="ip-ta" rows="3" placeholder="답변 초안 — 적은 뒤 소리 내어 말해보고 왼쪽 체크" data-ipnote="${h(dk)}">${h(notes[dk]||'')}</textarea></div>`; }).join('')}</div>`).join('');
+
+  // ── 발표·등록 ─────────────────────────────────────────────
+  const resHtml=IPSI_RES.map(([k,iso,uni,what,note])=>{ const t=new Date(iso+'+09:00').getTime(), past=t<=now, v=notes['res|'+k]||'';
+    return `<div class="ip-res${past?' is-past':''}${v?' is-in':''}">
+      <div class="ip-res-d">${ipsiFmt(t)}<em ${!past?`data-ipleft="${t}"`:''}>${past?'지남':ipsiLeft(t-now)}</em></div>
+      <div style="min-width:0"><div class="ip-q-t">${h(uni)} · ${h(what)}</div>${note?`<div class="ip-q-n">${h(note)}</div>`:''}
+        <input class="ip-in" value="${h(v)}" placeholder="결과 적기 — 합격 / 예비 7번 / 불합격" data-ipnote="res|${h(k)}"></div></div>`; }).join('');
+  const decHtml=IPSI_DEC.map(([uni,dept,fee,lv,when])=>{ const k='dec|'+uni;
+    return `<tr><td><b>${h(uni)}</b><div class="ip-q-n">${h(dept)}</div></td><td>${h(fee)}</td><td>${h(lv)}</td><td>${h(when)}</td>
+      <td><input class="ip-in" value="${h(notes[k]||'')}" placeholder="통학 시간·메모" data-ipnote="${h(k)}"></td></tr>`; }).join('');
 
   return `<style>
 .ip{display:grid;gap:24px}
@@ -2041,6 +2159,42 @@ function vIpsi(){
 .ip-cr.is-pick .dot{background:var(--accent-b);border-color:var(--accent-b)}
 .ip-cr.is-pick .dot.o{background:var(--panel)}
 @media(max-width:560px){ .ip-cmp-axis,.ip-cr{grid-template-columns:minmax(0,1fr) auto} .ip-cmp-axis>span{display:none} .ip-cmp-axis .ip-ax,.ip-sc{grid-column:1/-1} .ip-cr-r{align-items:flex-end} }
+.ip-nav{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px}
+.ip-nav button{background:none;border:1px solid var(--border);border-radius:999px;padding:7px 15px;font-size:13.5px;font-weight:700;color:var(--text3);cursor:pointer}
+.ip-nav button[aria-pressed=true]{background:var(--panel2);border-color:var(--gold);color:var(--text)}
+.ip-itvs{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;align-items:start}
+.ip-itv{border:1px solid var(--border);border-radius:14px;background:var(--panel);padding:14px 15px;display:grid;gap:10px;align-content:start}
+.ip-itv.is-sel{border-color:var(--gold)}
+.ip-itv.is-past{opacity:.5}
+.ip-itv-h{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.ip-itv-d{font-size:12.5px;font-weight:700;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ip-itv-d em{display:block;font-style:normal;color:var(--text3);font-weight:600;margin-top:2px}
+.ip-itv-s{font-size:12.5px;color:var(--text2);line-height:1.6}
+.ip-itv-s span{color:var(--text3)}
+.ip-qg{border:1px solid var(--border);border-radius:14px;background:var(--panel);overflow:hidden;margin-bottom:12px}
+.ip-qg-h{font-size:12px;font-weight:700;color:var(--text3);padding:9px 14px;background:var(--panel2);border-bottom:1px solid var(--border)}
+.ip-q{padding:12px 14px;border-bottom:1px solid var(--border);display:grid;gap:8px}
+.ip-q:last-child{border-bottom:none}
+.ip-q-h{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;align-items:start}
+.ip-q-t{font-size:14px;font-weight:700;line-height:1.5}
+.ip-q-n{font-size:12px;color:var(--text3);margin-top:3px;line-height:1.55}
+.ip-q.is-on .ip-q-t{color:var(--text3)}
+.ip-q.is-on .ip-ck{background:var(--accent-b);border-color:var(--accent-b)}
+.ip-ta,.ip-in{width:100%;box-sizing:border-box;background:var(--panel2);border:1px solid var(--border);border-radius:10px;color:var(--text);font:inherit;font-size:13px;line-height:1.6;padding:9px 11px;resize:vertical}
+.ip-in{resize:none;margin-top:6px}
+.ip-ta:focus,.ip-in:focus{outline:2px solid var(--gold);outline-offset:1px}
+.ip-res{display:grid;grid-template-columns:minmax(0,9.5em) minmax(0,1fr);gap:12px;padding:12px 14px;border-bottom:1px solid var(--border)}
+.ip-res:last-child{border-bottom:none}
+.ip-res.is-past{opacity:.6}
+.ip-res.is-in{background:rgba(20,117,92,.08)}
+.ip-res-d{font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.ip-res-d em{display:block;font-style:normal;color:var(--text3);font-weight:600;margin-top:2px}
+.ip-dec{width:100%;border-collapse:collapse;font-size:13px}
+.ip-dec th,.ip-dec td{border-bottom:1px solid var(--border);padding:10px 12px;text-align:left;vertical-align:top}
+.ip-dec th{font-size:11.5px;color:var(--text3);font-weight:700;white-space:nowrap}
+.ip-dec td{font-variant-numeric:tabular-nums}
+.ip-wrap{overflow-x:auto}
+@media(max-width:560px){ .ip-res{grid-template-columns:1fr} }
 @media(max-width:560px){ .ip-clock{text-align:left} .ip-k-v{font-size:13.5px} .ip-cards{grid-template-columns:1fr} }
 </style>
 <div class="ip">
@@ -2062,31 +2216,20 @@ function vIpsi(){
     <div><div class="ip-s-k">일정 완료</div><div class="ip-s-v">${items.filter(x=>done.has(x.key)).length}<span style="font-size:13px;color:var(--text3)"> / ${items.length}</span></div></div>
   </div>
 
-  <section><div class="ip-sec-h"><h3>서류 체크리스트</h3><small>체크는 저장되고 다른 기기와 맞춰져요 · 마감순</small></div>
-    <div class="ip-docs">${docs}</div></section>
+  <nav class="ip-nav">
+    <button data-act="ipsisec" data-arg="now" aria-pressed="${sec==='now'}">일정 · 카드</button>
+    <button data-act="ipsisec" data-arg="itv" aria-pressed="${sec==='itv'}">면접 준비 ${qSpoke}/${qAll.length}</button>
+    <button data-act="ipsisec" data-arg="end" aria-pressed="${sec==='end'}">발표 · 등록</button>
+  </nav>
 
-  <section><div class="ip-sec-h"><h3>성공회대 경쟁률</h3><small>${h(R.asof)} · 세로선 = 작년 최종</small></div>
-    <div class="ip-ratio">${ratio}</div>
-    <p style="margin:9px 0 0;font-size:12px;color:var(--text3);">최종 마감 현황이에요. 수시 6회 초과 지원자가 걸러지면 지원인원이 조금 바뀔 수 있어요.</p></section>
-
-  <section><div class="ip-sec-h"><h3>지원 카드</h3><small>상태 칩을 누르면 지원 예정 → 제출 완료 → 보류</small></div>
-    <div class="ip-cards">${IPSI_CARDS.map(card).join('')}</div></section>
-
-  <section><div class="ip-sec-h"><h3>같은 전형, 다른 학과</h3><small>경쟁률 = 9.11 12:00 · 등급 = 작년 입결 · 점이 금색 선보다 오른쪽이면 나보다 낮은 등급</small></div>
-    <div class="ip-cmps">${IPSI_CMP.map(cmp).join('')}</div>
-    <p style="margin:9px 0 0;font-size:12px;color:var(--text3);">입결 등급은 학생부 지원자 통계라 검정고시 환산과 같은 잣대가 아니에요 — 학과끼리 상대 비교로 보세요. 올해 경쟁률은 18:00 마감까지 더 올라가요.</p></section>
-
+${sec==="now"?`
   <section><div class="ip-sec-h"><h3>마감과 일정</h3>
       <button class="ip-toggle" data-act="ipsipast">${S.ipsiShowPast?'지난 일정 숨기기':'지난 일정 보기 · '+past.length}</button></div>
     <div class="ip-dl-list">${grp('7일 안',soon)}${grp('다가오는 일정',later)}${S.ipsiShowPast?grp('지난 일정',past):''}</div>
     <p style="margin:9px 0 0;font-size:12px;color:var(--text3);">여기서 체크하면 텔레그램 알림이 멎고, 텔레그램에서 ✅를 누르면 여기에도 체크돼요. 서로 맞춰지는 건 매시 05분이에요.</p></section>
 
-  <section><div class="ip-sec-h"><h3>판단 근거</h3></div>
-    <div class="ip-notes">
-      <div class="ip-note"><b>학종에는 검정고시 환산점수가 없다</b>6개 대학 요강을 모두 확인. 96.0이 숫자가 되는 곳은 성공회대(468/500)·인천대(329/350) 교과전형뿐. 나머지는 평가위원이 서류로 점수를 매긴다.</div>
-      <div class="ip-note"><b>같은 학과, 다른 잣대</b>서울시립대 학종 최종등록자 평균등급 — 행정학과 일반고 2.27 vs 기타 유형(검정고시 포함) 4.30, 사회복지 2.34 vs 4.44. 입결표의 등급은 일반고가 대부분인 평균이다.</div>
-      <div class="ip-note"><b>잃을 건 전형료뿐</b>수능을 안 보니 안 갈 학교에 붙어도 정시가 막히는 손실이 없다. 대신 확률이 낮은 카드는 전형료를 확실히 버리는 셈이라, 충원율이 낮은 상향(동국대 15%)·경쟁이 폭증한 곳(숭실대 31:1)은 뺐다.</div>
-    </div></section>
+  <section><div class="ip-sec-h"><h3>지원 카드</h3><small>상태 칩을 누르면 지원 예정 → 제출 완료 → 보류</small></div>
+    <div class="ip-cards">${IPSI_CARDS.map(card).join('')}</div></section>
 
   <section><div class="ip-sec-h"><h3>놓치면 안 되는 것</h3></div>
     <div class="ip-notes">
@@ -2095,6 +2238,49 @@ function vIpsi(){
       <div class="ip-note" style="border-color:var(--danger-b)"><b>문서등록은 한 곳만</b>12.21~23. 두 곳 이상 등록하면 모든 대학 입학이 취소된다. 등록 기간은 전국 공통이라 결과를 다 보고 고르게 된다.</div>
       <div class="ip-note" style="border-color:var(--pink)"><b>12.24~29 전화는 꼭 받기</b>충원 합격은 개별 전화 통보. 연락이 안 되면 등록포기로 처리된다.</div>
     </div></section>
+
+  <section><div class="ip-sec-h"><h3>지원 기록</h3>
+      <button class="ip-toggle" data-act="ipsirec">${S.ipsiRec?'접기':'펼치기 · 경쟁률, 학과 비교, 서류 체크리스트'}</button></div>
+    ${S.ipsiRec?`
+      <section><div class="ip-sec-h"><h3>성공회대 경쟁률</h3><small>${h(R.asof)} · 세로선 = 작년 최종</small></div>
+    <div class="ip-ratio">${ratio}</div>
+    <p style="margin:9px 0 0;font-size:12px;color:var(--text3);">최종 마감 현황이에요. 수시 6회 초과 지원자가 걸러지면 지원인원이 조금 바뀔 수 있어요.</p></section>
+      <section><div class="ip-sec-h"><h3>같은 전형, 다른 학과</h3><small>경쟁률 = 9.11 12:00 · 등급 = 작년 입결 · 점이 금색 선보다 오른쪽이면 나보다 낮은 등급</small></div>
+    <div class="ip-cmps">${IPSI_CMP.map(cmp).join('')}</div>
+    <p style="margin:9px 0 0;font-size:12px;color:var(--text3);">입결 등급은 학생부 지원자 통계라 검정고시 환산과 같은 잣대가 아니에요 — 학과끼리 상대 비교로 보세요. 올해 경쟁률은 18:00 마감까지 더 올라가요.</p></section>
+      <section><div class="ip-sec-h"><h3>서류 체크리스트</h3><small>체크는 저장되고 다른 기기와 맞춰져요 · 마감순</small></div>
+    <div class="ip-docs">${docs}</div></section>
+      <section><div class="ip-sec-h"><h3>판단 근거</h3></div>
+    <div class="ip-notes">
+      <div class="ip-note"><b>학종에는 검정고시 환산점수가 없다</b>6개 대학 요강을 모두 확인. 96.0이 숫자가 되는 곳은 성공회대(468/500)·인천대(329/350) 교과전형뿐. 나머지는 평가위원이 서류로 점수를 매긴다.</div>
+      <div class="ip-note"><b>같은 학과, 다른 잣대</b>서울시립대 학종 최종등록자 평균등급 — 행정학과 일반고 2.27 vs 기타 유형(검정고시 포함) 4.30, 사회복지 2.34 vs 4.44. 입결표의 등급은 일반고가 대부분인 평균이다.</div>
+      <div class="ip-note"><b>잃을 건 전형료뿐</b>수능을 안 보니 안 갈 학교에 붙어도 정시가 막히는 손실이 없다. 대신 확률이 낮은 카드는 전형료를 확실히 버리는 셈이라, 충원율이 낮은 상향(동국대 15%)·경쟁이 폭증한 곳(숭실대 31:1)은 뺐다.</div>
+    </div></section>
+    `:''}
+  </section>
+`
+
+:sec==="itv"?`
+  <section><div class="ip-sec-h"><h3>면접 정보</h3><small>각 대학 2027 모집요강에서 확인한 배점과 평가요소</small></div>
+    <div class="ip-itvs">${IPSI_ITV.map(itvCard).join('')}</div></section>
+
+  <section><div class="ip-sec-h"><h3>예상 질문 · 답변 초안</h3>
+      <small>말해본 ${qSpoke}/${qAll.length} · 적어둔 ${qWrote}/${qAll.length} · 적으면 자동 저장(다른 기기에서도 보임)</small></div>
+    ${qHtml}
+    <p style="margin:0;font-size:12px;color:var(--text3);">위 카드에서 학교를 고르면 그 학교 전용 질문이 함께 보여요. 체크는 "소리 내어 말해봤다"는 표시예요 — 읽는 것과 말하는 건 다르니까요.</p></section>
+`
+
+:`
+  <section><div class="ip-sec-h"><h3>발표 일정과 결과</h3><small>결과를 적어두면 기기 간에 저장돼요</small></div>
+    <div class="ip-dl-list">${resHtml}</div>
+    <p style="margin:9px 0 0;font-size:12px;color:var(--text3);">예비 번호를 받으면 작년 충원 인원과 비교해 보세요. 성공회대 열린인재는 작년에 15명이 충원됐어요. 다른 학교는 공개 자료를 아직 못 찾았어요.</p></section>
+
+  <section><div class="ip-sec-h"><h3>등록 결정표</h3><small>12.21~23 · 한 곳만 등록 · 등록금은 2026학년도 기준</small></div>
+    <div class="ip-wrap"><table class="ip-dec">
+      <thead><tr><th>학교</th><th>한 학기 등록금</th><th>1학년 2학기 휴학</th><th>발표</th><th>메모</th></tr></thead>
+      <tbody>${decHtml}</tbody></table></div>
+    <p style="margin:9px 0 0;font-size:12px;color:var(--text3);">국립 세 곳은 입학금이 없어요. 국가장학금은 소득분위에 따라 학기당 최대 285만원까지 나와서 실제 부담은 이 표보다 적어요.</p></section>
+`}
 </div>`;
 }
 
@@ -4170,6 +4356,9 @@ const ACTS = {
   ipsidone:k=>ipsiToggleDone(k),
   ipsistatus:id=>ipsiCycleStatus(id),
   ipsiopen:id=>{ S.ipsiOpen=S.ipsiOpen||{}; S.ipsiOpen[id]=!S.ipsiOpen[id]; render(); },
+  ipsisec:v=>{ S.ipsiSec=v; render(); },
+  ipsiitv:v=>{ S.ipsiItv=v; render(); },
+  ipsirec:()=>{ S.ipsiRec=!S.ipsiRec; render(); },
   ipsipast:()=>{ S.ipsiShowPast=!S.ipsiShowPast; render(); },
   arch:()=>{ S.showArch=!S.showArch; applyArch();
     // 보관함을 접었는데 보관된 과목을 보고 있었다면 한국사로 되돌린다
@@ -4290,6 +4479,7 @@ function bindInputs(){
   $.querySelectorAll('[data-filter]').forEach(el=>{ el.onchange=()=>{ S.qFilter[el.getAttribute('data-filter')]=el.value; }; });
   const uf=document.getElementById('up_file'); if(uf) uf.onchange=()=>{ _upFiles=[...uf.files]; };  // 선택 즉시 저장 → 재렌더에도 안 날아감
   const wf=document.getElementById('wn_file'); if(wf) wf.onchange=()=>{ _wnFile=wf.files[0]||null; };
+  $.querySelectorAll('[data-ipnote]').forEach(el=>{ el.onchange=()=>ipsiNote(el.getAttribute('data-ipnote'), el.value.slice(0,4000)); });
   $.querySelectorAll('[data-exam]').forEach(el=>{ el.onchange=()=>{ S.examSel[el.getAttribute('data-exam')]=el.value; }; });
   // 답 입력: 재렌더 없이(포커스 유지) 진행 카운터만 갱신 — 모바일에서 몇 번째까지 썼는지 안 보이는 문제
   $.querySelectorAll('[data-examin]').forEach(el=>{

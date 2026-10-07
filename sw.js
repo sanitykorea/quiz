@@ -15,6 +15,20 @@ self.addEventListener('activate', e => {
     .then(() => self.clients.claim()));
 });
 
+// 캐시에 넣어도 되는 응답인지 — 문서는 우리 앱이 맞는지 본문까지 확인한다.
+async function usable(res, isDoc) {
+  if (!res || !res.ok || res.redirected || (res.type && res.type !== 'basic')) return false;
+  if (!isDoc) return true;
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.includes('text/html')) return false;
+  try {
+    const body = await res.clone().text();
+    return body.includes('id="root"') && body.includes('</html>');   // 앱 표식 + 끝까지 받은 응답
+  } catch (e) {
+    return false;
+  }
+}
+
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== self.location.origin) return;
@@ -26,8 +40,10 @@ self.addEventListener('fetch', e => {
   e.respondWith(caches.open(CACHE).then(async cache => {
     const key = isDoc ? '/' : e.request;
     const hit = await cache.match(key);
-    const net = fetch(e.request).then(res => {
-      if (res && res.ok) cache.put(key, res.clone());
+    const net = fetch(e.request).then(async res => {
+      // 200이라고 다 앱이 아니다. 점검 페이지·프록시 안내문·잘린 응답을 캐시하면
+      // 그 뒤로 계속 그게 떠서 앱이 망가진 채 굳는다(폰에서는 지우기도 어렵다).
+      if (await usable(res, isDoc)) cache.put(key, res.clone());
       return res;
     }).catch(() => null);
 

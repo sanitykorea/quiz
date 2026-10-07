@@ -215,6 +215,8 @@ def init_db():
     CREATE TABLE IF NOT EXISTS exam_results(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, year TEXT, exam_round TEXT, level TEXT, json TEXT, avg REAL, ts INTEGER);
     CREATE TABLE IF NOT EXISTS focus_log(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, start_ts INTEGER, end_ts INTEGER,
         focused_sec INTEGER, distract_cnt INTEGER, checks INTEGER, transcript TEXT);
+    CREATE TABLE IF NOT EXISTS interviews(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, school TEXT,
+        mins REAL, log TEXT, score TEXT);
     """)
     if "answer_text" not in [r["name"] for r in c.execute("PRAGMA table_info(questions)")]:
         c.execute("ALTER TABLE questions ADD COLUMN answer_text TEXT")
@@ -727,8 +729,13 @@ def ipsi_sync_key():
 def ai_provider():
     return "gemini" if gemini_key() else None
 
+# gemini-2.5-flash는 2026년에 신규 사용이 막혔다(404). 과부하(503) 대비로 대체 모델을 차례로 시도한다.
+GEMINI_MODELS = [m for m in [os.environ.get("GEMINI_MODEL")] if m] or \
+    ["gemini-flash-latest", "gemini-3-flash-preview", "gemini-flash-lite-latest"]
+
+
 def _gemini(system, messages, max_tokens, key):
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    model = GEMINI_MODELS[0]
     contents = [{"role": ("model" if m["role"] == "assistant" else "user"),
                  "parts": [{"text": m["content"]}]} for m in messages]
     body = json.dumps({
@@ -740,9 +747,11 @@ def _gemini(system, messages, max_tokens, key):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={urllib.parse.quote(key)}"
     # 분당 요청 제한(429)에 걸리면 잠시 쉬었다 재시도 — 시험 당일 한 번의 실패로 못 쓰는 일이 없도록
     last = None
-    for wait in (0, 6, 14):
+    for i, wait in enumerate((0, 6, 14)):
         if wait:
             time.sleep(wait)
+        model = GEMINI_MODELS[min(i, len(GEMINI_MODELS) - 1)]   # 막히면 다음 모델로
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={urllib.parse.quote(key)}"
         try:
             req = urllib.request.Request(url, data=body, headers={"content-type": "application/json"})
             with urllib.request.urlopen(req, timeout=60) as resp:
@@ -753,7 +762,7 @@ def _gemini(system, messages, max_tokens, key):
             return "".join(p.get("text", "") for p in cands[0].get("content", {}).get("parts", []))
         except urllib.error.HTTPError as e:
             last = e
-            if e.code not in (429, 500, 502, 503, 504):
+            if e.code not in (404, 429, 500, 502, 503, 504):
                 raise
         except Exception as e:
             last = e
@@ -785,6 +794,92 @@ def live_token():
                                  data=body, headers={"x-goog-api-key": key, "Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=20) as r:
         return json.loads(r.read().decode())["name"]
+
+# ── 모의면접 ───────────────────────────────────────────────
+ITV_SCHOOLS = {
+    "skhu": {"name": "성공회대 사회융합학부 · 열린인재", "when": "2026.10.31",
+             "fmt": "평가위원 2명이 지원자 1명을 보는 개별면접. 서류 60 + 면접 40.",
+             "areas": [("전공적합성", 50, "지원 학부 이해도·관심도·적응 가능성, 전공을 대하는 자세"),
+                       ("역량·발전가능성", 50, "전공 발전가능성, 기초역량과 학업수행능력이 전공으로 이어지는지")]},
+    "inu": {"name": "인천대 창의인재개발학과 · 자기추천", "when": "2026.11.21",
+            "fmt": "면접위원 2인, 10분 내외. 제출서류를 바탕으로 재확인하는 개별면접. 2단계 면접 30%.",
+            "areas": [("진로역량", 25, "학과와 이어지는 준비와 경험"), ("발전역량", 25, "앞으로의 성장 가능성"),
+                      ("공동체역량", 25, "협업·책임·타인에 대한 태도"), ("의사소통능력", 25, "질문을 정확히 듣고 짧고 분명하게 답하는가")]},
+    "inha": {"name": "인하대 정치외교학과 · 인하미래인재(면접형)", "when": "2026.11.21",
+             "fmt": "제출서류 기반 개별면접. 2단계 면접 30%. 동점자는 면접 총점 → 의사소통역량 → 진로탐구역량 순.",
+             "areas": [("의사소통역량", 50, "묻는 것에 답하는가, 논리가 이어지는가"),
+                       ("진로탐구역량", 50, "정치외교 분야를 스스로 탐구한 깊이")]},
+}
+
+ITV_WHO = """지원자는 2007.11.10생, 2026년 2회 고졸 검정고시(평균 96.0) 출신의 학교 밖 청소년이다.
+학교생활기록부 대체서식에 적은 활동 5개:
+1) 학교 밖 청소년 학력평가 응시권 행정소송 (2025.07~2026.03) — 원고로 참여, 법원이 응시 거부를 차별로 보고 취소
+2) 광역시 청소년참여위원회 위원·부위원장 (2024.04~2024.12) — 정기회의·정책 활동, 어린이청소년 인권조례 제정 제안
+3) K-MOOC 기후문제와 국제정치 (2025.04~07) — 국제 기후 협상, 기후정의
+4) K-MOOC 한국의 사회정책 (2025.01~09) — 사회보험·공적부조, 복지 사각지대
+5) K-MOOC 젠더와 융합인성 (2025.09~12) — 구조적 성차별, 실질적 성평등
+고2 1학기에 학교 내 괴롭힘으로 자퇴했고, 이후 청소년인권운동단체에서 활동했다."""
+
+
+def itv_system(school):
+    """모의면접관 프롬프트 — 실제 면접처럼 굴고, 평가는 끝난 뒤에 따로 한다."""
+    v = ITV_SCHOOLS.get(school) or ITV_SCHOOLS["skhu"]
+    areas = "\n".join(f"- {n} ({w}%): {d}" for n, w, d in v["areas"])
+    return f"""너는 {v['name']} 면접관이다. 실시간 음성으로 모의면접을 진행한다.
+
+[면접 형식]
+{v['fmt']}
+평가요소:
+{areas}
+
+[지원자]
+{ITV_WHO}
+
+[진행 방식]
+- 존댓말. 차분하고 건조하게. 실제 면접관처럼 굴어라. 칭찬도 격려도 하지 마라.
+- 한 번에 질문 하나만. 길어도 두 문장.
+- 답을 들으면 반드시 **꼬리질문**을 한다. 추상적이면 "구체적으로 어떤 일이었나요?", 결론만 말하면 "왜 그렇게 생각했나요?",
+  활동을 말하면 "본인이 직접 한 부분은 무엇인가요?" 식으로 한 겹 더 들어가라. 한 주제당 꼬리질문 1~2개.
+- 지원자가 말을 멈추면 기다려라. 중간에 평가나 피드백을 주지 마라. 정답을 알려주지도 마라.
+- 답이 비면 "생각나는 대로 말해보세요"라고 한 번만 권하고 다음으로 넘어가라.
+- 음성이다. 마크다운·이모지·목록을 쓰지 마라. 숫자는 한국어로 읽어라.
+
+[질문 순서]
+지원동기로 시작해 위 활동들을 훑고, 학과 이해도를 묻고, 마지막에 "마지막으로 하고 싶은 말"로 끝낸다.
+10분쯤 지났고 할 질문을 다 했으면 "수고하셨습니다. 면접을 마치겠습니다"라고 말하고 멈춰라.
+
+첫 마디는 인사와 함께 첫 질문 하나로 시작하라."""
+
+
+def itv_score(school, log):
+    """끝난 면접 기록을 평가요소별로 채점하고 구체적인 피드백을 만든다."""
+    v = ITV_SCHOOLS.get(school) or ITV_SCHOOLS["skhu"]
+    areas = "\n".join(f'- {n} ({w}점 만점): {d}' for n, w, d in v["areas"])
+    script = "\n".join(("면접관: " if m.get("role") != "user" else "지원자: ") + str(m.get("text", ""))[:1500]
+                        for m in log if str(m.get("text", "")).strip())[:40000]
+    system = f"""너는 {v['name']}의 면접 평가위원이다. 아래 모의면접 기록을 평가요소별로 채점한다.
+{ITV_WHO}
+
+[평가요소]
+{areas}
+
+JSON으로만 답하라:
+{{"total": 0~100 정수,
+ "areas": [{{"name": "평가요소명", "score": 정수, "max": 정수, "why": "그 점수인 이유 1~2문장"}}],
+ "good": ["지원자가 실제로 한 말을 따옴표로 인용하고, 그게 왜 좋았는지. 2~3개"],
+ "fix": [{{"quote": "실제 답변에서 그대로 인용", "problem": "무엇이 문제인지", "better": "이렇게 말했으면 — 실제 문장으로"}}],
+ "one_line": "한 줄 총평(40자 이내)"}}
+근거 없는 칭찬을 하지 마라. 답변이 짧거나 비었으면 그 사실을 점수에 반영하라.
+fix는 2~4개. 반드시 지원자가 실제로 한 말을 인용하라. 하지 않은 말을 지어내지 마라."""
+    out = ai_complete(system, [{"role": "user", "content": script or "(답변 없음)"}], max_tokens=2000)
+    if not out:
+        return None
+    i, j = out.find("{"), out.rfind("}")
+    try:
+        return json.loads(out[i:j + 1])
+    except Exception:
+        return None
+
 
 def ai_vision(prompt, images_png, max_tokens=2000, as_json=True):
     """이미지(PNG 바이트 리스트) + 프롬프트 → Gemini 비전. JSON 문자열 반환."""
@@ -988,6 +1083,10 @@ class H(http.server.BaseHTTPRequestHandler):
             if self._guard():
                 return
             return self._similar(q)
+        if p == "/api/itv":
+            if self._guard():
+                return
+            return self._itv_list(q.get("full", ""))
         if p == "/api/study":
             if self._guard():
                 return
@@ -2234,7 +2333,11 @@ class H(http.server.BaseHTTPRequestHandler):
         if p == "/api/live/token":
             if self._guard():
                 return
-            return self._live_token()
+            return self._live_token(b)
+        if p == "/api/itv":          # 모의면접 기록 저장 + 채점
+            if self._guard():
+                return
+            return self._itv_save(b)
         if p == "/api/ai":
             if self._guard():
                 return
@@ -2819,13 +2922,17 @@ class H(http.server.BaseHTTPRequestHandler):
         c.close()
         return "\n".join(lines) or "아직 쌓인 학습 기록이 없어."
 
-    def _live_token(self):
+    def _live_token(self, b=None):
         try:
             tok = live_token()
         except Exception as e:
             return self._json({"error": "token_failed", "detail": str(e)[:200]}, 502)
         if not tok:
             return self._json({"error": "no-ai"}, 503)
+        if (b or {}).get("mode") == "interview":   # 모의면접은 전혀 다른 인격 — 면접관
+            return self._json({"token": tok, "model": LIVE_MODEL,
+                               "system": itv_system(str((b or {}).get("school", "skhu"))[:10]),
+                               "voices": LIVE_VOICES})
         system = (
             "너는 '루하', 수영이의 스터디 메이트야. 실시간 음성으로 대화한다.\n"
             "말투: 반말, 친구처럼 따뜻하게. 한 번에 1~2문장만. 음성이니 마크다운·이모지 쓰지 마. "
@@ -2843,6 +2950,39 @@ class H(http.server.BaseHTTPRequestHandler):
             "이미 끝난 시험이니 '공부해라'가 아니라 수시 준비를 같이 하는 쪽으로 대화해라.\n\n"
             "[지금까지 쌓인 기록]\n" + self._live_context())
         return self._json({"token": tok, "model": LIVE_MODEL, "system": system, "voices": LIVE_VOICES})
+
+    def _itv_save(self, b):
+        """면접이 끝나면 기록을 저장하고 바로 채점한다. 채점이 실패해도 기록은 남긴다."""
+        school = str(b.get("school", "skhu"))[:10]
+        log = [m for m in (b.get("log") or []) if isinstance(m, dict)][:400]
+        mins = round(float(b.get("mins") or 0), 1)
+        if not log:
+            return self._json({"error": "empty"}, 400)
+        try:
+            score = itv_score(school, log)
+        except Exception as e:
+            print("면접 채점 실패:", type(e).__name__, str(e)[:120])
+            score = None
+        c = db()
+        c.execute("INSERT INTO interviews(ts,school,mins,log,score) VALUES(?,?,?,?,?)",
+                  (int(time.time()), school, mins, json.dumps(log, ensure_ascii=False),
+                   json.dumps(score, ensure_ascii=False) if score else None))
+        c.commit()
+        rid = c.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+        c.close()
+        return self._json({"id": rid, "score": score})
+
+    def _itv_list(self, full=""):
+        c = db()
+        rows = [dict(r) for r in c.execute(
+            "SELECT id,ts,school,mins,score" + (",log" if full else "") +
+            " FROM interviews ORDER BY id DESC LIMIT 20")]
+        c.close()
+        for r in rows:
+            r["score"] = json.loads(r["score"]) if r.get("score") else None
+            if r.get("log"):
+                r["log"] = json.loads(r["log"])
+        return self._json({"items": rows})
 
     def _reparse_row(self, c, qid):
         r = c.execute("SELECT subject,answer_text FROM questions WHERE id=?", (qid,)).fetchone()

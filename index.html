@@ -1954,7 +1954,117 @@ if(!window._ipsiTick){ window._ipsiTick=setInterval(()=>{
     el.textContent=ms<=0?'지남':ms>=48*36e5?Math.floor(ms/864e5)+'일 '+Math.floor(ms%864e5/36e5)+'시간'
       :Math.floor(ms/36e5)+':'+String(Math.floor(ms%36e5/6e4)).padStart(2,'0')+':'+String(Math.floor(ms%6e4/1e3)).padStart(2,'0'); }
   document.querySelectorAll('[data-ipleft]').forEach(n=>{ n.textContent=ipsiLeft(+n.dataset.ipleft-Date.now()); });
+  const ic=document.getElementById('itvClock');
+  if(ic){ const sec=Math.floor((Date.now()-+ic.dataset.t)/1000);
+    ic.textContent=Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0'); }
 },1000); }
+
+// ── 모의면접(음성) ─────────────────────────────────────────
+// 루하(LIVE)와 같은 Gemini Live 배관을 쓰지만 상태는 따로 둔다 — 둘이 동시에 켜지지 않게.
+const ITV={ws:null,ctx:null,out:null,node:null,stream:null,head:0,srcs:[],say:'',heard:''};
+function itvState(){ return S.itv||(S.itv={on:false,school:'skhu',log:[],startAt:0,state:'',report:null,busy:false,list:null}); }
+function itvOn(){ return ITV.ws && ITV.ws.readyState===1; }
+
+async function itvStart(school){
+  const t=itvState(); if(t.on||t.busy) return;
+  if(typeof liveStop==='function' && LIVE.ws) liveStop();      // 루하가 켜져 있으면 끈다
+  t.school=school||t.school; t.busy=true; t.state='연결 중'; t.log=[]; t.report=null; render();
+  try{
+    const tok=await api('/api/live/token',{method:'POST',...jbody({mode:'interview',school:t.school})});
+    if(!tok||!tok.token) throw new Error(tok&&tok.error==='no-ai'?'AI 미연결':'토큰 발급 실패');
+    ITV.stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+    ITV.ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
+    if(ITV.ctx.state==='suspended') await ITV.ctx.resume();
+    ITV.out=new (window.AudioContext||window.webkitAudioContext)({sampleRate:24000});
+    if(ITV.out.state==='suspended') await ITV.out.resume();
+    const ws=new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(tok.token)}`);
+    ITV.ws=ws; ws.binaryType='arraybuffer';
+    const ready=new Promise((res,rej)=>{
+      ws.onopen=()=>{ ws.send(JSON.stringify({setup:{model:'models/'+(tok.model||'gemini-3.1-flash-live-preview'),
+        generationConfig:{responseModalities:['AUDIO'],
+          speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Charon'}},languageCode:'ko-KR'}},
+        systemInstruction:{parts:[{text:tok.system}]},
+        inputAudioTranscription:{}, outputAudioTranscription:{}}})); };
+      ws.onerror=()=>rej(new Error('연결 실패')); ITV._res=res; });
+    ws.onmessage=itvMsg;
+    ws.onclose=()=>{ ITV.ws=null; const x=itvState(); if(x.on){ x.state='연결이 끊겼어요 — 중지하고 채점하세요'; render(); } };
+    await Promise.race([ready, new Promise((_,rj)=>setTimeout(()=>rj(new Error('응답 없음')),15000))]);
+    await itvMic();
+    ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'(면접 시작)'}]}],turnComplete:true}}));
+    t.on=true; t.busy=false; t.startAt=Date.now(); t.state=''; render();
+  }catch(err){
+    t.busy=false; t.on=false; t.state='시작 못 함: '+(err.message||'알 수 없음'); itvClose(); render();
+  }
+}
+
+async function itvMic(){
+  const blob=URL.createObjectURL(new Blob([LIVE_WORKLET],{type:'application/javascript'}));
+  await ITV.ctx.audioWorklet.addModule(blob); URL.revokeObjectURL(blob);
+  const src=ITV.ctx.createMediaStreamSource(ITV.stream);
+  ITV.node=new AudioWorkletNode(ITV.ctx,'pcm');
+  const rate=Math.round(ITV.ctx.sampleRate);
+  ITV.node.port.onmessage=ev=>{ if(!itvOn()) return;
+    ITV.ws.send(JSON.stringify({realtimeInput:{audio:{data:b64(ev.data),mimeType:'audio/pcm;rate='+rate}}})); };
+  src.connect(ITV.node);
+  const mute=ITV.ctx.createGain(); mute.gain.value=0; ITV.node.connect(mute); mute.connect(ITV.ctx.destination);
+}
+
+function itvMsg(ev){
+  const t=itvState();
+  let m; try{ m=JSON.parse(typeof ev.data==='string'?ev.data:new TextDecoder().decode(ev.data)); }catch(x){ return; }
+  if(m.setupComplete){ if(ITV._res){ ITV._res(); ITV._res=null; } return; }
+  const sc=m.serverContent||{};
+  if(sc.interrupted){ ITV.srcs.forEach(x=>{ try{ x.stop(); }catch(e){} }); ITV.srcs=[]; ITV.head=0; }
+  (sc.modelTurn&&sc.modelTurn.parts||[]).forEach(p=>{ if(p.inlineData&&p.inlineData.data) itvPlay(p.inlineData.data); });
+  if(sc.inputTranscription&&sc.inputTranscription.text) ITV.heard=(ITV.heard||'')+sc.inputTranscription.text;
+  if(sc.outputTranscription&&sc.outputTranscription.text) ITV.say=(ITV.say||'')+sc.outputTranscription.text;
+  if(sc.turnComplete){
+    if((ITV.heard||'').trim()){ t.log.push({role:'user',text:ITV.heard.trim(),at:Date.now()}); ITV.heard=''; }
+    if((ITV.say||'').trim()){ t.log.push({role:'itv',text:ITV.say.trim(),at:Date.now()}); ITV.say=''; }
+    render();
+  }
+}
+
+function itvPlay(data){
+  try{
+    const bin=atob(data); const buf=new ArrayBuffer(bin.length); const u=new Uint8Array(buf);
+    for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+    const pcm=new Int16Array(buf); const f=new Float32Array(pcm.length);
+    for(let i=0;i<pcm.length;i++) f[i]=pcm[i]/32768;
+    const ab=ITV.out.createBuffer(1,f.length,24000); ab.copyToChannel(f,0);
+    const sNode=ITV.out.createBufferSource(); sNode.buffer=ab; sNode.connect(ITV.out.destination);
+    ITV.head=Math.max(ITV.head,ITV.out.currentTime+0.04);
+    sNode.start(ITV.head); ITV.head+=ab.duration; ITV.srcs.push(sNode);
+    sNode.onended=()=>{ ITV.srcs=ITV.srcs.filter(x=>x!==sNode); };
+  }catch(x){}
+}
+
+function itvClose(){
+  ITV.srcs.forEach(x=>{ try{ x.stop(); }catch(e){} }); ITV.srcs=[]; ITV.head=0;
+  if(ITV.node){ try{ ITV.node.port.onmessage=null; ITV.node.disconnect(); }catch(x){} ITV.node=null; }
+  if(ITV.stream){ ITV.stream.getTracks().forEach(x=>x.stop()); ITV.stream=null; }
+  if(ITV.ws){ const w=ITV.ws; ITV.ws=null; try{ w.onclose=null; w.close(); }catch(x){} }
+  [ITV.ctx,ITV.out].forEach(c=>{ try{ c&&c.close(); }catch(x){} }); ITV.ctx=ITV.out=null;
+  ITV.say=ITV.heard='';
+}
+
+async function itvFinish(){
+  const t=itvState(); if(!t.on) return;
+  const mins=(Date.now()-t.startAt)/60000;
+  itvClose(); t.on=false; t.busy=true; t.state='채점 중 — 20초쯤 걸려요'; render();
+  const r=await api('/api/itv',{method:'POST',...jbody({school:t.school,mins:Math.round(mins*10)/10,log:t.log})});
+  t.busy=false;
+  if(r&&r.score){ t.report=r.score; t.state=''; }
+  else t.state=r&&r.error==='empty'?'대화가 없어서 채점할 게 없어요':'채점에 실패했어요 — 기록은 남았어요';
+  t.list=null; render(); itvLoad();
+}
+
+async function itvLoad(){
+  const t=itvState(); if(t.list!==null&&t.list!==undefined) return;
+  t.list=[]; const r=await api('/api/itv');
+  if(r&&Array.isArray(r.items)) t.list=r.items;
+  render();
+}
 
 function vIpsi(){
   if(S.ipsi===undefined&&!S.ipsiLoading){ S.ipsiLoading=true; loadIpsi().finally(()=>{ S.ipsiLoading=false; }); }
@@ -2048,6 +2158,53 @@ function vIpsi(){
         <div class="ip-q-h"><button class="ip-ck" data-act="ipsidone" data-arg="${h(dk)}" aria-pressed="${on}" aria-label="${h(q)} 말해봄 체크">${on?'✓':''}</button>
           <div style="min-width:0"><div class="ip-q-t">${h(q)}</div>${hint?`<div class="ip-q-n">${h(hint)}</div>`:''}</div></div>
         <textarea class="ip-ta" rows="3" placeholder="답변 초안 — 적은 뒤 소리 내어 말해보고 왼쪽 체크" data-ipnote="${h(dk)}">${h(notes[dk]||'')}</textarea></div>`; }).join('')}</div>`).join('');
+
+  // ── 모의면접 화면 ──
+  const it=itvState(); if(sec==='itv') itvLoad();
+  const itvName={skhu:'성공회대',inu:'인천대',inha:'인하대'};
+  const turn=m=>`<div class="ip-t ${m.role==='user'?'is-me':''}"><b>${m.role==='user'?'나':'면접관'}</b>${h(m.text)}</div>`;
+  const report=r=>!r?'':`<div class="ip-rep">
+    <div class="ip-rep-h"><div><div class="ip-rep-s">${r.total||0}<span>/100</span></div>
+      <div class="ip-verdict" style="margin-top:2px">${h(r.one_line||'')}</div></div></div>
+    ${(r.areas||[]).map(a=>{ const pc=Math.round((a.score||0)/(a.max||50)*100);
+      return `<div class="ip-r" style="padding:10px 12px">
+        <div class="ip-r-top"><span class="ip-r-name">${h(a.name||'')}</span><span class="ip-r-rate">${a.score||0}<span style="font-size:12px;color:var(--text3)">/${a.max||50}</span></span></div>
+        <div class="ip-bar"><i style="width:${Math.min(100,pc)}%;${pc<50?'background:var(--danger-b)':''}"></i></div>
+        <div class="ip-q-n">${h(a.why||'')}</div></div>`; }).join('')}
+    ${(r.good||[]).length?`<div class="ip-qg-h" style="border-radius:8px;margin-top:4px">좋았던 것</div>
+      ${(r.good||[]).map(g=>`<div class="ip-q-n" style="padding:6px 2px">✅ ${h(g)}</div>`).join('')}`:''}
+    ${(r.fix||[]).map(f=>`<div class="ip-fix">
+      <div class="ip-fix-q">“${h(f.quote||'')}”</div>
+      <div class="ip-q-n">⚠️ ${h(f.problem||'')}</div>
+      <div class="ip-fix-b">→ ${h(f.better||'')}</div></div>`).join('')}</div>`;
+  const itvHtml=`<section><div class="ip-sec-h"><h3>모의면접 (음성)</h3>
+      <small>${it.on?'진행 중 — 실제 면접처럼 꼬리질문이 들어와요':'마이크로 말하면 돼요 · 끝나면 평가요소별로 채점해요'}</small></div>
+    <div class="ip-itv" style="border-color:${it.on?'var(--danger-b)':'var(--border)'}">
+      ${it.on?`<div class="ip-itv-h"><div><b>${h(itvName[it.school]||'')} 면접관과 대화 중</b>
+          <div class="ip-q-n">말이 끝나면 잠깐 기다리세요. 끊고 들어가도 됩니다.</div></div>
+        <div class="ip-itv-d"><span id="itvClock" data-t="${it.startAt}">0:00</span></div></div>
+        <div class="ip-turns">${(it.log.slice(-6).map(turn).join(''))||'<div class="ip-q-n">첫 질문을 기다리는 중…</div>'}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="ip-st" data-act="itvstop" style="color:var(--accent-b);background:rgba(20,117,92,.18);border-color:var(--accent-b)">■ 끝내고 채점받기</button>
+          <button class="ip-toggle" data-act="itvcancel">그만두기(채점 안 함)</button></div>`
+      :`<div class="ip-itv-h"><div><b>${h(itvName[itvSel]||'')} 모의면접</b>
+          <div class="ip-q-n">위 면접 카드에서 고른 학교 기준으로 진행해요. 10분쯤 걸려요.</div></div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="ip-st" data-act="itvstart" data-arg="${itvSel}" ${it.busy?'disabled':''}
+            style="color:var(--gold);background:var(--panel2);border-color:var(--gold);font-size:14px;padding:9px 16px">🎤 면접 시작</button>
+          ${it.state?`<span class="ip-q-n">${h(it.state)}</span>`:''}</div>`}
+      ${it.report?report(it.report):''}
+    </div>
+    ${(it.list||[]).length?`<div class="ip-sec-h" style="margin:16px 0 8px"><h3 style="font-size:14px">지난 모의면접</h3></div>
+      <div class="ip-dl-list">${it.list.map(x=>{ const sc=x.score||{}, open=it.openId===x.id;
+        return `<div class="ip-res" style="grid-template-columns:minmax(0,1fr) auto">
+          <div style="min-width:0"><div class="ip-q-t">${h(itvName[x.school]||x.school)} · ${new Date(x.ts*1000).toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'})} · ${x.mins}분</div>
+            ${sc.one_line?`<div class="ip-q-n">${h(sc.one_line)}</div>`:'<div class="ip-q-n">채점 실패 — 기록만 있어요</div>'}
+            ${open?report(sc):''}</div>
+          <div style="text-align:right"><div class="ip-r-rate">${sc.total!=null?sc.total:'—'}</div>
+            <button class="ip-toggle" data-act="itvopen" data-arg="${x.id}" style="margin-top:4px">${open?'접기':'자세히'}</button></div></div>`; }).join('')}</div>`:''}
+  </section>
+`;
 
   // ── 발표·등록 ─────────────────────────────────────────────
   const resHtml=IPSI_RES.map(([k,iso,uni,what,note])=>{ const t=new Date(iso+'+09:00').getTime(), past=t<=now, v=notes['res|'+k]||'';
@@ -2163,6 +2320,17 @@ function vIpsi(){
 .ip-cr.is-pick .dot{background:var(--accent-b);border-color:var(--accent-b)}
 .ip-cr.is-pick .dot.o{background:var(--panel)}
 @media(max-width:560px){ .ip-cmp-axis,.ip-cr{grid-template-columns:minmax(0,1fr) auto} .ip-cmp-axis>span{display:none} .ip-cmp-axis .ip-ax,.ip-sc{grid-column:1/-1} .ip-cr-r{align-items:flex-end} }
+.ip-turns{display:grid;gap:8px;max-height:260px;overflow-y:auto;padding:10px;background:var(--panel2);border-radius:10px}
+.ip-t{font-size:13px;line-height:1.6}
+.ip-t b{display:block;font-size:11px;color:var(--text3);margin-bottom:2px}
+.ip-t.is-me{color:var(--text2)}
+.ip-t.is-me b{color:var(--gold)}
+.ip-rep{display:grid;gap:8px;margin-top:12px;border-top:1px dashed var(--border);padding-top:12px}
+.ip-rep-s{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
+.ip-rep-s span{font-size:14px;color:var(--text3);font-weight:600}
+.ip-fix{border-left:3px solid var(--danger-b);padding:8px 0 8px 10px;display:grid;gap:3px}
+.ip-fix-q{font-size:13px;color:var(--text2)}
+.ip-fix-b{font-size:13px;color:var(--accent-b);line-height:1.6}
 .ip-nav{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px}
 .ip-nav button{background:none;border:1px solid var(--border);border-radius:999px;padding:7px 15px;font-size:13.5px;font-weight:700;color:var(--text3);cursor:pointer}
 .ip-nav button[aria-pressed=true]{background:var(--panel2);border-color:var(--gold);color:var(--text)}
@@ -2266,6 +2434,8 @@ ${sec==="now"?`
 `
 
 :sec==="itv"?`
+  ${itvHtml}
+
   <section><div class="ip-sec-h"><h3>면접 정보</h3><small>각 대학 2027 모집요강에서 확인한 배점과 평가요소</small></div>
     <div class="ip-itvs">${IPSI_ITV.map(itvCard).join('')}</div></section>
 
@@ -4364,6 +4534,10 @@ const ACTS = {
   ipsisec:v=>{ S.ipsiSec=v; render(); },
   ipsiitv:v=>{ S.ipsiItv=v; render(); },
   ipsirec:()=>{ S.ipsiRec=!S.ipsiRec; render(); },
+  itvstart:v=>itvStart(v),
+  itvstop:()=>itvFinish(),
+  itvcancel:()=>{ itvClose(); const t=itvState(); t.on=false; t.busy=false; t.state='그만뒀어요 — 채점하지 않았어요'; render(); },
+  itvopen:id=>{ const t=itvState(); t.openId=(t.openId===+id)?0:+id; render(); },
   ipsipast:()=>{ S.ipsiShowPast=!S.ipsiShowPast; render(); },
   arch:()=>{ S.showArch=!S.showArch; applyArch();
     // 보관함을 접었는데 보관된 과목을 보고 있었다면 한국사로 되돌린다

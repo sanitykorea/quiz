@@ -2004,6 +2004,7 @@ async function itvMic(){
   ITV.node=new AudioWorkletNode(ITV.ctx,'pcm');
   const rate=Math.round(ITV.ctx.sampleRate);
   ITV.node.port.onmessage=ev=>{ if(!itvOn()||itvState().paused) return;   // 일시정지 중에는 내 목소리를 보내지 않는다
+    itvLevel(ev.data);
     ITV.ws.send(JSON.stringify({realtimeInput:{audio:{data:b64(ev.data),mimeType:'audio/pcm;rate='+rate}}})); };
   src.connect(ITV.node);
   const mute=ITV.ctx.createGain(); mute.gain.value=0; ITV.node.connect(mute); mute.connect(ITV.ctx.destination);
@@ -2023,6 +2024,17 @@ function itvMsg(ev){
     if((ITV.say||'').trim()){ t.log.push({role:'itv',text:ITV.say.trim(),at:Date.now()}); ITV.say=''; }
     render(); itvLive();
   }
+}
+
+// 받아쓰기(특히 내 목소리)는 말이 끝나야 오는 경우가 있다. 그 전까지는 소리 크기로 '듣는 중'을 보여준다.
+function itvLevel(buf){
+  const bar=document.getElementById('itvLevel'); if(!bar) return;
+  const pcm=new Int16Array(buf); let sum=0;
+  for(let i=0;i<pcm.length;i+=8){ const v=pcm[i]/32768; sum+=v*v; }
+  const rms=Math.sqrt(sum/Math.max(1,pcm.length/8));
+  const pct=Math.min(100, Math.round(rms*450));
+  bar.style.width=pct+'%';
+  const row=document.getElementById('itvHear'); if(row) row.hidden=pct<6;
 }
 
 // 받아쓰기는 말하는 중에도 조각조각 온다. 전체 render()는 무거우니 그 두 줄만 직접 고친다.
@@ -2058,6 +2070,14 @@ function itvClose(){
   if(ITV.ws){ const w=ITV.ws; ITV.ws=null; try{ w.onclose=null; w.close(); }catch(x){} }
   [ITV.ctx,ITV.out].forEach(c=>{ try{ c&&c.close(); }catch(x){} }); ITV.ctx=ITV.out=null;
   ITV.say=ITV.heard='';
+}
+
+function itvNext(){   // 한 주제를 너무 오래 파고들 때 다음 활동으로 넘긴다
+  const t=itvState(); if(!t.on||t.paused||!itvOn()) return;
+  ITV.srcs.forEach(x=>{ try{ x.stop(); }catch(e){} }); ITV.srcs=[]; ITV.head=0;
+  ITV.ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:
+    '(지원자가 다음 주제를 요청했습니다. 이 주제의 꼬리질문은 그만두고, 아직 묻지 않은 다른 활동으로 넘어가 질문하세요.)'}]}],turnComplete:true}}));
+  t.state='다음 주제로 넘어가는 중'; render();
 }
 
 function itvPause(){
@@ -2210,10 +2230,12 @@ function vIpsi(){
           <div class="ip-q-n">${it.paused?'일시정지 중이에요. 이어서 하기를 누르면 계속돼요.':'말이 끝나면 잠깐 기다리세요. 끊고 들어가도 됩니다.'}</div></div>
         <div class="ip-itv-d"><span id="itvClock">0:00</span></div></div>
         <div class="ip-turns" id="itvTurns">${it.log.slice(-6).map(turn).join('')}
-          <div class="ip-t is-me is-live" id="itvLiveMe" hidden><b>나 · 말하는 중</b><span></span></div>
+          <div class="ip-t is-me is-live" id="itvHear" hidden><b>나 · 듣는 중</b><div class="ip-lvl"><i id="itvLevel"></i></div></div>
+          <div class="ip-t is-me is-live" id="itvLiveMe" hidden><b>나 · 말한 내용</b><span></span></div>
           <div class="ip-t is-live" id="itvLiveItv" hidden><b>면접관</b><span></span></div>
           ${it.log.length?'':'<div class="ip-q-n" id="itvWait">첫 질문을 기다리는 중…</div>'}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="ip-toggle" data-act="itvnext" title="지금 주제를 접고 다른 활동으로 넘어가게 합니다">⏭ 다음 질문</button>
           <button class="ip-st" data-act="${it.paused?'itvresume':'itvpause'}" style="color:var(--gold);background:var(--panel2);border-color:var(--gold)">${it.paused?'▶ 이어서 하기':'⏸ 일시정지'}</button>
           <button class="ip-st" data-act="itvstop" style="color:var(--accent-b);background:rgba(20,117,92,.18);border-color:var(--accent-b)">■ 끝내고 채점받기</button>
           <button class="ip-toggle" data-act="itvcancel">그만두기(채점 안 함)</button>
@@ -2357,6 +2379,8 @@ function vIpsi(){
 .ip-t.is-me{color:var(--text2)}
 .ip-t.is-me b{color:var(--gold)}
 .ip-t.is-live{opacity:.75}
+.ip-lvl{height:6px;border-radius:99px;background:var(--panel);overflow:hidden;margin-top:4px}
+.ip-lvl>i{display:block;height:100%;width:0;background:var(--gold);border-radius:99px;transition:width .08s linear}
 .ip-t.is-live b::after{content:' ●';color:var(--danger-b);font-size:9px;vertical-align:2px}
 .ip-rep{display:grid;gap:8px;margin-top:12px;border-top:1px dashed var(--border);padding-top:12px}
 .ip-rep-s{font-size:30px;font-weight:800;font-variant-numeric:tabular-nums}
@@ -4570,6 +4594,7 @@ const ACTS = {
   itvstart:v=>itvStart(v),
   itvstop:()=>itvFinish(),
   itvpause:()=>itvPause(),
+  itvnext:()=>itvNext(),
   itvresume:()=>itvResume(),
   itvcancel:()=>{ itvClose(); const t=itvState(); t.on=false; t.busy=false; t.state='그만뒀어요 — 채점하지 않았어요'; render(); },
   itvopen:id=>{ const t=itvState(); t.openId=(t.openId===+id)?0:+id; render(); },

@@ -861,7 +861,7 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        if ctype.startswith("text/html"):
+        if ctype.startswith("text/html") or path.endswith("sw.js"):
             self.send_header("Cache-Control", "no-cache, must-revalidate")  # 배포 즉시 반영
         elif ctype.startswith("image/"):
             self.send_header("Cache-Control", "public, max-age=31536000, immutable")  # 문항 이미지는 불변 → 브라우저 캐시(재요청 X)
@@ -994,6 +994,8 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._study_get(q.get("today", ""), q.get("weekStart", ""), q.get("periodStart", ""))
         if p == "/dodeok.json":
             return self._file(os.path.join(HERE, "dodeok.json"), "application/json; charset=utf-8")
+        if p == "/sw.js":   # 서비스워커는 매번 새로 받아야 교체가 된다
+            return self._file(os.path.join(HERE, "sw.js"), "text/javascript; charset=utf-8")
         if p == "/manifest.json":
             return self._file(os.path.join(HERE, "manifest.json"), "application/manifest+json; charset=utf-8")
         if p in ("/icon-192.png", "/icon-512.png"):

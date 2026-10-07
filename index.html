@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>지식의 탑</title>
 <link rel="manifest" href="/manifest.json">
+<script>if("serviceWorker" in navigator) addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));</script>
 <meta name="theme-color" content="#0b1120">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1906,9 +1907,12 @@ const IPSI_ST=['plan','sent','hold'];
 function ipsiState(){ return S.ipsi||{done:[],status:{},ratio:{},notes:{},sync:false}; }
 async function loadIpsi(){
   const r=await api('/api/ipsi');
-  S.ipsi=(r&&!r.error&&Array.isArray(r.done))?r:(S.ipsi||null);   // null = 불러오기 시도함
+  if(r&&!r.error&&Array.isArray(r.done)){ S.ipsi=r; try{ localStorage.setItem('ipsiCache', JSON.stringify(r)); }catch(e){} }
+  else S.ipsi=S.ipsi||null;   // null = 불러오기 시도함
   render();
 }
+// 서버가 자고 있어도(Render 무료 플랜) 마지막 내용이 먼저 뜬다 — 응답이 오면 덮어쓴다
+try{ const c=localStorage.getItem('ipsiCache'); if(c) S.ipsi=JSON.parse(c); }catch(e){}
 async function ipsiPost(body){
   const r=await api('/api/ipsi',{method:'POST',...jbody(body)});
   if(r&&!r.error&&Array.isArray(r.done)) S.ipsi=r;

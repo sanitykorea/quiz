@@ -265,9 +265,10 @@ def send(text, done_tag=None):
         return False
     payload = {"chat_id": chat, "text": text,
                "parse_mode": "HTML", "disable_web_page_preview": "true"}
+    row = [{"text": "📋 포털 열기", "url": APP_URL}]   # 폰에서 한 번에 수시 대장으로
     if done_tag:
-        payload["reply_markup"] = {"inline_keyboard": [[
-            {"text": "✅ 완료했어요 (알림 끄기)", "callback_data": "done|" + _cid(done_tag)}]]}
+        row.insert(0, {"text": "✅ 완료했어요", "callback_data": "done|" + _cid(done_tag)})
+    payload["reply_markup"] = {"inline_keyboard": [row]}
     res = _api("sendMessage", **payload)
     if res and not res.get("ok"):
         print("텔레그램 거절:", res.get("description"))

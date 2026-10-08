@@ -1940,6 +1940,65 @@ const IPSI_DEPT={
   link:'https://political.inha.ac.kr/political/7740/subview.do',
   mine:[['국제기구와NGO · 개발협력과국제정치학','강좌 ③ 기후 협상'],['국제정치와이주','난민·이주 문제'],['현대정치사상 · 정치철학특강','평등·교육권을 다룬 소송의 바탕'],['정당과선거 · 의회정치론','조례 제정을 요구한 경험']],
   more:['국제정치학개론(전필)','비교정치의이해(전필)','전쟁과평화','한국외교정책론','국제법','공공외교의이해','동북아국제정치론','한국정치론','유럽정치','여론과선전','근대서양정치사상']}};
+// 과목 암기 카드 — 과목이 무엇을 다루는지(일반적인 학부 수준 설명)와 내 활동에 붙이는 한 문장
+const IPSI_COURSE={
+ skhu:[
+  {c:'인권의사회학',d:'인권을 법조문이 아니라 사회가 만들어온 제도와 운동의 결과로 본다. 누구의 권리가 언제 인정받았고 왜 어떤 권리는 늦게 왔는지를 따진다.',
+   k:['권리의 사회적 구성','차별과 배제','인권운동의 역사'],
+   me:'제 소송도 법 해석 문제만이 아니라, 학교 밖 청소년이 권리 주체로 인정받지 못해온 과정의 문제라고 생각합니다. 그걸 이론으로 다시 보고 싶습니다.'},
+  {c:'교육과사회',d:'교육이 평등을 만드는지 불평등을 대물림하는지를 본다. 학교라는 제도가 누구를 통과시키고 누구를 걸러내는지, 학력이 왜 신분처럼 작동하는지를 다룬다.',
+   k:['교육 기회의 불평등','학력주의','재생산 이론'],
+   me:'학교 밖에 있다는 이유로 시험 기회부터 막히는 걸 겪었습니다. 교육이 기회를 주는 제도인지 거르는 제도인지 공부하고 싶습니다.'},
+  {c:'젠더사회학',d:'성별이 타고난 차이가 아니라 제도·노동·가족·언어 속에서 만들어지고 유지되는 방식을 본다. 개인의 악의가 아니라 구조를 본다.',
+   k:['성별 분업','구조적 성차별','교차성'],
+   me:'젠더와 융합인성 강좌에서 고정관념이 제도 안에서 작동하는 방식을 배웠고, 그걸 더 깊이 보고 싶습니다.'},
+  {c:'환경과사회',d:'환경 문제를 과학 문제가 아니라 사회 문제로 다룬다. 오염과 기후 피해가 계층·지역·국가에 따라 불평등하게 쌓이는 구조를 본다.',
+   k:['환경 불평등','기후정의','위험의 분배'],
+   me:'기후문제와 국제정치 강좌에서 탄소감축 책임의 분배를 배웠습니다. 그 논의를 국내 사회 안에서도 보고 싶습니다.'},
+  {c:'계급젠더에스니시티',d:'불평등이 계급·성별·인종이라는 여러 축에서 겹쳐 작동하는 걸 본다. 한 사람이 여러 범주에 동시에 속할 때 생기는 차별을 다룬다.',
+   k:['교차성','소수자','불평등의 축'],
+   me:'학교 밖 청소년도 나이·학력·소득이 겹치는 자리라서, 하나의 범주로만 설명되지 않는다고 느꼈습니다.'},
+  {c:'조사방법론 · 사회조사데이터분석',d:'사회 현상을 설문·면접·통계로 확인하는 방법을 배운다. 주장에 근거를 붙이는 훈련이다.',
+   k:['설문 설계','표본','자료 해석'],
+   me:'소송에서도 주장보다 자료가 설득력을 만든다는 걸 봤습니다. 제 관심을 숫자로 말할 수 있게 배우고 싶습니다.'}],
+ inha:[
+  {c:'국제정치학개론 (1학년 전공필수)',d:'국가들이 왜 협력하고 왜 싸우는지를 설명하는 큰 이론 세 가지를 훑는다. 현실주의는 힘, 자유주의는 제도와 상호의존, 구성주의는 정체성과 규범으로 설명한다.',
+   k:['현실주의','자유주의','구성주의','무정부 상태'],
+   me:'기후 협상이 왜 합의가 어려운지 설명하려면 이 세 시각이 다 필요하다고 느꼈습니다.'},
+  {c:'비교정치의이해 (전공필수)',d:'여러 나라의 정치 제도를 견주어 본다. 선거제도·정당·의회 구조가 다르면 같은 사회 문제도 다른 결론으로 간다는 걸 다룬다.',
+   k:['선거제도','정당체계','민주주의 유형'],
+   me:'청소년 참여기구에서 제안이 제도로 가는 길이 왜 막히는지 보면서, 제도 설계 자체에 관심이 생겼습니다.'},
+  {c:'국제기구와NGO',d:'유엔 같은 국제기구와 시민단체가 국가가 못 하는 일을 어떻게 메우는지, 그 한계는 무엇인지를 본다.',
+   k:['다자주의','국제규범','시민사회의 역할'],
+   me:'인권단체 활동이 국가 제도와 어떻게 맞물리는지 안에서 봤고, 그 구조를 학문으로 정리하고 싶습니다.'},
+  {c:'국제정치와이주',d:'사람이 국경을 넘는 이유와 그 사람들이 받는 대우를 정치로 설명한다. 난민·이주노동이 왜 안보 문제로 다뤄지는지도 본다.',
+   k:['난민','시민권','이주의 정치화'],
+   me:'권리에서 밀려난 사람이 생기는 구조라는 점에서 제가 겪은 문제와 닿아 있다고 봅니다.'},
+  {c:'현대정치사상',d:'자유·평등·정의를 어떻게 정의할 것인가를 다룬 20세기 이후 논쟁을 읽는다. 기회의 평등과 결과의 평등이 왜 다른 답을 주는지 같은 질문들이다.',
+   k:['정의론','자유와 평등','분배'],
+   me:'법원이 쓴 "합리적 이유 없는 차별"이라는 말의 바탕을 제대로 공부하고 싶습니다.'},
+  {c:'정당과선거 · 의회정치론',d:'정당이 어떻게 사람들의 요구를 모아 정책으로 만드는지, 의회에서 법안이 어떻게 걸러지는지를 본다.',
+   k:['대표성','입법 과정','과소대표'],
+   me:'조례 제정을 제안해 봤는데 제안이 제도가 되는 길이 길었습니다. 그 과정을 배우고 싶습니다.'}],
+ inu:[
+  {c:'인적자원개발론 (HRD 기본)',d:'조직에서 사람을 어떻게 키울지를 다룬다. 교육·경력개발·조직개발 세 축으로 사람의 성장을 설계하는 분야다.',
+   k:['HRD 세 축','성과와 학습','요구분석'],
+   me:'사람에게 기회를 설계해 주는 일이라는 점에서, 제가 겪은 교육 기회 문제와 같은 질문이라고 봅니다.'},
+  {c:'교수설계론',d:'무엇을 어떤 순서로 어떻게 가르칠지 설계하는 방법. 목표를 정하고 내용을 배열하고 평가로 확인하는 틀(ADDIE 등)을 배운다.',
+   k:['학습목표','ADDIE','평가 설계'],
+   me:'검정고시를 혼자 준비하며 제 학습을 직접 설계해야 했습니다. 그 경험을 이론으로 다듬고 싶습니다.'},
+  {c:'직업교육과 HRD',d:'학교 밖에서 일과 배움을 잇는 제도를 다룬다. 학교를 떠난 사람, 늦게 배우는 사람에게 어떤 경로가 있는지가 주제다.',
+   k:['평생학습','진로 경로','학교 밖 학습'],
+   me:'제가 바로 그 경로를 걸어왔습니다. 당사자로 겪은 걸 설계하는 쪽에서 보고 싶습니다.'},
+  {c:'진로상담 · 상담심리학',d:'사람이 진로를 정하고 흔들릴 때 어떻게 돕는지를 배운다. 상담 이론과 면담 기술을 다룬다.',
+   k:['진로발달','상담 기법','심리검사'],
+   me:'또래 청소년이 학교를 떠난 뒤 길을 못 찾는 걸 봤습니다. 돕는 방법을 제대로 배우고 싶습니다.'},
+  {c:'조직개발및변화관리',d:'조직이 바뀌지 않는 이유와 바꾸는 방법을 다룬다. 사람의 저항, 문화, 제도 설계를 함께 본다.',
+   k:['변화 저항','조직문화','개입 설계'],
+   me:'청소년참여위원회에서 기존 제도를 바꾸려다 벽을 만났습니다. 그 벽의 구조를 배우고 싶습니다.'},
+  {c:'창의적문제해결및발견',d:'정답이 없는 문제를 다시 정의하고 해법을 만드는 훈련. 문제를 찾는 것 자체를 중요하게 본다.',
+   k:['문제 재정의','확산과 수렴','아이디어 평가'],
+   me:'응시 거부를 개인의 불운이 아니라 풀 수 있는 문제로 다시 정의한 경험이 있습니다.'}]};
 const IPSI_ST=['plan','sent','hold'];
 
 function ipsiState(){ return S.ipsi||{done:[],status:{},ratio:{},notes:{},sync:false}; }
@@ -2392,6 +2451,20 @@ function vIpsi(){
       <div class="ip-q-n" style="margin-top:6px">그 밖의 과목 — ${dp.more.map(h).join(' · ')}</div>
       <a class="ip-toggle" href="${dp.link}" target="_blank" rel="noopener" style="justify-self:start;text-decoration:none">학과 교육과정 보기 ↗</a></div>`;
 
+  // 과목 암기 카드 — 체크는 done에 'cx|학교|과목'으로 저장된다
+  const cws=IPSI_COURSE[itvSel]||IPSI_COURSE.skhu;
+  const cwDone=cws.filter(c=>done.has('cx|'+itvSel+'|'+c.c)).length;
+  const cwOpen=S.ipsiCw||{};
+  const cwHtml=cws.map(c=>{ const k='cx|'+itvSel+'|'+c.c, on=done.has(k), open=cwOpen[k];
+    return `<div class="ip-q${on?' is-on':''}">
+      <div class="ip-q-h"><button class="ip-ck" data-act="ipsidone" data-arg="${h(k)}" aria-pressed="${on}" aria-label="${h(c.c)} 외웠음">${on?'✓':''}</button>
+        <div style="min-width:0"><div class="ip-q-t">${h(c.c)}</div>
+          ${open?`<div class="ip-q-n" style="margin-top:5px">${h(c.d)}</div>
+            <div class="ip-keys">${c.k.map(x=>`<em>${h(x)}</em>`).join('')}</div>
+            <div class="ip-fix-b" style="margin-top:6px">면접에서 — “${h(c.me)}”</div>`
+           :`<div class="ip-q-n">${h(c.k.join(' · '))}</div>`}</div></div>
+      <button class="ip-more" data-act="ipsicw" data-arg="${h(k)}">${open?'접기 ▲':'무슨 과목인지 보기 ▼'}</button></div>`; }).join('');
+
   // ── 발표·등록 ─────────────────────────────────────────────
   const resHtml=IPSI_RES.map(([k,iso,uni,what,note])=>{ const t=new Date(iso+'+09:00').getTime(), past=t<=now, v=notes['res|'+k]||'';
     return `<div class="ip-res${past?' is-past':''}${v?' is-in':''}">
@@ -2521,6 +2594,8 @@ function vIpsi(){
 .ip-fix{border-left:3px solid var(--danger-b);padding:8px 0 8px 10px;display:grid;gap:3px}
 .ip-fix-q{font-size:13px;color:var(--text2)}
 .ip-fix-b{font-size:13px;color:var(--accent-b);line-height:1.6}
+.ip-keys{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.ip-keys em{font-style:normal;font-size:11.5px;color:var(--gold);border:1px solid var(--gold-d);border-radius:999px;padding:1px 8px}
 .ip-nav{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px}
 .ip-nav button{background:none;border:1px solid var(--border);border-radius:999px;padding:7px 15px;font-size:13.5px;font-weight:700;color:var(--text3);cursor:pointer}
 .ip-nav button[aria-pressed=true]{background:var(--panel2);border-color:var(--gold);color:var(--text)}
@@ -2631,6 +2706,11 @@ ${sec==="now"?`
 
   <section><div class="ip-sec-h"><h3>학과 정보</h3><small>면접 카드에서 고른 학교 기준 · 전공적합성 질문의 재료</small></div>
     ${deptHtml}</section>
+
+  <section><div class="ip-sec-h"><h3>과목 외우기</h3>
+      <small>${h((IPSI_DEPT[itvSel]||IPSI_DEPT.skhu).name)} · 외운 과목 ${cwDone}/${cws.length} · 체크는 저장돼요</small></div>
+    <div class="ip-qg">${cwHtml}</div>
+    <p style="margin:0;font-size:12px;color:var(--text3);">과목이 무엇을 다루는지는 일반적인 학부 수준 설명이에요. 그 학교 강의계획서와 세부 내용은 다를 수 있어요.</p></section>
 
   <section><div class="ip-sec-h"><h3>내가 낸 대체서식</h3><small>인하대 제출본 원문 · 질문은 여기서 나온다</small></div>
     <div class="ip-qg">${meHtml}</div></section>
@@ -4730,6 +4810,7 @@ const ACTS = {
   ipsisec:v=>{ S.ipsiSec=v; render(); },
   ipsiitv:v=>{ S.ipsiItv=v; render(); },
   ipsirec:()=>{ S.ipsiRec=!S.ipsiRec; render(); },
+  ipsicw:k=>{ S.ipsiCw=S.ipsiCw||{}; S.ipsiCw[k]=!S.ipsiCw[k]; render(); },
   itvstart:v=>itvStart(v),
   itvcontinue:v=>itvStart(v,true),
   itvstop:()=>itvFinish(),

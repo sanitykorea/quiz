@@ -2036,8 +2036,9 @@ function itvMsg(ev){
 }
 
 // 받아쓰기(특히 내 목소리)는 말이 끝나야 오는 경우가 있다. 그 전까지는 소리 크기로 '듣는 중'을 보여준다.
-// 면접관 음성이 아직 재생 중인지(스케줄 끝 + 0.35초 여유)
-function itvSpeaking(){ return !!(ITV.out && ITV.head > ITV.out.currentTime + 0.05); }
+// 면접관 음성이 재생 중인지. 말이 끝난 뒤 0.35초는 울림이 마이크로 돌아오는 구간이라 같이 막는다.
+// (이 여유는 마이크 차단에만 쓴다 — 재생 스케줄에 더하면 조각마다 끊겨 들린다)
+function itvSpeaking(){ return !!(ITV.out && ITV.head + 0.35 > ITV.out.currentTime); }
 function itvLevel(buf){
   const bar=document.getElementById('itvLevel'); if(!bar) return;
   if(!buf){ bar.style.width='0%'; const r=document.getElementById('itvHear'); if(r) r.hidden=true; return; }
@@ -2069,8 +2070,8 @@ function itvPlay(data){
     for(let i=0;i<pcm.length;i++) f[i]=pcm[i]/32768;
     const ab=ITV.out.createBuffer(1,f.length,24000); ab.copyToChannel(f,0);
     const sNode=ITV.out.createBufferSource(); sNode.buffer=ab; sNode.connect(ITV.out.destination);
-    ITV.head=Math.max(ITV.head,ITV.out.currentTime+0.04);
-    sNode.start(ITV.head); ITV.head+=ab.duration+0.35;   // 꼬리 여유 — 울림이 마이크로 돌아오는 구간
+    ITV.head=Math.max(ITV.head,ITV.out.currentTime+0.08);   // 약간의 선행 여유(네트워크가 늦어도 끊기지 않게)
+    sNode.start(ITV.head); ITV.head+=ab.duration;            // 조각 사이에는 공백을 넣지 않는다
     ITV.srcs.push(sNode);
     sNode.onended=()=>{ ITV.srcs=ITV.srcs.filter(x=>x!==sNode); };
   }catch(x){}

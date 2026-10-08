@@ -1913,6 +1913,9 @@ async function loadIpsi(){
 }
 // 서버가 자고 있어도(Render 무료 플랜) 마지막 내용이 먼저 뜬다 — 응답이 오면 덮어쓴다
 try{ const c=localStorage.getItem('ipsiCache'); if(c) S.ipsi=JSON.parse(c); }catch(e){}
+// 면접 도중 새로고침·앱 전환으로 끊겼으면 기록을 되살린다(소리 연결은 못 살리니 채점만 가능)
+try{ const d=itvLoadDraft&&itvLoadDraft(); if(d){ S.itv={on:false,recovered:true,school:d.school||'skhu',log:d.log,
+  startAt:0,elapsed:d.elapsed||0,paused:false,state:'',report:null,busy:false,list:null}; } }catch(e){}
 async function ipsiPost(body){
   const r=await api('/api/ipsi',{method:'POST',...jbody(body)});
   if(r&&!r.error&&Array.isArray(r.done)) S.ipsi=r;
@@ -1991,7 +1994,7 @@ async function itvStart(school){
     await Promise.race([ready, new Promise((_,rj)=>setTimeout(()=>rj(new Error('응답 없음')),15000))]);
     await itvMic();
     ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'(면접 시작)'}]}],turnComplete:true}}));
-    t.on=true; t.busy=false; t.startAt=Date.now(); t.elapsed=0; t.paused=false; t.state=''; render();
+    t.on=true; t.busy=false; t.startAt=Date.now(); t.elapsed=0; t.paused=false; t.recovered=false; t.state=''; itvDropDraft(); render();
   }catch(err){
     t.busy=false; t.on=false; t.state='시작 못 함: '+(err.message||'알 수 없음'); itvClose(); render();
   }
@@ -2022,7 +2025,7 @@ function itvMsg(ev){
   if(sc.turnComplete){
     if((ITV.heard||'').trim()){ t.log.push({role:'user',text:ITV.heard.trim(),at:Date.now()}); ITV.heard=''; }
     if((ITV.say||'').trim()){ t.log.push({role:'itv',text:ITV.say.trim(),at:Date.now()}); ITV.say=''; }
-    render(); itvLive();
+    render(); itvLive(); itvSaveDraft();
   }
 }
 
@@ -2072,6 +2075,23 @@ function itvClose(){
   ITV.say=ITV.heard='';
 }
 
+function itvSaveDraft(){            // 턴이 끝날 때마다 저장. 용량이 작아 부담 없다.
+  const t=itvState();
+  try{
+    if(!t.log.length) return localStorage.removeItem('itvDraft');
+    localStorage.setItem('itvDraft', JSON.stringify({school:t.school, log:t.log, elapsed:itvElapsed(t), ts:Date.now()}));
+  }catch(e){}
+}
+function itvDropDraft(){ try{ localStorage.removeItem('itvDraft'); }catch(e){} }
+function itvLoadDraft(){            // 6시간 지난 것은 남의 기억 — 버린다
+  try{
+    const d=JSON.parse(localStorage.getItem('itvDraft')||'null');
+    if(!d||!Array.isArray(d.log)||!d.log.length) return null;
+    if(Date.now()-(d.ts||0) > 6*3600e3){ itvDropDraft(); return null; }
+    return d;
+  }catch(e){ return null; }
+}
+
 function itvNext(){   // 한 주제를 너무 오래 파고들 때 다음 활동으로 넘긴다
   const t=itvState(); if(!t.on||t.paused||!itvOn()) return;
   ITV.srcs.forEach(x=>{ try{ x.stop(); }catch(e){} }); ITV.srcs=[]; ITV.head=0;
@@ -2085,7 +2105,7 @@ function itvPause(){
   t.elapsed=(t.elapsed||0)+(Date.now()-t.startAt); t.startAt=0; t.paused=true;
   ITV.srcs.forEach(x=>{ try{ x.stop(); }catch(e){} }); ITV.srcs=[]; ITV.head=0;   // 말하던 중이면 멈춘다
   ITV.say=ITV.heard='';
-  t.state='일시정지 — 마이크를 보내지 않아요'; render();
+  t.state='일시정지 — 마이크를 보내지 않아요'; itvSaveDraft(); render();
 }
 function itvResume(){
   const t=itvState(); if(!t.on||!t.paused) return;
@@ -2095,12 +2115,13 @@ function itvResume(){
 function itvElapsed(t){ return (t.elapsed||0)+(t.startAt?Date.now()-t.startAt:0); }
 
 async function itvFinish(){
-  const t=itvState(); if(!t.on) return;
+  const t=itvState(); if(!t.on&&!t.recovered) return;
   const mins=itvElapsed(t)/60000;
-  itvClose(); t.on=false; t.busy=true; t.state='채점 중 — 20초쯤 걸려요'; render();
+  itvClose(); t.on=false; t.recovered=false; t.busy=true; t.state='채점 중 — 20초쯤 걸려요'; render();
   const r=await api('/api/itv',{method:'POST',...jbody({school:t.school,mins:Math.round(mins*10)/10,log:t.log})});
   t.busy=false;
-  if(r&&r.score){ t.report=r.score; t.state=''; }
+  if(r&&r.score){ t.report=r.score; t.state=''; itvDropDraft(); }
+  else if(r&&r.id) itvDropDraft();   // 채점은 실패해도 서버에 기록은 남았다
   else t.state=r&&r.error==='empty'?'대화가 없어서 채점할 게 없어요':'채점에 실패했어요 — 기록은 남았어요';
   t.list=null; render(); itvLoad();
 }
@@ -2239,6 +2260,13 @@ function vIpsi(){
           <button class="ip-st" data-act="${it.paused?'itvresume':'itvpause'}" style="color:var(--gold);background:var(--panel2);border-color:var(--gold)">${it.paused?'▶ 이어서 하기':'⏸ 일시정지'}</button>
           <button class="ip-st" data-act="itvstop" style="color:var(--accent-b);background:rgba(20,117,92,.18);border-color:var(--accent-b)">■ 끝내고 채점받기</button>
           <button class="ip-toggle" data-act="itvcancel">그만두기(채점 안 함)</button>
+          ${it.state?`<span class="ip-q-n">${h(it.state)}</span>`:''}</div>`
+      :it.recovered?`<div class="ip-itv-h"><div><b>끊긴 면접이 있어요</b>
+          <div class="ip-q-n">${h(itvName[it.school]||it.school)} · ${it.log.length}턴 · ${Math.round(itvElapsed(it)/60000)}분까지 진행됨. 소리 연결은 되살릴 수 없지만 지금까지 내용으로 채점받을 수 있어요.</div></div></div>
+        <div class="ip-turns">${it.log.slice(-4).map(turn).join('')}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="ip-st" data-act="itvstop" ${it.busy?'disabled':''} style="color:var(--accent-b);background:rgba(20,117,92,.18);border-color:var(--accent-b)">■ 지금까지 내용으로 채점받기</button>
+          <button class="ip-toggle" data-act="itvcancel">버리고 새로 시작</button>
           ${it.state?`<span class="ip-q-n">${h(it.state)}</span>`:''}</div>`
       :`<div class="ip-itv-h"><div><b>${h(itvName[itvSel]||'')} 모의면접</b>
           <div class="ip-q-n">위 면접 카드에서 고른 학교 기준으로 진행해요. 10분쯤 걸려요.</div></div></div>
@@ -4596,7 +4624,7 @@ const ACTS = {
   itvpause:()=>itvPause(),
   itvnext:()=>itvNext(),
   itvresume:()=>itvResume(),
-  itvcancel:()=>{ itvClose(); const t=itvState(); t.on=false; t.busy=false; t.state='그만뒀어요 — 채점하지 않았어요'; render(); },
+  itvcancel:()=>{ itvClose(); itvDropDraft(); const t=itvState(); t.on=false; t.busy=false; t.recovered=false; t.state='그만뒀어요 — 채점하지 않았어요'; render(); },
   itvopen:id=>{ const t=itvState(); t.openId=(t.openId===+id)?0:+id; render(); },
   ipsipast:()=>{ S.ipsiShowPast=!S.ipsiShowPast; render(); },
   arch:()=>{ S.showArch=!S.showArch; applyArch();

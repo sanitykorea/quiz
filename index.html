@@ -1902,6 +1902,44 @@ const IPSI_DEC=[
  ['인하대','정치외교','3,540,000원','가능 (첫 학기만 제한)','12.18'],
  ['강원대','정치외교','1,712,000원','가능 (첫 학기만 제한)','12.18 15:00'],
  ['충북대','사회학','1,733,000원','가능 (입학 학기만 제한)','12.18 17:00']];
+// 내 대체서식 — 인하대 제출본 원문(활동내용 100자)과 증빙
+const IPSI_ME=[
+ {n:1,name:'학교 밖 청소년 학력평가 응시권 행정소송',when:'2025.07.04 ~ 2026.03.26',org:'OO행정법원',
+  text:'교육청의 학력평가 응시 거부가 학교 밖 청소년의 평등한 교육권을 침해한다는 문제의식으로 원고로서 행정소송을 제기함. 법원은 응시 거부를 교육 기회를 제한한 차별로 보고 취소함.',
+  ev:'판결문 (서울행정법원 2025구합54638 · 2026.3.26. 선고 · 응시신청 거부처분 취소) — 인하대 6쪽, 성공회대 21쪽'},
+ {n:2,name:'OO광역시 청소년참여위원회 위원',when:'2024.04.13 ~ 2024.12.31',org:'OO광역시청소년활동진흥센터',
+  text:'지자체 청소년참여기구 부위원장으로 정기회의와 정책 활동에 참여함. 어린이청소년 인권조례 제정을 제안해 포괄적인 청소년 권리 보장 제도의 마련을 요구함.',
+  ev:'활동증명서 1쪽 (2024 인천광역시청소년참여위원회 · 발대식, 정기회의, 정책 제안, 공모전 심사)'},
+ {n:3,name:'강좌: 기후문제와 국제정치',when:'2025.04.03 ~ 2025.07.17',org:'교육부 국가평생교육진흥원',
+  text:'15주간 강좌를 이수하며 국제 기후 협상에서 국가 간 이해관계가 충돌하는 구조를 학습함. 특히, 국익과 공동선이 부딪히는 환경갈등 속 탄소감축 책임을 기후정의의 관점에서 성찰함.',
+  ev:'K-MOOC 이수증 1쪽 (국민대학교 · 15주 · 학습인정시간 19시간 45분)'},
+ {n:4,name:'강좌: 한국의 사회정책',when:'2025.01.14 ~ 2025.09.16',org:'교육부 국가평생교육진흥원',
+  text:'14주간 강좌를 이수하며 한국 사회보험과 공적부조의 원리를 경제적·역사적 맥락에서 학습함. 특히, 사각지대 해소 논의를 통해 제도가 누구를 보호하고 누구를 배제하는지 고찰함.',
+  ev:'K-MOOC 이수증 1쪽'},
+ {n:5,name:'강좌: 젠더와 융합인성',when:'2025.09.10 ~ 2025.12.14',org:'교육부 국가평생교육진흥원',
+  text:'15주간 강좌를 이수하며 성별 고정관념이 제도와 관계 속에서 작동하는 방식을 학습함. 특히, 구조적 성차별을 탐구하며 실질적 성평등 실현과 다양성 보장을 위한 관점을 정립함.',
+  ev:'K-MOOC 이수증 1쪽 (숙명여자대학교 · 15주 · 학습인정시간 21시간)'}];
+
+// 학과 정보 — 각 대학 홈페이지·대입정보포털에서 확인한 실제 교과목(2026 기준)
+const IPSI_DEPT={
+ skhu:{name:'성공회대 사회융합학부 · 사회학전공',
+  what:'전공을 반드시 두 개 이수하는 구조(주전공 42학점 + 복수·부전공). 학교 가치는 인권·평화·민주·생태.',
+  goal:'인재상 — 소셜 임팩터 · 사회과학 커뮤니케이션 혁신가 · 학술데이터 코디네이터',
+  link:'https://doss.skhu.ac.kr/doss/5537/subview.do',
+  mine:[['인권의사회학','행정소송 — 교육권과 차별'],['교육과사회','학교 밖 청소년과 교육 기회'],['젠더사회학 · 성의사회학','강좌 ⑤ 젠더와 융합인성'],['환경과사회','강좌 ③ 기후문제와 국제정치'],['청년의일과삶 · 다양성과소수자','청참위 활동']],
+  more:['사회학의초대(1학년)','사회학개론(전필)','조사방법론(전필)','계급젠더에스니시티','국가와사회','역사사회학','난민과이주연구','사회를위한경제','사회조사데이터분석','사회심리학']},
+ inu:{name:'인천대 창의인재개발학과',
+  what:'교육학·심리학·경영학을 묶어 HRD(인적자원개발) 전문가를 기르는 학과. 트랙은 교육훈련 · 조직개발 · 심리/코칭 · HR분석.',
+  goal:'기업·공공조직의 교육과 조직개발을 설계하는 사람을 기른다',
+  link:'https://www.inu.ac.kr/inu/770/subview.do',
+  mine:[['직업교육과 HRD','학교 밖 청소년의 교육·진로 기회'],['진로상담 · 상담심리학','또래 청소년을 돕는 쪽'],['창의적문제해결및발견','소송·조례 제안처럼 길이 없는 문제를 푼 경험'],['조직개발및변화관리','청참위에서 제도를 바꾸려 한 경험']],
+  more:['인적자원개발론','기업교육론','기업교육프로그램개발론','교수설계론','조직행동과HRD','경력개발과HRD','테크놀로지와HRD','역량모델링과교육체계수립','인적자원자료분석의실제','집단상담']},
+ inha:{name:'인하대 정치외교학과',
+  what:'전공기초 정치학개론, 전공필수 국제정치학개론 · 비교정치의이해. 세부 영역은 국제정치 / 비교정치 / 정치이론·사상.',
+  goal:'1학년에 국제정치학개론을 듣는다 — 현실주의·자유주의·구성주의를 훑는 과목',
+  link:'https://political.inha.ac.kr/political/7740/subview.do',
+  mine:[['국제기구와NGO · 개발협력과국제정치학','강좌 ③ 기후 협상'],['국제정치와이주','난민·이주 문제'],['현대정치사상 · 정치철학특강','평등·교육권을 다룬 소송의 바탕'],['정당과선거 · 의회정치론','조례 제정을 요구한 경험']],
+  more:['국제정치학개론(전필)','비교정치의이해(전필)','전쟁과평화','한국외교정책론','국제법','공공외교의이해','동북아국제정치론','한국정치론','유럽정치','여론과선전','근대서양정치사상']}};
 const IPSI_ST=['plan','sent','hold'];
 
 function ipsiState(){ return S.ipsi||{done:[],status:{},ratio:{},notes:{},sync:false}; }
@@ -2338,6 +2376,22 @@ function vIpsi(){
   </section>
 `;
 
+  // ── 내 서류 · 학과 ──
+  const dp=IPSI_DEPT[itvSel]||IPSI_DEPT.skhu;
+  const meHtml=IPSI_ME.map(a=>`<div class="ip-q" style="gap:6px">
+      <div class="ip-q-t">${a.n}. ${h(a.name)}</div>
+      <div class="ip-q-n">${h(a.when)} · ${h(a.org)}</div>
+      <p class="ip-verdict" style="margin:2px 0">${h(a.text)}</p>
+      <div class="ip-q-n">📎 ${h(a.ev)}</div></div>`).join('');
+  const deptHtml=`<div class="ip-itv">
+      <div class="ip-itv-h"><div><b>${h(dp.name)}</b><div class="ip-q-n">${h(dp.what)}</div></div></div>
+      <div class="ip-q-n">${h(dp.goal)}</div>
+      <div class="ip-qg-h" style="border-radius:8px">내 활동과 이어지는 과목</div>
+      ${dp.mine.map(([c,w])=>`<div class="ip-cr" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);border-top:none;padding:4px 0">
+        <div class="ip-q-t" style="font-size:13px">${h(c)}</div><div class="ip-q-n">${h(w)}</div></div>`).join('')}
+      <div class="ip-q-n" style="margin-top:6px">그 밖의 과목 — ${dp.more.map(h).join(' · ')}</div>
+      <a class="ip-toggle" href="${dp.link}" target="_blank" rel="noopener" style="justify-self:start;text-decoration:none">학과 교육과정 보기 ↗</a></div>`;
+
   // ── 발표·등록 ─────────────────────────────────────────────
   const resHtml=IPSI_RES.map(([k,iso,uni,what,note])=>{ const t=new Date(iso+'+09:00').getTime(), past=t<=now, v=notes['res|'+k]||'';
     return `<div class="ip-res${past?' is-past':''}${v?' is-in':''}">
@@ -2574,6 +2628,12 @@ ${sec==="now"?`
 
   <section><div class="ip-sec-h"><h3>면접 정보</h3><small>각 대학 2027 모집요강에서 확인한 배점과 평가요소</small></div>
     <div class="ip-itvs">${IPSI_ITV.map(itvCard).join('')}</div></section>
+
+  <section><div class="ip-sec-h"><h3>학과 정보</h3><small>면접 카드에서 고른 학교 기준 · 전공적합성 질문의 재료</small></div>
+    ${deptHtml}</section>
+
+  <section><div class="ip-sec-h"><h3>내가 낸 대체서식</h3><small>인하대 제출본 원문 · 질문은 여기서 나온다</small></div>
+    <div class="ip-qg">${meHtml}</div></section>
 
   <section><div class="ip-sec-h"><h3>예상 질문 · 답변 초안</h3>
       <small>말해본 ${qSpoke}/${qAll.length} · 적어둔 ${qWrote}/${qAll.length} · 적으면 자동 저장(다른 기기에서도 보임)</small></div>

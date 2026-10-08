@@ -821,10 +821,22 @@ ITV_WHO = """지원자는 2007.11.10생, 2026년 2회 고졸 검정고시(평균
 고2 1학기에 학교 내 괴롭힘으로 자퇴했고, 이후 청소년인권운동단체에서 활동했다."""
 
 
-def itv_system(school):
-    """모의면접관 프롬프트 — 실제 면접처럼 굴고, 평가는 끝난 뒤에 따로 한다."""
+def itv_system(school, log=None):
+    """모의면접관 프롬프트. log가 있으면 끊겼던 면접을 이어 본다 — 음성 세션은 새로 열려도 대화는 이어진다."""
     v = ITV_SCHOOLS.get(school) or ITV_SCHOOLS["skhu"]
     areas = "\n".join(f"- {n} ({w}%): {d}" for n, w, d in v["areas"])
+    resume = ""
+    if log:
+        script = "\n".join(("면접관: " if m.get("role") != "user" else "지원자: ") + str(m.get("text", ""))[:1000]
+                            for m in log[-40:] if str(m.get("text", "")).strip())[:20000]
+        resume = f"""
+
+[이미 진행된 면접 — 연결이 끊겨 다시 이어간다]
+{script}
+
+위는 조금 전까지 네가 진행한 면접이다. 처음부터 다시 시작하지 말고 인사도 다시 하지 마라.
+이미 물어본 주제는 또 묻지 말고, 아직 다루지 않은 덩어리의 질문부터 이어가라.
+첫 마디는 "이어서 질문드리겠습니다"로 시작해 바로 다음 질문을 하라."""
     return f"""너는 {v['name']} 면접관이다. 실시간 음성으로 모의면접을 진행한다.
 
 [면접 형식]
@@ -859,7 +871,7 @@ def itv_system(school):
 지원자가 "(다음 주제를 요청했습니다)"라는 안내를 보내면 즉시 지금 주제를 접고 아직 묻지 않은 덩어리로 가라.
 7번까지 끝냈으면 "수고하셨습니다. 면접을 마치겠습니다"라고 말하고 멈춰라.
 
-첫 마디는 인사와 함께 첫 질문 하나로 시작하라."""
+첫 마디는 인사와 함께 첫 질문 하나로 시작하라.{resume}"""
 
 
 def itv_score(school, log):
@@ -2942,7 +2954,7 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._json({"error": "no-ai"}, 503)
         if (b or {}).get("mode") == "interview":   # 모의면접은 전혀 다른 인격 — 면접관
             return self._json({"token": tok, "model": LIVE_MODEL,
-                               "system": itv_system(str((b or {}).get("school", "skhu"))[:10]),
+                               "system": itv_system(str((b or {}).get("school", "skhu"))[:10], (b or {}).get("log")),
                                "voices": LIVE_VOICES})
         system = (
             "너는 '루하', 수영이의 스터디 메이트야. 실시간 음성으로 대화한다.\n"

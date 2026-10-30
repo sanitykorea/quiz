@@ -2011,7 +2011,7 @@ async function loadIpsi(){
 // 서버가 자고 있어도(Render 무료 플랜) 마지막 내용이 먼저 뜬다 — 응답이 오면 덮어쓴다
 try{ const c=localStorage.getItem('ipsiCache'); if(c) S.ipsi=JSON.parse(c); }catch(e){}
 // 면접 도중 새로고침·앱 전환으로 끊겼으면 기록을 되살린다(소리 연결은 못 살리니 채점만 가능)
-try{ const d=itvLoadDraft&&itvLoadDraft(); if(d){ S.itv={on:false,recovered:true,school:d.school||'skhu',log:d.log,
+try{ const d=itvLoadDraft&&itvLoadDraft(); if(d){ S.itv={on:false,recovered:true,quick:!!d.quick,school:d.school||'skhu',log:d.log,
   startAt:0,elapsed:d.elapsed||0,paused:false,state:'',report:null,busy:false,list:null}; } }catch(e){}
 async function ipsiPost(body){
   const r=await api('/api/ipsi',{method:'POST',...jbody(body)});
@@ -2073,7 +2073,7 @@ async function itvStart(school, resume){
   t.report=null; render();
   try{
     const tok=await api('/api/live/token',{method:'POST',...jbody(
-      {mode:'interview',school:t.school, log:resume?t.log.slice(-40):undefined})});
+      {mode:'interview',school:t.school, quick:!!t.quick, log:resume?t.log.slice(-40):undefined})});
     if(!tok||!tok.token) throw new Error(tok&&tok.error==='no-ai'?'AI 미연결':'토큰 발급 실패');
     ITV.stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
     ITV.ctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
@@ -2233,7 +2233,7 @@ function itvSaveDraft(){            // 턴이 끝날 때마다 저장. 용량이
   const t=itvState();
   try{
     if(!t.log.length) return localStorage.removeItem('itvDraft');
-    localStorage.setItem('itvDraft', JSON.stringify({school:t.school, log:t.log, elapsed:itvElapsed(t), ts:Date.now()}));
+    localStorage.setItem('itvDraft', JSON.stringify({school:t.school, quick:!!t.quick, log:t.log, elapsed:itvElapsed(t), ts:Date.now()}));
   }catch(e){}
 }
 function itvDropDraft(){ try{ localStorage.removeItem('itvDraft'); }catch(e){} }
@@ -2467,6 +2467,9 @@ function vIpsi(){
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <button class="ip-st" data-act="itvstart" data-arg="${itvSel}" ${it.busy?'disabled':''}
             style="color:var(--gold);background:var(--panel2);border-color:var(--gold);font-size:14px;padding:9px 16px">🎤 면접 시작</button>
+          <button class="ip-st" data-act="itvstart6" data-arg="${itvSel}" ${it.busy?'disabled':''}
+            title="공통질문·K-MOOC·행정소송·청소년참여위원회·장점·마지막 말, 6문항만"
+            style="color:var(--accent-b);background:var(--panel2);border-color:var(--accent-b);font-size:14px;padding:9px 16px">⚡ 6문항 면접 (약 5분)</button>
           ${it.state?`<span class="ip-q-n">${h(it.state)}</span>`:''}</div>`}
       ${it.report?report(it.report):''}
     </div>
@@ -4857,7 +4860,8 @@ const ACTS = {
   ipsiitv:v=>{ S.ipsiItv=v; render(); },
   ipsirec:()=>{ S.ipsiRec=!S.ipsiRec; render(); },
   ipsicw:k=>{ S.ipsiCw=S.ipsiCw||{}; S.ipsiCw[k]=!S.ipsiCw[k]; render(); },
-  itvstart:v=>itvStart(v),
+  itvstart:v=>{ itvState().quick=false; itvStart(v); },
+  itvstart6:v=>{ itvState().quick=true; itvStart(v); },
   itvcontinue:v=>itvStart(v,true),
   itvstop:()=>itvFinish(),
   itvpause:()=>itvPause(),

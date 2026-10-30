@@ -2468,8 +2468,8 @@ function vIpsi(){
           <button class="ip-st" data-act="itvstart" data-arg="${itvSel}" ${it.busy?'disabled':''}
             style="color:var(--gold);background:var(--panel2);border-color:var(--gold);font-size:14px;padding:9px 16px">🎤 면접 시작</button>
           <button class="ip-st" data-act="itvstart6" data-arg="${itvSel}" ${it.busy?'disabled':''}
-            title="공통질문·K-MOOC·행정소송·청소년참여위원회·장점·마지막 말, 6문항만"
-            style="color:var(--accent-b);background:var(--panel2);border-color:var(--accent-b);font-size:14px;padding:9px 16px">⚡ 6문항 면접 (약 5분)</button>
+            title="공통질문 + 예상질문 1~6, 꼬리질문은 필요할 때만 총 2개"
+            style="color:var(--accent-b);background:var(--panel2);border-color:var(--accent-b);font-size:14px;padding:9px 16px">⚡ 예상질문 면접 (공통+6, 약 7분)</button>
           ${it.state?`<span class="ip-q-n">${h(it.state)}</span>`:''}</div>`}
       ${it.report?report(it.report):''}
     </div>

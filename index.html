@@ -2088,6 +2088,8 @@ async function itvStart(school, resume){
           speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Charon'}},languageCode:'ko-KR'}},
         systemInstruction:{parts:[{text:tok.system}]},
         inputAudioTranscription:{}, outputAudioTranscription:{},
+        // 말 중간에 끊지 않도록 자동 끝점 감지를 끈다 — '답변 끝' 버튼을 눌러야 면접관이 이어간다
+        realtimeInputConfig:{automaticActivityDetection:{disabled:true}},
         // 기본 세션은 10분쯤에서 끊긴다 → 창을 굴려 쓰면 길이 제한이 없어진다
         contextWindowCompression:{slidingWindow:{}},
         // 끊겼을 때 같은 대화로 되돌아갈 수 있는 손잡이를 계속 받아둔다
@@ -2117,6 +2119,7 @@ async function itvMic(){
   ITV.node.port.onmessage=ev=>{ if(!itvOn()||itvState().paused) return;   // 일시정지 중에는 내 목소리를 보내지 않는다
     if(itvSpeaking()){ itvLevel(null); return; }   // 스피커 소리가 마이크로 되돌아와 자기 말을 내 말로 받아쓴다
     itvLevel(ev.data);
+    if(!ITV.act){ ITV.act=true; ITV.ws.send(JSON.stringify({realtimeInput:{activityStart:{}}})); render(); }
     ITV.ws.send(JSON.stringify({realtimeInput:{audio:{data:b64(ev.data),mimeType:'audio/pcm;rate='+rate}}})); };
   src.connect(ITV.node);
   const mute=ITV.ctx.createGain(); mute.gain.value=0; ITV.node.connect(mute); mute.connect(ITV.ctx.destination);
@@ -2223,7 +2226,7 @@ function itvClose(){
   if(ITV.stream){ ITV.stream.getTracks().forEach(x=>x.stop()); ITV.stream=null; }
   if(ITV.ws){ const w=ITV.ws; ITV.ws=null; try{ w.onclose=null; w.close(); }catch(x){} }
   [ITV.ctx,ITV.out].forEach(c=>{ try{ c&&c.close(); }catch(x){} }); ITV.ctx=ITV.out=null;
-  ITV.say=ITV.heard='';
+  ITV.say=ITV.heard=''; ITV.act=false;
 }
 
 function itvSaveDraft(){            // 턴이 끝날 때마다 저장. 용량이 작아 부담 없다.
@@ -2253,9 +2256,16 @@ function itvReconnect(why){
   setTimeout(()=>{ itvStart(t.school, true); }, 600);   // 받아쓰기 기록 + 재개 손잡이로 이어간다
 }
 
+function itvDone(){   // 내 답변이 끝났다는 신호 — 이때 면접관이 응답한다
+  const t=itvState(); if(!t.on||t.paused||!itvOn()||!ITV.act) return;
+  ITV.act=false; ITV.ws.send(JSON.stringify({realtimeInput:{activityEnd:{}}}));
+  t.state='답변 전달 — 면접관이 듣고 있어요'; render();
+}
+
 function itvNext(){   // 한 주제를 너무 오래 파고들 때 다음 활동으로 넘긴다
   const t=itvState(); if(!t.on||t.paused||!itvOn()) return;
   ITV.srcs.forEach(x=>{ try{ x.stop(); }catch(e){} }); ITV.srcs=[]; ITV.head=0;
+  if(ITV.act){ ITV.act=false; ITV.ws.send(JSON.stringify({realtimeInput:{activityEnd:{}}})); }
   ITV.ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:
     '(지원자가 다음 주제를 요청했습니다. 이 주제의 꼬리질문은 그만두고, 아직 묻지 않은 다른 활동으로 넘어가 질문하세요.)'}]}],turnComplete:true}}));
   t.state='다음 주제로 넘어가는 중'; render();
@@ -2430,6 +2440,7 @@ function vIpsi(){
           <div class="ip-t is-live" id="itvLiveItv" hidden><b>면접관</b><span></span></div>
           ${it.log.length?'':'<div class="ip-q-n" id="itvWait">첫 질문을 기다리는 중…</div>'}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="ip-st" data-act="itvdone" ${ITV.act?'':'disabled'} style="color:#fff;background:var(--accent-b);border-color:var(--accent-b);font-size:14px;padding:9px 16px">✅ 답변 끝</button>
           <button class="ip-toggle" data-act="itvnext" title="지금 주제를 접고 다른 활동으로 넘어가게 합니다">⏭ 다음 질문</button>
           <button class="ip-st" data-act="${it.paused?'itvresume':'itvpause'}" style="color:var(--gold);background:var(--panel2);border-color:var(--gold)">${it.paused?'▶ 이어서 하기':'⏸ 일시정지'}</button>
           <button class="ip-st" data-act="itvstop" style="color:var(--accent-b);background:rgba(20,117,92,.18);border-color:var(--accent-b)">■ 끝내고 채점받기</button>
@@ -4851,6 +4862,7 @@ const ACTS = {
   itvstop:()=>itvFinish(),
   itvpause:()=>itvPause(),
   itvnext:()=>itvNext(),
+  itvdone:()=>itvDone(),
   itvresume:()=>itvResume(),
   itvgrade:()=>itvGrade(),
   itvcancel:()=>{ itvClose(); itvDropDraft(); const t=itvState(); t.on=false; t.busy=false; t.recovered=false; t.review=false; t.state='그만뒀어요 — 채점하지 않았어요'; render(); },

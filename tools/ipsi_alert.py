@@ -413,6 +413,78 @@ def final_check():
     return 0
 
 
+# ---- 입학 안내 페이지 변화 감시 (1단계/합격자 조회가 열리면 즉시 알림) ----
+PAGE_WATCH = [
+    ("인천대 입시안내", "https://intro.uway.com/inu/intro.html",
+     "https://enter.inu.ac.kr/"),
+]
+# 이 말이 새 항목에 들어오면 '그냥 변동'이 아니라 발표로 본다
+HOT = re.compile(r"1단계|합격자|합격 ?조회|조회|발표|면접( ?시간| ?장소)?|충원|추가합격")
+
+
+def page_items(url):
+    """안내 페이지의 항목(링크 제목) 목록을 뽑는다. 실패하면 (None, 사유)."""
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36",
+        "Accept-Language": "ko,en;q=0.8"})
+    try:
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
+            raw = r.read().decode("utf-8", "replace")
+    except Exception as e:
+        return None, f"{type(e).__name__}: {str(e)[:80]}"
+    body = re.sub(r"(?is)<(script|style).*?</\1>", " ", raw)
+    items = []
+    for m in re.finditer(r"(?is)<a\b[^>]*>(.*?)</a>", body):
+        t = html.unescape(re.sub(r"<[^>]+>", " ", m.group(1)))
+        t = re.sub(r"\s+", " ", t).strip()
+        if 4 <= len(t) <= 120:
+            items.append(t)
+    if not items:                      # 링크를 못 찾으면 본문 줄이라도 받아 둔다
+        t = html.unescape(re.sub(r"<[^>]+>", "\n", body))
+        items = [x.strip() for x in t.split("\n") if 4 <= len(x.strip()) <= 120]
+    seen, out = set(), []
+    for t in items:
+        if t not in seen:
+            seen.add(t); out.append(t)
+    return out, ""
+
+
+def check_pages(st):
+    """새로 생긴 항목만 알린다. 첫 실행은 기준선만 저장하고 조용히 넘어간다."""
+    msgs = []
+    store = st.setdefault("pages", {})
+    for label, url, link in PAGE_WATCH:
+        items, err = page_items(url)
+        if items is None:
+            print(f"{label} 조회 실패: {err}")
+            continue
+        prev = store.get(url)
+        # 발표성 항목은 '기준선'에 상관없이 처음 본 순간 알린다.
+        # (Actions 캐시가 날아가 기준선이 리셋돼도 발표를 삼키지 않게 — 중복이 누락보다 낫다)
+        seen_hot = set(st.setdefault("hot_seen", {}).setdefault(url, []))
+        hot_now = [t for t in items if HOT.search(t) and t not in seen_hot]
+        if prev is None and not hot_now:        # 기준선만 잡고 조용히
+            store[url] = items
+            print(f"{label} 기준선 {len(items)}개 저장")
+            continue
+        new = hot_now if prev is None else [t for t in items if t not in prev]
+        gone = [] if prev is None else [t for t in prev if t not in items]
+        if new:
+            hot = [t for t in new if HOT.search(t)]
+            head = "🎯 <b>인천대 1차 조회 떴어요!</b>" if hot else f"🆕 <b>{label} 새 공지</b>"
+            body = "\n".join("· " + html.escape(t) for t in new[:8])
+            extra = ("\n\n<b>지금 바로 조회해 보세요.</b>" if hot else "")
+            msgs.append(f"{head}\n\n{body}{extra}\n\n{url}")
+            print(f"{label} 새 항목 {len(new)}개 (발표성 {len(hot)})")
+        elif gone:
+            print(f"{label} 항목 {len(gone)}개 사라짐(알림 생략)")
+        st["hot_seen"][url] = sorted(seen_hot | {t for t in items if HOT.search(t)})
+        store[url] = items
+    return msgs
+
+
 def main():
     if MODE == "final":
         return final_check()
@@ -520,6 +592,9 @@ def main():
                     f"마지막으로 확인된 수치\n{snap}\n\n"
                     "실제 최종 경쟁률은 대학 집계 후 공지돼요.")
     st["notices"] = notices
+
+    # 입학 안내 페이지에 새 공지(1단계·합격자 조회)가 뜨면 바로 알린다
+    msgs.extend(check_pages(st))
 
     if cur and MODE != "deadline":
         app_sync({"ratio": cur, "asof": asof})   # 학습포털 경쟁률 패널 갱신

@@ -29,36 +29,20 @@ def _secret(env_name, filename):
 KST = datetime.timezone(datetime.timedelta(hours=9))
 
 # (표 제목에 들어가는 전형명, 모집단위, 화면에 쓸 이름)
-WATCH = [
-    ("학생부종합 열린인재", "사회융합학부", "열린인재 · 사회융합"),
-    ("교과성적",           "자유전공학부", "교과성적 · 자유전공"),
-    ("교과성적",           "사회융합학부", "교과성적 · 사회융합"),
-]
+# 성공회대 전형 종료(2026-11-13 불합) → 경쟁률 감시 해제
+WATCH = []
 # (학교, 항목, 마감일시) — 각 대학 2027 수시 요강에서 확인한 값
 DEADLINES = [
-    ("성공회대·인천대·인하대", "원서접수 마감", datetime.datetime(2026, 9, 11, 18, 0, tzinfo=KST)),
     ("충북대",   "원서접수 마감",            datetime.datetime(2026, 9, 11, 19, 0, tzinfo=KST)),
     ("강원대",   "원서접수 마감",            datetime.datetime(2026, 9, 11, 20, 0, tzinfo=KST)),
-    ("인하대",   "대체서식 온라인 입력 마감", datetime.datetime(2026, 9, 12, 0, 0, tzinfo=KST)),
     ("강원대",   "서류 PDF 업로드 마감(14시!)", datetime.datetime(2026, 9, 14, 14, 0, tzinfo=KST)),
-    ("인천대",   "서류 PDF 업로드 마감",     datetime.datetime(2026, 9, 15, 18, 0, tzinfo=KST)),
     ("충북대",   "서류 제출 마감(등기 소인)", datetime.datetime(2026, 9, 15, 18, 0, tzinfo=KST)),
-    ("성공회대", "서류 등기우편 마감",       datetime.datetime(2026, 9, 16, 17, 0, tzinfo=KST)),
-    ("인하대",   "서류 등기우편 마감",       datetime.datetime(2026, 9, 16, 17, 0, tzinfo=KST)),
-    ("성공회대", "열린인재 면접",          datetime.datetime(2026, 10, 31, 9, 0, tzinfo=KST)),
-    ("인천대",   "자기추천 1단계 발표",      datetime.datetime(2026, 11, 6, 10, 0, tzinfo=KST)),
-    ("성공회대", "합격자 발표",              datetime.datetime(2026, 11, 13, 16, 0, tzinfo=KST)),
-    ("인하대",   "1단계 발표 · 면접 시간 공지", datetime.datetime(2026, 11, 17, 10, 0, tzinfo=KST)),
-    ("인천대",   "면접 시간 · 장소 발표",    datetime.datetime(2026, 11, 18, 10, 0, tzinfo=KST)),
-    ("인천대",   "자기추천 면접",            datetime.datetime(2026, 11, 21, 9, 0, tzinfo=KST)),
-    ("인하대",   "면접(사회과학대학)",       datetime.datetime(2026, 11, 21, 9, 0, tzinfo=KST)),
     ("방통대",   "2027-1학기 원서접수 시작",  datetime.datetime(2026, 12, 1, 10, 0, tzinfo=KST)),
     ("강원대",   "합격자 발표(15시)",        datetime.datetime(2026, 12, 18, 15, 0, tzinfo=KST)),
     ("충북대",   "합격자 발표(17시)",        datetime.datetime(2026, 12, 18, 17, 0, tzinfo=KST)),
     ("방통대",   "원서접수 마감(20시!)",      datetime.datetime(2027, 1, 5, 20, 0, tzinfo=KST)),
     ("방통대",   "신편입생 합격자 발표",      datetime.datetime(2027, 1, 22, 9, 30, tzinfo=KST)),
     ("방통대",   "추가모집 마감(20시)",       datetime.datetime(2027, 2, 4, 20, 0, tzinfo=KST)),
-    ("인천대·인하대·강원대·충북대", "합격자 발표", datetime.datetime(2026, 12, 18, 10, 0, tzinfo=KST)),
     ("전 대학",  "문서등록 시작",            datetime.datetime(2026, 12, 21, 10, 0, tzinfo=KST)),
     ("전 대학",  "문서등록 마감(한 곳만!)",   datetime.datetime(2026, 12, 23, 14, 0, tzinfo=KST)),
     ("전 대학",  "충원 통보 마감",           datetime.datetime(2026, 12, 29, 18, 0, tzinfo=KST)),
@@ -333,10 +317,6 @@ def app_sync(payload=None):
 # 한 페이지에 같은 학과가 전형별로 여러 번 나오므로 모집인원으로 지원한 전형의 행을 고른다
 _D = lambda h: datetime.datetime(2026, 9, 11, h, 0, tzinfo=KST)
 FINAL_WATCH = [
-    ("인천대 창의인재개발 · 자기추천", "https://addon.jinhakapply.com/RatioV1/RatioH/Ratio11230791.html",
-     "창의인재개발학과", 10, _D(18), "작년 최종 80명 · 8.0:1"),
-    ("인하대 정치외교 · 인하미래인재(면접형)", "https://ratio.uwayapply.com/Sl5KOHxXJUpmJSY6Jko3ZlRm",
-     "정치외교학과", 16, _D(18), "작년 최종 182명 · 11.4:1"),
     ("충북대 사회학 · 학생부종합Ⅰ", "https://addon.jinhakapply.com/RatioV1/RatioH/Ratio11411051.html",
      "사회학과", 5, _D(19), "작년 최종 148명 · 29.6:1"),
     ("강원대 정치외교 · 미래인재서류", "https://ratio.uwayapply.com/Sl5KV2FOclc4OUpmJSY6Jko3ZlRm",
@@ -420,10 +400,8 @@ def final_check():
 
 
 # ---- 입학 안내 페이지 변화 감시 (1단계/합격자 조회가 열리면 즉시 알림) ----
-PAGE_WATCH = [
-    ("인천대 입시안내", "https://intro.uway.com/inu/intro.html",
-     "https://enter.inu.ac.kr/"),
-]
+# 인천대 전형 종료(2026-11-17 불합) → 안내페이지 감시 해제
+PAGE_WATCH = []
 # 이 말이 새 항목에 들어오면 '그냥 변동'이 아니라 발표로 본다
 HOT = re.compile(r"1단계|합격자|합격 ?조회|조회|발표|면접( ?시간| ?장소)?|충원|추가합격")
 
@@ -499,8 +477,8 @@ def main():
     lines, changed = [], False
 
     # ---- 경쟁률 ----
-    if MODE == "deadline" or now >= MAIN_DL:
-        data, asof, err = {}, "", ""          # 마감 다음 날부터는 조회할 것이 없다
+    if MODE == "deadline" or now >= MAIN_DL or not WATCH:
+        data, asof, err = {}, "", ""          # 마감 후 또는 감시 대상이 없으면 조회할 것이 없다
     else:
         data, asof, err = fetch_and_parse(RATIO_URL)
     if err:
